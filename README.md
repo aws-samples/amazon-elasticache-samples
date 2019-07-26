@@ -1,4 +1,4 @@
-## Amazon Elasticache Samples
+## Amazon ElastiCache Samples
 
 Samples and documentation for using the Amazon ElastiCache Redis and Memcached
 
