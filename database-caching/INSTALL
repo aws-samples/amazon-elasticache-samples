@@ -1,0 +1,30 @@
+This code is part of an Amazon ElastiCache Tutorial
+
+
+1. Install dependencies:
+
+    $ pip3 install -r requirements.txt
+
+
+2. Populate the database:
+
+    $ mysql -h endpoint -P 3306 -u admin -p < seed.sql
+
+
+3.  Configure environment
+
+    $ export REDIS_URL=redis://redis_endpoint:6379/
+    $ export DB_HOST=mysql_endpoint
+    $ export DB_USER=admin
+    $ export DB_PASS=password
+    $ export DB_NAME=tutorial
+
+
+    Note that you have to supply the real values for `redis_endpoint`,
+    `mysql_endpoint`, and `password`.
+
+
+4.  Run the example:
+
+    $ python example.py
+

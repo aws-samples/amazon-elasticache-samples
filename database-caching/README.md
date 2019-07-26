@@ -29,8 +29,8 @@ $ sudo yum install git -y
 $ sudo yum install mysql -y
 $ sudo yum install python3 -y
 $ pip3 install --user virtualenv
-$ git clone <repository-url>/elc-cache-aside
-$ cd elc-cache-aside
+$ git clone https://github.com/aws-samples/amazon-elasticache-samples/
+$ cd amazon-elasticache-samples/database-caching
 $ virtualenv venv
 $ source ./venv/bin/activate
 $ pip3 install -r requirements.txt
@@ -246,7 +246,7 @@ While the instances are being created, you will see a banner explaining how to o
 
 # Step 3: Populate your MySQL database
 
-You can populate the database with the seed.sql file provided in the tutorial repository. Log into your EC2 instance and run this command:
+You can populate the database with the [seed.sql](./seed.sql) file provided in the [tutorial repository](./). Log into your EC2 instance and run this command:
 
 **syntax: shell**
 
@@ -260,7 +260,7 @@ If the command hangs, chances are you are being blocked by the Security Group se
 
 In Source, you can start typing the name of the security group and you'll be able to click on the Security Group ID. If you need to learn more about Security Groups, you can check [the documentation](https://docs.aws.amazon.com/vpc/latest/userguide/VPC_SecurityGroups.html) or the [Security Group Rules Reference](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-rules-reference.html).
 
-Below is a breakdown of the commands contained in the seed.sql file. If you succeeded in populating the database, you can skip the steps below and go directly to step 4.
+Below is a breakdown of the commands contained in the [seed.sql](./seed.sql) file. If you succeeded in populating the database, you can skip the steps below and go directly to step 4.
 
 ### 3.1 — Connect to your database:
 
@@ -282,7 +282,7 @@ mysql> CREATE database tutorial;
 Query OK, 1 row affected (0.01 sec)
 ```
 
-At this point you can use the tutorial database,  create tables and add some records.
+At this point you can use the tutorial database, create tables and add some records.
 
 **syntax: SQL**
 
@@ -387,7 +387,7 @@ In Source, you can start typing the name of the security group and you'll be abl
 
 ## Configure the environment
 
-In the repository you will find some Python code that you can run in your EC2 instance. But first you need to configure some environment variables:
+In the [repository](./) you will find some [Python code](./example.py) that you can run in your EC2 instance. But first you need to configure some environment variables:
 
 **syntax: shell**
 

@@ -26,8 +26,8 @@ Once you have access to your EC2 instance, run the following commands:
 $ sudo yum install git
 $ sudo yum install python3
 $ sudo pip3 install virtualenv
-$ git clone https://github.com/aws-samples/amazon-elasticache-samples/session-store/
-$ cd session-store
+$ git clone https://github.com/aws-samples/amazon-elasticache-samples/
+$ cd amazon-elasticache-samples/session-store
 $ virtualenv venv
 $ source ./venv/bin/activate
 $ pip3 install -r requirements.txt
