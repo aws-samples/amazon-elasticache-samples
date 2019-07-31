@@ -12,7 +12,7 @@ The ElastiCache for Redis node and the MySQL database created in this tutorial a
 
 **Figure 1**. Implementation of Cache-Aside with Amazon ElastiCache for Redis.
 
-![image alt text](images/image_0.png)
+![image alt text](images/elasticache_image_0.png)
 
 ## Requirements
 
@@ -44,61 +44,65 @@ Open the [ElastiCache Dashboard](https://console.aws.amazon.com/elasticache/), t
 
 ### 1.1 — On the top right corner, select the region where launched your EC2 instance.
 
-![image alt text](images/image_1.png)
+<kbd>![image alt text](images/elasticache_image_1.png)</kbd>
 
 ### 1.2 — Click on "Get Started Now".
 
-![image alt text](images/image_2.png)
+<kbd>![image alt text](images/elasticache_image_2.png)</kbd>
 
 ### 1.3 — Select "Redis" as your Cluster engine.
 
-![image alt text](images/image_3.png)
+To keep the tutorial straight forward, leave the **Cluster Mode enabled** option unchecked. More information about Cluster Mode enabled can be found [here](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/Replication.Redis-RedisCluster.html).
 
-### Redis settings
+<kbd>![image alt text](images/elasticache_image_3.png)</kbd>
+
+## Redis Settings
 
 ### 1.4 — Choose a name for your Redis Cluster, e.g. "elc-tutorial".
 
-![image alt text](images/image_4.png)
+<kbd>![image alt text](images/elasticache_image_4.png)</kbd>
 
 ### 1.5 — Change the Node type to cache.t2.micro.
 
 That node type is fine for this tutorial, but for a production cluster the size of the node should depend on your workload and you should start with the m5 or r5 instance families.
 
-![image alt text](images/image_5.png)
+<kbd>![image alt text](images/elasticache_image_5.png)</kbd>
 
-### 1.6 — In Number of replicas, select 1.
+### 1.6 — Set Number of replicas to 1.
 
-That read-only replica will allow you to scale your reads. In case of a failure, an automatic failover will be triggered and the replica will take over the role of the master node.
+That read-only replica will allow you to scale your reads. In case of a failure, an automatic failover will be triggered and the replica will take over the role of the primary node.
 
-![image alt text](images/image_6.png)
+<kbd>![image alt text](images/elasticache_image_6.png)</kbd>
 
-## Advanced Redis settings
+## Advanced Redis Settings
 
 ### 1.7 — Check the box for "Multi-AZ with Auto-Failover".
 
 In the unlikely event of a primary node or Availability Zone failure, or even in cases of planned maintenance, ElastiCache for Redis can replace the failing instance and the replica takes over the role of the primary node. As a result, downtime is minimized.
 
-![image alt text](images/image_7.png)
+<kbd>![image alt text](images/elasticache_image_7.png)</kbd>
 
-### 1.8 — Select a Subnet group. If you need more information about Subnet groups, please refer to [the documentation](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/SubnetGroups.Creating.html).
+### 1.8 — Select a Subnet group.
 
-![image alt text](images/image_8.png)
+If you need more information about Subnet groups, please refer to [the documentation](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/SubnetGroups.Creating.html).
+
+<kbd>![image alt text](images/elasticache_image_8.png)</kbd>
 
 ### 1.9 — For Preferred availability zone(s), select "No preference".
 
-![image alt text](images/image_9.png)
+<kbd>![image alt text](images/elasticache_image_9.png)</kbd>
 
 Each node will be created in a different availability zone. This is a best practice for improved reliability.
 
-## Configure the Security settings
+## Security Settings
 
 For this example we won't use encryption, but keep in mind you can configure both encryption for data at-rest and for data in-transit.
 
 ### 1.10 — Select a Security group for your Redis Cluster.
 
-![image alt text](images/image_10.png)
+<kbd>![image alt text](images/elasticache_image_10.png)</kbd>
 
-This is important: make sure the Security group you select allows incoming TCP connections on port 6379 from your EC2 instance. If that's not the case, you won't be able to connect to your Redis nodes.
+**This is important**: make sure the Security group you select allows incoming TCP connections on port 6379 from your EC2 instance. If that's not the case, you won't be able to connect to your Redis nodes.
 
 ## Import data to cluster
 
@@ -110,27 +114,32 @@ Daily backups are important for most use cases, and a good recommendation is to 
 
 ### 1.11 — Uncheck "Enable automatic backups".
 
-![image alt text](images/image_11.png)
+<kbd>![image alt text](images/elasticache_image_11.png)</kbd>
 
 ## Maintenance settings
 
 ### 1.12 — Specify a maintenance window that suits your needs.
 
-For this tutorial, it suffices to specify "No preference".
-
-![image alt text](images/image_12.png)
-
 Here you can think about the time and day when your application has a low workload. For our current needs, we can just state "No preference".
 
-### Review and create
+<kbd>![image alt text](images/elasticache_image_12.png)</kbd>
 
-After a quick review of all the fields in the form, you can hit "Create".
+
+## Review and create
+
+After a review of all the fields in the form, click "Create".
 
 ### 1.13 — Click on "Create".
 
-![image alt text](images/image_13.png)
+<kbd>![image alt text](images/elasticache_image_13.png)</kbd>
 
-A Redis Cluster will get initialized.
+An ElastiCache for Redis cluster will be launched as shown:
+
+<kbd>![image alt text](images/elasticache_image_14.png)</kbd>
+
+When the ElastiCache for Redis cluster is ready for use it will appear as shown with a status of **available** and 2 nodes:
+
+<kbd>![image alt text](images/elasticache_image_15.png)</kbd>
 
 # Step 2: Create a MySQL database
 
@@ -138,43 +147,43 @@ A Redis Cluster will get initialized.
 
 ### 2.2 — On the top right corner, select the region where you want to launch the Aurora DB cluster.
 
-![image alt text](images/image_14.png)
+<kbd>![image alt text](images/image_14.png)</kbd>
 
 ### 2.3 — Click on "Create database" in the Amazon Aurora window.
 
-![image alt text](images/image_15.png)
+<kbd>![image alt text](images/image_15.png)</kbd>
 
 Before continuing, switch to the new database creation flow if the option appears:
 
-![image alt text](images/image_16.png)
+<kbd>![image alt text](images/image_16.png)</kbd>
 
 ## Engine options
 
 ### 2.4 — On Database engine, select "MySQL".
 
-![image alt text](images/image_17.png)
+<kbd>![image alt text](images/image_17.png)</kbd>
 
 ### 2.5 — On Version, select the most recent MySQL version.
 
-![image alt text](images/image_18.png)
+<kbd>![image alt text](images/image_18.png)</kbd>
 
 ## Templates
 
 ### 2.6 — Select "Free tier".
 
-![image alt text](images/image_19.png)
+<kbd>![image alt text](images/image_19.png)</kbd>
 
 ## Settings
 
 ### 2.7 — Choose an identifier for your MySQL database, e.g. "database-1".
 
-![image alt text](images/image_20.png)
+<kbd>![image alt text](images/image_20.png)</kbd>
 
 ## DB instance size
 
 ### 2.8 — Select db.t2.micro.
 
-![image alt text](images/image_21.png)
+<kbd>![image alt text](images/image_21.png)</kbd>
 
 ## Storage
 
@@ -184,21 +193,21 @@ You can leave the default value.
 
 ### 2.9 — Select the VPC where you want to create the database.
 
-![image alt text](images/image_22.png)
+<kbd>![image alt text](images/image_22.png)</kbd>
 
 Note that once created, a database can't be migrated to a different VPC.
 
 ### 2.10 — Click on "Additional connectivity configuration".
 
-![image alt text](images/image_23.png)
+<kbd>![image alt text](images/image_23.png)</kbd>
 
 ### 2.11 — Select the default value for Subnet group.
 
-![image alt text](images/image_24.png)
+<kbd>![image alt text](images/image_24.png)</kbd>
 
 ### 2.12 — On Publicly accessible, select "No".
 
-![image alt text](images/image_25.png)
+<kbd>![image alt text](images/image_25.png)</kbd>
 
 This means you will have to connect to the database from an EC2 instance within the same VPC.
 
@@ -206,15 +215,15 @@ This means you will have to connect to the database from an EC2 instance within 
 
 If you happen to have a security group that allows incoming TCP connections on port 3306, you can choose it instead.
 
-![image alt text](images/image_26.png)
+<kbd>![image alt text](images/image_26.png)</kbd>
 
 ### 2.14 — In New VPC security group name, type "elc-tutorial".
 
-![image alt text](images/image_27.png)
+<kbd>![image alt text](images/image_27.png)</kbd>
 
 ### 2.15 — Leave the default value for Database port.
 
-![image alt text](images/image_28.png)
+<kbd>![image alt text](images/image_28.png)</kbd>
 
 ## Additional configuration
 
@@ -224,7 +233,7 @@ The best practice is to enable the Deletion protection. If you want to delete th
 
 ### 2.16 — On "Deletion protection", uncheck “Enable deletion protection”.
 
-![image alt text](images/image_29.png)
+<kbd>![image alt text](images/image_29.png)</kbd>
 
 ## Review and create
 
@@ -232,17 +241,17 @@ After a quick review of all the fields in the form, you can proceed.
 
 ### 2.17 — Click on "Create database".
 
-![image alt text](images/image_30.png)
+<kbd>![image alt text](images/image_30.png)</kbd>
 
 While the instances are being created, you will see a banner explaining how to obtain your credentials. This is a good opportunity to save the credentials somewhere, as this is the only time you will be able to view this password.
 
 ### 2.18 — Click on "View credential details".
 
-![image alt text](images/image_31.png)
+<kbd>![image alt text](images/image_31.png)</kbd>
 
 ### 2.19 — Save the username, password, and endpoint.
 
-![image alt text](images/image_32.png)
+<kbd>![image alt text](images/image_32.png)</kbd>
 
 # Step 3: Populate your MySQL database
 
@@ -256,7 +265,7 @@ $ mysql -h endpoint -P 3306 -u admin -p < seed.sql
 
 If the command hangs, chances are you are being blocked by the Security Group settings. Verify that your EC2 instance has access to the security group assigned to your MySQL instance. For example, let's say your EC2 instance was assigned to the default security group. You can now modify the security group of your MySQL instance, edit the Inbound rules and add a MYSQL/Aurora rule allowing connections on port 3306 from any instance in the default security group:
 
-![image alt text](images/image_33.png)
+<kbd>![image alt text](images/image_33.png)</kbd>
 
 In Source, you can start typing the name of the security group and you'll be able to click on the Security Group ID. If you need to learn more about Security Groups, you can check [the documentation](https://docs.aws.amazon.com/vpc/latest/userguide/VPC_SecurityGroups.html) or the [Security Group Rules Reference](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-rules-reference.html).
 
@@ -345,15 +354,15 @@ Back at the [ElastiCache Dashboard](https://console.aws.amazon.com/elasticache/)
 
 ### 4.1 — Select "Redis" on the left pane.
 
-![image alt text](images/image_34.png)
+<kbd>![image alt text](images/image_34.png)</kbd>
 
 ### 4.2 — Select the Redis Cluster you created for this tutorial.
 
-![image alt text](images/image_35.png)
+<kbd>![image alt text](images/image_35.png)</kbd>
 
 ### 4.3 — Copy the Primary Endpoint.
 
-![image alt text](images/image_36.png)
+<kbd>![image alt text](images/image_36.png)</kbd>
 
 In the examples, each time an endpoint is mentioned you should use the hostname of your Configuration Endpoint.
 
@@ -381,7 +390,7 @@ True
 
 Note: If it hangs, it means you are being blocked by the Security Group settings. Verify that your EC2 instance has access to the security group assigned to your ElastiCache instance. For example, let's say your EC2 instance was assigned to the default security group. You can now modify the security group of your Amazon ElastiCache instance and add a Custom TCP rule allowing connections on port 6379 from any instance in the default security group:
 
-![image alt text](images/image_37.png)
+<kbd>![image alt text](images/image_37.png)</kbd>
 
 In Source, you can start typing the name of the security group and you'll be able to click on the Security Group ID. If you need to learn more about Security Groups, you can check [the documentation](https://docs.aws.amazon.com/vpc/latest/userguide/VPC_SecurityGroups.html) or the [Security Group Rules Reference](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-rules-reference.html).
 
@@ -498,23 +507,23 @@ In order to delete your Redis Cluster, go to the [ElastiCache Dashboard](https:/
 
 ### 5.1 — Select "Redis" on the left pane.
 
-![image alt text](images/image_38.png)
+<kbd>![image alt text](images/image_38.png)</kbd>
 
 This will show you a list of all your Redis clusters. 
 
 ### 5.2 — Select the Redis Cluster you created for this tutorial.
 
-![image alt text](images/image_39.png)
+<kbd>![image alt text](images/image_39.png)</kbd>
 
 ### 5.3 — Click on "Delete".
 
-![image alt text](images/image_40.png)
+<kbd>![image alt text](images/image_40.png)</kbd>
 
 ### 5.4 — You will be asked if you want to create a final backup.
 
 That's usually a good idea, but it's not necessary for this tutorial. Select "No" and click on “Delete”.
 
-![image alt text](images/image_41.png)
+<kbd>![image alt text](images/image_41.png)</kbd>
 
 The status of your cluster will change to "deleting".
 
@@ -522,25 +531,25 @@ The status of your cluster will change to "deleting".
 
 ### 5.5 — Navigate to [Amazon RDS console](https://console.aws.amazon.com/rds/home) and select "Databases" on the left pane.
 
-![image alt text](images/image_42.png)
+<kbd>![image alt text](images/image_42.png)</kbd>
 
 ### 5.6 — Select the database you created (i.e., "database-1").
 
-![image alt text](images/image_43.png)
+<kbd>![image alt text](images/image_43.png)</kbd>
 
 ### 5.7 — Click on "Actions" and select “Delete”.
 
-![image alt text](images/image_44.png)
+<kbd>![image alt text](images/image_44.png)</kbd>
 
 ### 5.8 — You will be asked if you want to create a final backup.
 
 That's usually a good idea, but it's not necessary for this tutorial. Uncheck the box for "Create final snapshot".
 
-![image alt text](images/image_45.png)
+<kbd>![image alt text](images/image_45.png)</kbd>
 
 ### 5.9 — Check the box for "I acknowledge...", type “delete me”, and click “Delete”.
 
-![image alt text](images/image_46.png)
+<kbd>![image alt text](images/image_46.png)</kbd>
 
 ## Congratulations!
 
