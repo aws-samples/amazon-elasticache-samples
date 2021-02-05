@@ -56,7 +56,7 @@ def fetch(sql):
 
 def planet(id):
     """Retrieve a record from the cache, or else from the database."""
-    key = f"planet:{id}"
+    key = "planet:{id}"
     res = Cache.hgetall(key)
 
     if res:
