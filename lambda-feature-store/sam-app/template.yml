@@ -1,0 +1,183 @@
+#*
+#* Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#* SPDX-License-Identifier: MIT-0
+#*
+#* Permission is hereby granted, free of charge, to any person obtaining a copy of this
+#* software and associated documentation files (the "Software"), to deal in the Software
+#* without restriction, including without limitation the rights to use, copy, modify,
+#* merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+#* permit persons to whom the Software is furnished to do so.
+#*
+#* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+#* INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+#* PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+#* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#* OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+#* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#*
+
+#------------------------------------------------------------------------------
+#
+# Template: template.yml
+# Purpose:  Store and retrieve user movie recommendations using Amazon ElastiCache for Redis.
+#
+#
+#------------------------------------------------------------------------------
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  This SAM template creates two Lambda functions to put and get data from ElastiCache Redis cluster.
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+
+Parameters:
+  SubnetId:
+    Type: String
+    Description: Provide the SubnetId which you used while creating Redis cluster
+    AllowedPattern: .+
+  SecurityGroupId:
+    Type: String
+    Description: Provide the SecurityGroupId which you used while creating Redis cluster
+    AllowedPattern: .+
+  S3BucketArn:
+    Type: String
+    Description: Provide the S3 Bucket Arn to fetch movie recommendations from.
+    AllowedPattern: .+
+  VPCId:
+    Type: String
+    Description: Provide the VPC id to dpeloy resources under.
+    AllowedPattern: .+
+
+Resources:
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPCId
+  PublicSubnet1RouteTableAssociation:
+    DependsOn: RouteTable
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetId
+      RouteTableId: !Ref RouteTable
+  S3Endpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    DependsOn: RouteTable
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - 's3:GetObject'
+            Resource:
+              - !Sub '${S3BucketArn}/*'
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      RouteTableIds:
+        - !Ref RouteTable
+      VpcId: !Ref VPCId
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: Lambda-access
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:DescribeNetworkInterfaces'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:AssignPrivateIpAddresses'
+                  - 'ec2:UnassignPrivateIpAddresses'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource: !Sub '${S3BucketArn}/*'
+  ElastiCacheSubnetGroup:
+    Type: 'AWS::ElastiCache::SubnetGroup'
+    Properties:
+      Description: Cache Subnet Group
+      SubnetIds:
+        - !Ref SubnetId
+  ElastiCacheRedisCluster:
+    Type: AWS::ElastiCache::ReplicationGroup
+    DependsOn: ElastiCacheSubnetGroup
+    Properties:
+      AutoMinorVersionUpgrade: true
+      # enable Cluster Mode
+      CacheParameterGroupName: default.redis5.0.cluster.on
+      CacheNodeType: cache.t2.micro
+      CacheSubnetGroupName:  !Ref ElastiCacheSubnetGroup
+      Engine: redis
+      EngineVersion: 5.0.4
+      NumNodeGroups: 1
+      Port: 6379
+      ReplicasPerNodeGroup: 1
+      ReplicationGroupDescription: Sample Redis group for scaling
+      SecurityGroupIds:
+        - !Ref SecurityGroupId
+  GetMovieRecommendations:
+    Type: 'AWS::Serverless::Function'
+    DependsOn: ElastiCacheRedisCluster
+    Properties:
+      Handler: get_movie_recommendations.handler
+      Runtime: python3.7
+      FunctionName: 'GetMovieRecommendations'
+      CodeUri: movie_recommendations/
+      Description: 'This function will fetch user recommendations from Redis given userId and rank'
+      MemorySize: 1024
+      Timeout: 100
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          REDIS_HOST_ENDPOINT: !GetAtt ElastiCacheRedisCluster.ConfigurationEndPoint.Address
+      Events:
+        HttpApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: GET
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+        SubnetIds:
+          - !Ref SubnetId
+  PutMovieRecommendations:
+    Type: 'AWS::Serverless::Function'
+    DependsOn: ElastiCacheRedisCluster
+    Properties:
+      Handler: put_movie_recommendations.handler
+      Runtime: python3.7
+      CodeUri: movie_recommendations/
+      FunctionName: 'PutMovieRecommendations'
+      Description: 'This function will put user recommendations from s3 to Redis'
+      MemorySize: 1024
+      Timeout: 900
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          REDIS_HOST_ENDPOINT: !GetAtt ElastiCacheRedisCluster.ConfigurationEndPoint.Address
+          S3_BUCKET: !Ref S3BucketArn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+        SubnetIds:
+          - !Ref SubnetId

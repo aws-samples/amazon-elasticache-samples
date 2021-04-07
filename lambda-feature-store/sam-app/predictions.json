@@ -1,0 +1,43 @@
+{
+  "data": [
+    {
+      "movieId": [
+        2012,
+        553,
+        780
+      ],
+      "userId": 1
+    },
+    {
+      "movieId": [
+        1704
+      ],
+      "userId": 2
+    },
+    {
+      "movieId": [
+        2424,
+        527,
+        3949,
+        1302
+      ],
+      "userId": 3
+    }
+  ],
+  "schema": {
+    "fields": [
+      {
+        "name": "userId",
+        "type": "integer"
+      },
+      {
+        "name": "movieId",
+        "type": "string"
+      }
+    ],
+    "pandas_version": "0.20.0",
+    "primaryKey": [
+      "userId"
+    ]
+  }
+}
