@@ -66,7 +66,7 @@ def planet(id):
     res = Database.record(sql, (id,))
 
     if res:
-        Cache.hmset(key, res)
+        Cache.hset(key, mapping=res)
         Cache.expire(key, TTL)
 
     return res
