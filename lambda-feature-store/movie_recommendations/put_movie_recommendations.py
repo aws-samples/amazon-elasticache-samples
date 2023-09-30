@@ -1,8 +1,12 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
 import datetime
 import os
 import boto3
 import json
 import rediscluster
+
 
 def handler(event, context):
     """
@@ -30,6 +34,7 @@ def handler(event, context):
         return f"Successfully inserted the user recommendations"
     except Exception as e:
         return f"Failed to insert the user recommendations due to {e}"
+
 
 def connect(redis_host_endpoint):
     startup_nodes = [{ "host": redis_host_endpoint, "port": "6379" }]
