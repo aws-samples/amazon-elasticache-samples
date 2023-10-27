@@ -1,3 +1,7 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+
 import os
 from langchain.memory import ConversationSummaryBufferMemory, RedisChatMessageHistory
 from langchain.llms.bedrock import Bedrock

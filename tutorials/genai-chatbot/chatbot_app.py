@@ -1,3 +1,7 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+
 import os
 import streamlit as st #all streamlit commands will be available through the "st" alias
 import chatbot_lib as glib #reference to local lib script
