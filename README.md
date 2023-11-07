@@ -20,7 +20,9 @@ The following are tutorials covering various use cases for [Amazon ElastiCache](
 
 ## Webinars
 
-- [Generative AI Virtual Assistant](./webinars/genai-chatbot/) - Build a generative AI Virtual Assistant with [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Langchain](https://github.com/langchain-ai/langchain) and [Amazon Elasticache](https://aws.amazon.com/elasticache/) [YouTube Video](https://www.youtube.com/watch?v=yWxDmQYelvg)
+- [Generative AI Virtual Assistant](./webinars/genai-chatbot/) - Build a generative AI Virtual Assistant with [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Langchain](https://github.com/langchain-ai/langchain) and [Amazon Elasticache](https://aws.amazon.com/elasticache/). See [YouTube Video](https://www.youtube.com/watch?v=yWxDmQYelvg).
+
+- [Flask Redis Session Management](./webinars/flask-redis-session/) - This is a simple Flask web application that demonstrates user session management using Redis as the session storage.
 
 ---
 
