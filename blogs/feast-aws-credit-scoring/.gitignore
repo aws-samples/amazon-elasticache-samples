@@ -4,6 +4,7 @@ feature_repo/online_store.db
 infra/*.tfvars.json
 **__pycache__**
 .idea/
+.idea/*
 *.terraform/
 *.tfstate*
 *.terraform*
