@@ -1,0 +1,10 @@
+feature_repo/registry.db
+feature_repo/online_store.db
+*.bin
+infra/*.tfvars.json
+**__pycache__**
+.idea/
+*.terraform/
+*.tfstate*
+*.terraform*
+generate_data.py
