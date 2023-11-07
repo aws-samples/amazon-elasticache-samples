@@ -8,7 +8,7 @@ Samples and documentation for using the [Amazon ElastiCache](https://aws.amazon.
 
 - [Online Feature Store](./blogs/feast-aws-credit-scoring/) Building online feature stores on AWS with Amazon ElastiCache for Redis to support mission-critical ML use cases that require ultra-low latency and high throughput. [Build an ultra-low latency online feature store for real-time inferencing using Amazon ElastiCache for Redis](https://aws.amazon.com/blogs/database/build-an-ultra-low-latency-online-feature-store-for-real-time-inferencing-using-amazon-elasticache-for-redis/)
 
-## Tutorials
+## Hands-On Tutorials
 
 The following are tutorials covering various use cases for [Amazon ElastiCache](https://aws.amazon.com/elasticache/).
 
@@ -18,7 +18,10 @@ The following are tutorials covering various use cases for [Amazon ElastiCache](
 
 - [Lambda Feature Store](./lambda-feature-store/) - Learn how Amazon ElastiCache can serve as the focal point for a custom-trained ML model to present recommendations to application and web users. Lambda functions are used to facilitate the interactions between ElastiCache for Redis and Amazon S3. Then review how AWS Lambda interacts with Amazon ElastiCache for Redis with insights loaded from a custom-built ML recommendation engine.
 
-- [Generative AI Virtual Assistant](./tutorials/genai-chatbot/) - Build a generative AI Virtual Assistant with [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Langchain](https://github.com/langchain-ai/langchain) and [Amazon Elasticache](https://aws.amazon.com/elasticache/)
+## Webinars
+
+- [Generative AI Virtual Assistant](./webinars/genai-chatbot/) - Build a generative AI Virtual Assistant with [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Langchain](https://github.com/langchain-ai/langchain) and [Amazon Elasticache](https://aws.amazon.com/elasticache/) [YouTube Video](https://www.youtube.com/watch?v=yWxDmQYelvg)
+
 ---
 
 ## Security

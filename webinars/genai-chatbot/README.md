@@ -1,5 +1,11 @@
 # Build a generative AI Virtual Assistant with [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Langchain](https://github.com/langchain-ai/langchain) and [Amazon Elasticache](https://aws.amazon.com/elasticache/)
 
+In this 15-minute session [YouTube video](https://www.youtube.com/watch?v=yWxDmQYelvg), we will discuss how you can use [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Langchain](https://github.com/langchain-ai/langchain) and [Amazon Elasticache](https://aws.amazon.com/elasticache/) services together to implement a generative AI (GenAI) chatbot. We will dive into two application patterns: they are chat history and messaging broker patterns. We will show you how ElastiCache for Redis simplifies the implementation of these application patterns by leveraging the built-in Redis data structures. 
+
+ElastiCache is a fully managed, Redis- and Memcached-compatible service delivering real-time, cost-optimized performance for modern applications. 
+
+ElastiCache scales to hundreds of millions operations per second with microsecond response time, and offers enterprise-grade security and reliability.
+
 ## Chatbot Application Deployment
 
 This guide will walk you through the steps to deploy a Python chatbot application using [Streamlit](https://github.com/streamlit/streamlit) on [Cloud9](https://aws.amazon.com/cloud9/). This is the architecture we will be implementing today.
