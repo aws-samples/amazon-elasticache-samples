@@ -1,7 +1,7 @@
 s3fs==2021.8.0
 feast[aws]==0.12.1
 scikit-learn==0.24.2
-streamlit==0.88.0
+streamlit==1.30.0
 matplotlib==3.4.3
 shap==0.39.0
 pandas>=1.0.0
