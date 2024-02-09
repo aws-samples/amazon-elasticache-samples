@@ -1,4 +1,4 @@
-# Amazon ElastiCache Serverless [Minimal] with CDK
+# Amazon ElastiCache Serverless for Redis [Minimal CDK]
 
 The `cdk.json` file tells the CDK Toolkit how to execute your app.
 

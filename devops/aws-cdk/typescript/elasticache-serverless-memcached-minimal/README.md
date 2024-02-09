@@ -1,4 +1,4 @@
-# Amazon ElastiCache Serverless for Memcached [Minimal] with CDK
+# Amazon ElastiCache Serverless for Memcached [Minimal CDK]
 
 The `cdk.json` file tells the CDK Toolkit how to execute your app.
 
