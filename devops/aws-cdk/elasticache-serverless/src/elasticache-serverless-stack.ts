@@ -1,3 +1,6 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: MIT-0
+
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as EC2 from "aws-cdk-lib/aws-ec2";
@@ -34,20 +37,36 @@ export class ElasticacheServerlessStack extends cdk.Stack {
       }
     );
 
-    const elastiCacheSecurityGroup = new SecurityGroup(this, elastiCacheSecurityGroupName.toLowerCase(), {
-      vpc: this.vpc,
-      allowAllOutbound: true,
-      description: "ElastiCache Security Group CDK",
-      securityGroupName: elastiCacheSecurityGroupName.toLowerCase(),
-    });
-    elastiCacheSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(elastiCacheRedisPort), "ElastiCache for Redis Port");
-    elastiCacheSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(elastiCacheRedisPortReadOnly), "ElastiCache for Redis Read Only Port");
-    
-    const elastiCacheServerless = new ElastiCache.CfnServerlessCache(this, elastiCacheServerlessName.toLowerCase(), {
-      engine: "redis",
-      serverlessCacheName: elastiCacheServerlessName.toLowerCase(),
-      securityGroupIds: [elastiCacheSecurityGroup.securityGroupId],
-      subnetIds: elastiCacheSubnetIds,
-    });
+    const elastiCacheSecurityGroup = new SecurityGroup(
+      this,
+      elastiCacheSecurityGroupName.toLowerCase(),
+      {
+        vpc: this.vpc,
+        allowAllOutbound: true,
+        description: "ElastiCache Security Group CDK",
+        securityGroupName: elastiCacheSecurityGroupName.toLowerCase(),
+      }
+    );
+    elastiCacheSecurityGroup.addIngressRule(
+      Peer.anyIpv4(),
+      Port.tcp(elastiCacheRedisPort),
+      "ElastiCache for Redis Port"
+    );
+    elastiCacheSecurityGroup.addIngressRule(
+      Peer.anyIpv4(),
+      Port.tcp(elastiCacheRedisPortReadOnly),
+      "ElastiCache for Redis Read Only Port"
+    );
+
+    const elastiCacheServerless = new ElastiCache.CfnServerlessCache(
+      this,
+      elastiCacheServerlessName.toLowerCase(),
+      {
+        engine: "redis",
+        serverlessCacheName: elastiCacheServerlessName.toLowerCase(),
+        securityGroupIds: [elastiCacheSecurityGroup.securityGroupId],
+        subnetIds: elastiCacheSubnetIds,
+      }
+    );
   }
 }
