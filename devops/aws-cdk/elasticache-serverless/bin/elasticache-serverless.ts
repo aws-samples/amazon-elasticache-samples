@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { ElasticacheServerlessStack } from '../lib/elasticache-serverless-stack';
+import { ElasticacheServerlessStack } from '../src/elasticache-serverless-stack';
 
 const app = new cdk.App();
 new ElasticacheServerlessStack(app, 'ElasticacheServerlessStack', {
