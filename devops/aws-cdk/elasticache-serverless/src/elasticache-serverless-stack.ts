@@ -18,7 +18,7 @@ export class ElasticacheServerlessStack extends cdk.Stack {
     const elastiCacheSubnetIds = [];
     const elastiCacheSubnetGroupName = "ElastiCacheSubnetGroup";
     const elastiCacheSecurityGroupName = "ElastiCacheSecurityGroup";
-    const elastiCacheServerlessName = "ElastiCacheServerless";
+    const elastiCacheServerlessName = "ElastiCacheServerlessRedis";
 
     this.vpc = new EC2.Vpc(this, elastiCacheVPCName.toLowerCase());
 
