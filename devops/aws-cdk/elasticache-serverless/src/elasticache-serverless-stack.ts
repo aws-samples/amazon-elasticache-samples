@@ -10,10 +10,12 @@ export class ElasticacheServerlessStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
     const elastiCacheRedisPort = 6379;
+    const elastiCacheRedisPortReadOnly = 6380;
     const elastiCacheVPCName = "ElastiCacheVPC";
     const elastiCacheSubnetIds = [];
     const elastiCacheSubnetGroupName = "ElastiCacheSubnetGroup";
     const elastiCacheSecurityGroupName = "ElastiCacheSecurityGroup";
+    const elastiCacheServerlessName = "ElastiCacheServerless";
 
     this.vpc = new EC2.Vpc(this, elastiCacheVPCName.toLowerCase());
 
@@ -38,6 +40,14 @@ export class ElasticacheServerlessStack extends cdk.Stack {
       description: "ElastiCache Security Group CDK",
       securityGroupName: elastiCacheSecurityGroupName.toLowerCase(),
     });
-    elastiCacheSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(elastiCacheRedisPort), "ElastiCache for RedisPort")
+    elastiCacheSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(elastiCacheRedisPort), "ElastiCache for Redis Port");
+    elastiCacheSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(elastiCacheRedisPortReadOnly), "ElastiCache for Redis Read Only Port");
+    
+    const elastiCacheServerless = new ElastiCache.CfnServerlessCache(this, elastiCacheServerlessName.toLowerCase(), {
+      engine: "redis",
+      serverlessCacheName: elastiCacheServerlessName.toLowerCase(),
+      securityGroupIds: [elastiCacheSecurityGroup.securityGroupId],
+      subnetIds: elastiCacheSubnetIds,
+    });
   }
 }
