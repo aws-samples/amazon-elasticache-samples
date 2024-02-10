@@ -7,7 +7,7 @@ Pre-requisites
 
 Clone this repository
 ```bash
-git clone git@github.com:aws-samples/amazon-elasticache-samples.git
+git clone https://github.com/aws-samples/amazon-elasticache-samples.git
 ```
 
 Enter this folder
