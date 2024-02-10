@@ -24,6 +24,18 @@ The following are tutorials covering various use cases for [Amazon ElastiCache](
 
 - [Flask Redis Session Management](./webinars/flask-redis-session/) - This is a simple Flask web application that demonstrates user session management using Redis as the session storage.
 
+## DevOps
+
+Deploy infrastructe as code
+
+### AWS CDK [Cloud Development Kit]
+
+#### TypeScript
+
+- [Amazon ElastiCache Serverless for Memached](devops/aws-cdk/typescript/elasticache-serverless-memcached-minimal/README.md)
+- [Amazon ElastiCache Serverless for Redis](devops/aws-cdk/typescript/elasticache-serverless-redis-minimal/README.md)
+- [Amazon ElastiCache for Redis Cluster Mode Disabled](devops/aws-cdk/typescript/elasticache-redis-cmd/README.md)
+
 ---
 
 ## Security

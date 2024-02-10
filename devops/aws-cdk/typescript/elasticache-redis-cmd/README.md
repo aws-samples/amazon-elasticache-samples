@@ -1,6 +1,54 @@
-# Amazon ElastiCache for Redis [CDK Stack]
+# Amazon ElastiCache for Redis Cluster Mode Disabled [CDK Stack]
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+Pre-requisites
+- [Git](https://git-scm.com/)
+- [NodeJS](https://nodejs.org/en)
+- [AWS CDK](https://github.com/aws/aws-cdk)
+
+Clone this repository
+```bash
+git clone git@github.com:aws-samples/amazon-elasticache-samples.git
+```
+
+Enter this folder
+```bash
+devops/aws-cdk/typescript/elasticache-redis-cmd/
+```
+
+Install dependencies
+```bash
+npm install
+```
+
+Deploy Amazon ElastiCache for Redis Cluster Mode Disabled
+```bash
+cdk synth; cdk deploy --require-approval never
+```
+
+Cleanup your environment
+```bash
+cdk destroy -f
+```
+
+## How does it work?
+
+Snippet from `src/elasticache-redis-cmd-stack.ts`
+
+```typescript
+const elastiCacheRedisCMD = new ElastiCache.CfnReplicationGroup(
+    this,
+    elastiCacheRedisCMDName.toLowerCase(),
+    {
+        replicationGroupDescription: "ElastiCache for Redis Cluster Mode Enabled CDK",
+        numCacheClusters: 2,
+        automaticFailoverEnabled: true,
+        engine: "redis",
+        cacheNodeType: "cache.t4g.micro",
+        cacheSubnetGroupName: elastiCacheSubnetGroup.ref,
+        securityGroupIds: [elastiCacheSecurityGroup.securityGroupId]
+    }
+);
+```
 
 ## Useful commands
 

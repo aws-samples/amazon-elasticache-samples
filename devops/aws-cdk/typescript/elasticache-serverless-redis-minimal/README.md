@@ -1,6 +1,46 @@
 # Amazon ElastiCache Serverless for Redis [Minimal CDK]
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+Pre-requisites
+- [Git](https://git-scm.com/)
+- [NodeJS](https://nodejs.org/en)
+- [AWS CDK](https://github.com/aws/aws-cdk)
+
+Clone this repository
+```bash
+git clone git@github.com:aws-samples/amazon-elasticache-samples.git
+```
+
+Enter this folder
+```bash
+devops/aws-cdk/typescript/elasticache-serverless-redis-minimal/
+```
+
+Install dependencies
+```bash
+npm install
+```
+
+Deploy Amazon ElastiCache for Redis Cluster Mode Disabled
+```bash
+cdk synth; cdk deploy --require-approval never
+```
+
+Cleanup your environment
+```bash
+cdk destroy -f
+```
+
+## How does it work?
+
+Snippet from `src/elasticache-serverless-minimal-stack.ts`
+
+```typescript
+const elastiCacheServerlessName = "ElastiCacheServerlessRedis";
+new ElastiCache.CfnServerlessCache(this, "ServerlessCache", {
+    engine: "redis",
+    serverlessCacheName: elastiCacheServerlessName.toLowerCase(),
+});
+```
 
 ## Useful commands
 
