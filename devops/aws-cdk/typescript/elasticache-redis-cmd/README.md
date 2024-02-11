@@ -12,7 +12,7 @@ git clone https://github.com/aws-samples/amazon-elasticache-samples.git
 
 Enter this folder
 ```bash
-devops/aws-cdk/typescript/elasticache-redis-cmd/
+cd devops/aws-cdk/typescript/elasticache-redis-cmd/
 ```
 
 Install dependencies
