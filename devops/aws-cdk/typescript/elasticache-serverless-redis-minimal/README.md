@@ -18,6 +18,7 @@ devops/aws-cdk/typescript/elasticache-serverless-redis-minimal/
 Install dependencies
 ```bash
 npm install
+cdk bootstrap
 ```
 
 Deploy Amazon ElastiCache for Redis Cluster Mode Disabled
