@@ -7,6 +7,7 @@ Samples and documentation for using the [Amazon ElastiCache](https://aws.amazon.
 ## Blogs
 
 - [Online Feature Store](./blogs/feast-aws-credit-scoring/) Building online feature stores on AWS with Amazon ElastiCache for Redis to support mission-critical ML use cases that require ultra-low latency and high throughput. [Build an ultra-low latency online feature store for real-time inferencing using Amazon ElastiCache for Redis](https://aws.amazon.com/blogs/database/build-an-ultra-low-latency-online-feature-store-for-real-time-inferencing-using-amazon-elasticache-for-redis/)
+- [Database Caching](./database-caching/) - Learn how to create a query cache for a relational database using ElastiCache for Redis.  In this tutorial, we take you through the process of deploying an Amazon RDS MySQL database and integrating an Amazon ElastiCache Redis cluster in front of the RDS instance in order to reduce query latency for often run MySQL queries.
 
 ## Hands-On Tutorials
 
