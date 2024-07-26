@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "aws-sdk-elasticache"
+version = "0.1.0"
+description = ""
+authors = ["Roberto Luna Rojas <roberto.luna.rojas@gmail.com>"]
+readme = "README.md"
+packages = [{include = "aws_sdk_elasticache"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+python-dotenv = "^1.0.1"
+boto3 = "^1.34.38"
+pydantic = "^2.6.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

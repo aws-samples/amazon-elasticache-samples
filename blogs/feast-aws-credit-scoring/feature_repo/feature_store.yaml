@@ -1,0 +1,14 @@
+project: credit_scoring_aws
+registry: registry.db
+provider: aws
+online_store:
+    type: dynamodb
+    region: us-west-2
+offline_store:
+    type: redshift
+    cluster_id: [SET YOUR CLUSTER ID]
+    region: us-west-2
+    user: admin
+    database: dev
+    s3_staging_location: [SET YOUR BUCKET]
+    iam_role: [SET YOUR ARN]
