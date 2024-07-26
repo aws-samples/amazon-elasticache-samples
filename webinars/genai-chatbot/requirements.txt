@@ -10,7 +10,7 @@ blinker==1.6.3
 boto3==1.28.70
 botocore==1.31.70
 cachetools==5.3.2
-certifi==2023.7.22
+certifi==2024.7.4
 charset-normalizer==3.3.1
 click==8.1.7
 colorama==0.4.4
