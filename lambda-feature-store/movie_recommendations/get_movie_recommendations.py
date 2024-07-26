@@ -1,3 +1,6 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
 import datetime
 import os
 import rediscluster
@@ -41,6 +44,7 @@ def handler(event, context):
             "statusCode": 500,
             "body": f"Found an exception: '{e}'"
         }
+
 
 def connect(redis_host_endpoint):
     # If you are using different port number, please update here.
