@@ -1,6 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 
+import os
 import logging  # Import the logging module for logging purposes
 import streamlit as st  # Import the Streamlit library for building interactive web apps
 import chatbot_lib as glib  # Import a custom module named 'chatbot_lib'
