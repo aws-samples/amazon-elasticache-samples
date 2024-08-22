@@ -1,0 +1,31 @@
+Requirements:
+
+AWC CLI installed on the host and AWS credentials configured for more informaiton  http://aws.amazon.com/cli/
+Python 3.x preferably 3.8
+
+Limitations:
+
+The this scipt uses the defaul AWS CLI profile.
+
+Installation:
+
+Create a directory in your home directory called cost-calculator
+Change to that directory then execute the following steps
+Copy or clone the content to the newly created directory
+
+tar -zxvf cost-calcualtor.tar.gz
+python3.8 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+How to run it:
+
+python ./cost-calculator.py --region us-east-1 --cluster inmemorycluster <--day-range 1> <--output hourly_cost_estimate.scv>
+
+parameters:
+--region AWS region name
+--cluster ElastiCache cluster name
+optional parameters: 
+--day-range: default value of 1 i.e. for the past 24 hours one calculation per hour. 
+--output: CSV file name, default value cost_estimate_cluster_name_"%H:%M_%d_%m_%Y".csv
