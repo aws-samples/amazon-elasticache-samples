@@ -8,15 +8,8 @@ Tools and documentation for using the [Amazon ElastiCache](https://aws.amazon.co
 
 A script that will examine your current managed ElastiCache running on provisioned instances using the OSS Redis compatible engine. The script will estimate the hourly ElastiCache serverless cost of the workload based on passed performance metrics.
 
-## Blogs
 
-## Hands-On Tutorials
-
-## Webinars
-
-## DevOps
-
-### AWS CDK [Cloud Development Kit]
+## AWS CDK [Cloud Development Kit]
 
 #### TypeScript
 
