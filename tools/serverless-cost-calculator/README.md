@@ -26,12 +26,20 @@ pip install -r requirements.txt
 python ./cost-calculator.py --region us-east-1 --cluster cluster-name <--day-range 1> <--output hourly_cost_estimate.scv>
 ```
 
-# parameters
-
-mandatory parameters:
+## Mandatory parameters
 --region AWS region name
+
 --cluster ElastiCache cluster name
 
-optional parameters: 
+### Optional parameters 
 --day-range: default value of 1. The number of day to calculate estimated AWS ElastiCache cost in one hour increments.
+
 --output: default value cost_estimate_cluster_name_"%H:%M_%d_%m_%Y".csv. The name of the output file in CSV format.
+
+## Security
+
+See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
+## License
+
+This library is licensed under the MIT-0 License. See the LICENSE file.
