@@ -38,40 +38,21 @@ except Exception as e:
         sys.exit(1)
 
 
-# Function to get the primary and all nodes of a cluster
+# Function to get the all nodes of a cluster
 def get_nodes(cluster_id):
     """Retrieve primary nodes considering cluster mode enabled scenarios."""
     try:
         response = elasticache.describe_replication_groups(ReplicationGroupId=cluster_id)
-        node_groups = response['ReplicationGroups'][0].get('NodeGroups', [])
+        all_nodes = response['ReplicationGroups'][0].get('MemberClusters', [])
 
-        primary_nodes = []
-        all_nodes = []
-
-        if not response['ReplicationGroups'][0].get('ClusterEnabled'):
-            # Is Cluster mode disabled
-            for node_group in node_groups:
-                for node in node_group['NodeGroupMembers']:
-                    all_nodes.append(node['CacheClusterId'])
-                    # print(node['CurrentRole'])
-                    if node['CurrentRole'] == 'primary':
-                        primary_nodes.append(node['CacheClusterId'])
-        else:
-            # Is Cluster mode enabled 
-            for node_group in node_groups:
-                primary_node = node_group['NodeGroupMembers'][0]['CacheClusterId']
-                primary_nodes.append(primary_node)
-                all_nodes.extend([node['CacheClusterId'] for node in node_group['NodeGroupMembers']])
-                #reader_nodes.extend([node['CacheClusterId'] for node in node_group['NodeGroupMembers'] if node['CurrentRole'] != 'primary'])
-
-        return primary_nodes, all_nodes
+        return all_nodes
 
     except Exception as e:
-        print(f"Error retrieving replication group details: {e}")
+        print(f"Error retrieving cluster node details: {e}")
         sys.exit(1)
 
 
-def get_metric_data(metric_name, node_id, start_time, end_time, stat='Average'):
+def get_metric_data(metric_name, node_id, start_time, end_time, period=3600, stat='Average'):
     """Aggregate metric data for given node ID over the specified time range."""
 
     aggregated_data = {}
@@ -82,7 +63,7 @@ def get_metric_data(metric_name, node_id, start_time, end_time, stat='Average'):
             Dimensions=[{'Name': 'CacheClusterId', 'Value': node_id}],
             StartTime=start_time,
             EndTime=end_time,
-            Period=3600,  # 1 hour
+            Period=period,  # default 3600 seconds or 1 hour
             Statistics=[stat],
         )
         #  Unit='Megabytes',
@@ -92,54 +73,61 @@ def get_metric_data(metric_name, node_id, start_time, end_time, stat='Average'):
             if timestamp not in aggregated_data:
                 aggregated_data[timestamp] = datapoint[stat]
             else:
-                print('datapoint in aggreage accumulate data')
+                # print('datapoint in aggreage accumulate data')
                 aggregated_data[timestamp] += datapoint[stat]
     return aggregated_data
 
 
 def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
-    primary_nodes, all_nodes = get_nodes(cluster_id)
+    """Main function that collects displays, and saves metrics data to a file."""
+
+    primary_nodes = []
+    reader_nodes = []
+
+    all_nodes = get_nodes(cluster_id)
+
+    # Identify the primary and read replica nodes
+    try:
+      l_start_time = end_time - timedelta(minutes=1)
+      for node in all_nodes:
+          aggregated_data = get_metric_data('IsMaster', node, l_start_time, end_time, 60, 'Sum')
+          #print(list(aggregated_data.values())[0])
+
+          if next(iter(aggregated_data.values())) == 1.0:
+             primary_nodes.append(node)
+          else:
+             reader_nodes.append(node)
+
+    except Exception as e:
+        print(f"No metrics exist for cluster: {e}")
+        sys.exit(1)
+
+    primary_node = primary_nodes[0]
+    reader_node = reader_nodes[0]
+
     num_shards = len(primary_nodes)
-    sp = set(primary_nodes)
-    reader_nodes = [x for x in all_nodes if x not in sp]
     num_readers = len(reader_nodes)
-    num_replicas = int(len(reader_nodes)/num_shards)
+    num_replicas = int(num_readers/num_shards)
+
+    print("Primary node used: " + primary_node)
+    print("Reader node used: " + reader_node)
 
     print("Number of primaries: " + str(num_shards))
     print("Number of replicas: " + str(num_replicas))
-   
-    # Find the first primary node
-    for node in all_nodes:
-        aggregated_data = get_metric_data('IsMaster', node, start_time, end_time, 'Sum')
-        if next(iter(aggregated_data.values())) > 0:
-            primary_node = node
-            break
-
-    # Find the first read replica
-    for node in all_nodes:
-        aggregated_data = get_metric_data('IsMaster', node, start_time, end_time, 'Sum')
-        if next(iter(aggregated_data.values())) == 0:
-            reader_node = node
-            break
-
-    print('Primary node used: ' + primary_node)
-    print('Reader node used: ' + reader_node)
 
     # Prepare data structure for CSV writing
     collected_data = {}
-
-    # time_range = [start_time + timedelta(hours=i) for i in range((end_time - start_time).seconds // 3600)]
 
     for metric in ['NetworkBytesOut', 'BytesUsedForCache', 'EvalBasedCmds', 'EvalBasedCmdsLatency', 'GetTypeCmds', 'NetworkBytesIn', 'NetworkBytesOut', 'ReplicationBytes', 'SetTypeCmds']:
 
         # The the average of the below metrics
         if metric in ['BytesUsedForCache', 'EvalBasedCmdsLatency']:
-            aggregated_data = get_metric_data(metric, primary_node, start_time, end_time, 'Average')
+            aggregated_data = get_metric_data(metric, primary_node, start_time, end_time, stat='Average')
 
         # The sum of values for the rest of the metrics
-        else: 
-            aggregated_data = get_metric_data(metric, primary_node, start_time, end_time, 'Sum')
-        
+        else:
+            aggregated_data = get_metric_data(metric, primary_node, start_time, end_time, stat='Sum')
+
         for timestamp, value in aggregated_data.items():
             if timestamp not in collected_data:
                 collected_data[timestamp] = {}
@@ -147,15 +135,15 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
 
         # For a read replica nodes the metrics GetTypeCmds and NetworkBytesOut are store in special Reader... fileds
         if metric == 'GetTypeCmds':
-            aggregated_data = get_metric_data(metric, reader_node, start_time, end_time, 'Sum')
+            aggregated_data = get_metric_data(metric, reader_node, start_time, end_time, stat='Sum')
             for timestamp, value in aggregated_data.items():
                 collected_data[timestamp]['ReaderGetTypeCmds'] = value
 
 
         if metric == 'NetworkBytesOut':
-            aggregated_data = get_metric_data(metric, reader_node, start_time, end_time, 'Sum')
+            aggregated_data = get_metric_data(metric, reader_node, start_time, end_time, stat='Sum')
             for timestamp, value in aggregated_data.items():
-                collected_data[timestamp]['ReaderNetworkBytesOut'] = value 
+                collected_data[timestamp]['ReaderNetworkBytesOut'] = value
 
     dataKeys = list(collected_data.keys())
     dataKeys.sort()
@@ -164,8 +152,9 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
     # At this point we have all the data sorted and ready to caclucate
 
     import numpy as np
-    import pandas as pd 
+    import pandas as pd
 
+    pd.set_option('display.max_rows', None)
     df = pd.DataFrame(sorted_collected_data)
     df = df.transpose()
 
@@ -181,13 +170,13 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
     columns = ['BytesUsedForCache', 'EvalBasedCmds', 'EvalBasedCmdsLatency', 'GetTypeCmds', 'ReaderGetTypeCmds', 'NetworkBytesIn', 'NetworkBytesOut', 'ReaderNetworkBytesOut', 'ReplicationBytes', 'SetTypeCmds']
     df = df[columns]
     df['TotalSizeMB'] = df['BytesUsedForCache'].div(1000*1000).mul(num_shards).round(2).apply(lambda x : "{:,}".format(x))
-    df['EvaleCPU'] = (df['EvalBasedCmds'].mul(num_shards) * df['EvalBasedCmdsLatency'].div(2)).astype(int) 
+    df['EvaleCPU'] = (df['EvalBasedCmds'].mul(num_shards) * df['EvalBasedCmdsLatency'].div(2)).astype(int)
     df['EvalBasedCmds'] = df['EvalBasedCmds'].mul(num_shards)
     # Prevent division by 0
-    df['AVGInSize'] = np.where(df['SetTypeCmds'] == 0, 0, 
+    df['AVGInSize'] = np.where(df['SetTypeCmds'] == 0, 0,
                             df['NetworkBytesIn'].div(1000)/df['SetTypeCmds'].astype(int))
     # If avg inbound size is >0< 1 KB round to 1 by using the number of SetTypeCmds
-    df['IneCPU'] = np.where((df['AVGInSize'] > 0) & (df['AVGInSize'] < 1), df['SetTypeCmds'] * num_shards,
+    df['PrimaryIneCPU'] = np.where((df['AVGInSize'] > 0) & (df['AVGInSize'] < 1), df['SetTypeCmds'] * num_shards,
                             df['SetTypeCmds'] * df['AVGInSize'] * num_shards)
 
     df['GetTypeCmds'] = df['GetTypeCmds'].astype(int)
@@ -195,28 +184,29 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
 
     # Prevent division by 0
     # Remove replication bytes from primary node only as that does not count
-    df['AVGOutSize'] = np.where(df['GetTypeCmds'] == 0, 0,  
+    df['AVGOutSize'] = np.where(df['GetTypeCmds'] == 0, 0,
                                ((df['NetworkBytesOut'].div(1000))-(df['ReplicationBytes'].div(1000).mul(num_readers)))/df['GetTypeCmds'].astype(int))
     # Not removing replication  df['NetworkBytesOut'].div(1000)/df['GetTypeCmds'].astype(int))
 
-    df['ReaderAVGOutSize'] = np.where(df['ReaderGetTypeCmds'] == 0, 0,  
+    # Prevent division by 0
+    df['ReaderAVGOutSize'] = np.where(df['ReaderGetTypeCmds'] == 0, 0,
                              df['ReaderNetworkBytesOut'].div(1000)/df['ReaderGetTypeCmds'].astype(int))
 
     # If avg outbound size is >0 and <1 KB round to 1 by using the number of SetTypeCmds
-    df['PrimaryOuteCPU'] = np.where((df['AVGOutSize'] > 0) & (df['AVGOutSize'] < 1), df['GetTypeCmds'] * num_shards, 
+    df['PrimaryOuteCPU'] = np.where((df['AVGOutSize'] > 0) & (df['AVGOutSize'] < 1), df['GetTypeCmds'] * num_shards,
                               df['GetTypeCmds'] * df['AVGOutSize'] * num_shards)
 
     # Do the same for the reader but multiply by the number of readers
-    df['ReaderOuteCPU'] = np.where((df['ReaderAVGOutSize'] > 0) & (df['ReaderAVGOutSize'] <= 1), df['ReaderGetTypeCmds'].astype(int) * num_readers, 
+    df['ReaderOuteCPU'] = np.where((df['ReaderAVGOutSize'] > 0) & (df['ReaderAVGOutSize'] <= 1), df['ReaderGetTypeCmds'].astype(int) * num_readers,
                             df['ReaderGetTypeCmds'].astype(int) * df['ReaderAVGOutSize'] * num_readers)
 
     df['SetTypeCmds'] = df['SetTypeCmds'].astype(int)
     # Round up storage to 1G if below 1G
     df['StorageCost'] = np.where(df['BytesUsedForCache'].div(1000*1000*1000).mul(num_shards).round(2) < 1, (0.125), \
-                                 df['BytesUsedForCache'].div(1000*1000*1000).mul(num_shards).mul(0.125).round(2)) 
+                                 df['BytesUsedForCache'].div(1000*1000*1000).mul(num_shards).mul(0.125).round(2))
 
     df['eCPUCost'] = df['EvaleCPU'].mul(0.0000000034).apply(lambda x: round(x, 4)) + \
-                     df['IneCPU'].mul(0.0000000034).apply(lambda x: round(x, 4)) + \
+                     df['PrimaryIneCPU'].mul(0.0000000034).apply(lambda x: round(x, 4)) + \
                      df['PrimaryOuteCPU'].mul(0.0000000034).apply(lambda x: round(x, 4)) + \
                      df['ReaderOuteCPU'].mul(0.0000000034).apply(lambda x: round(x, 4))
     df['TotalCost'] = (df['StorageCost'] + df['eCPUCost']).round(3)
@@ -224,8 +214,8 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
     # df.index.name = 'Date Time'
     print("")
     # print(df[['TotalSizeMB', 'GetTypeCmds', 'NetworkBytesOut', 'ReaderGetTypeCmds', 'ReaderNetworkBytesOut', 'ReaderAVGOutSize', 'SetTypeCmds', 'EvalBasedCmds', 'StorageCost', 'eCPUCost', 'TotalCost']])
-    print(df[['TotalSizeMB', 'EvaleCPU', 'IneCPU', 'PrimaryOuteCPU', 'ReaderOuteCPU', 'StorageCost', 'eCPUCost', 'TotalCost']])
-    
+    print(df[['TotalSizeMB', 'EvaleCPU', 'PrimaryIneCPU', 'PrimaryOuteCPU', 'ReaderOuteCPU', 'StorageCost', 'eCPUCost', 'TotalCost']])
+
     with open(filename, 'w', newline='') as csvfile:
         df.to_csv(csvfile, index=True)
 
