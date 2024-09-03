@@ -79,7 +79,7 @@ def get_metric_data(metric_name, node_id, start_time, end_time, period=3600, sta
 
 
 def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
-    """Main function that collects displays, and saves metrics data to a file."""
+    """Main function that collects, displays, and saves metrics data to a  csv file."""
 
     primary_nodes = []
     reader_nodes = []
@@ -88,6 +88,8 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
 
     # Identify the primary and read replica nodes
     try:
+      # Find the list of current primary and read replica nodes
+      # Based on the role each cluster node plays in the last minute
       l_start_time = end_time - timedelta(minutes=1)
       for node in all_nodes:
           aggregated_data = get_metric_data('IsMaster', node, l_start_time, end_time, 60, 'Sum')
@@ -133,17 +135,13 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
                 collected_data[timestamp] = {}
             collected_data[timestamp][metric] = value
 
-        # For a read replica nodes the metrics GetTypeCmds and NetworkBytesOut are store in special Reader... fileds
-        if metric == 'GetTypeCmds':
+    # For a read replica nodes the metrics GetTypeCmds and NetworkBytesOut are needed only
+    #  and stored in special Reader<metric> field
+    for metric in ['GetTypeCmds', 'NetworkBytesOut']:
             aggregated_data = get_metric_data(metric, reader_node, start_time, end_time, stat='Sum')
+            reader_metric = 'Reader' + metric
             for timestamp, value in aggregated_data.items():
-                collected_data[timestamp]['ReaderGetTypeCmds'] = value
-
-
-        if metric == 'NetworkBytesOut':
-            aggregated_data = get_metric_data(metric, reader_node, start_time, end_time, stat='Sum')
-            for timestamp, value in aggregated_data.items():
-                collected_data[timestamp]['ReaderNetworkBytesOut'] = value
+                collected_data[timestamp][reader_metric] = value
 
     dataKeys = list(collected_data.keys())
     dataKeys.sort()
