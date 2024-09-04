@@ -88,8 +88,8 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
 
     # Identify the primary and read replica nodes
     try:
-      # Find the list of current primary and read replica nodes
-      # Based on the role each cluster node plays in the last minute
+      # Generate a list of current primary and read replica nodes
+      # based on the role each cluster node played in the last minute
       l_start_time = end_time - timedelta(minutes=1)
       for node in all_nodes:
           aggregated_data = get_metric_data('IsMaster', node, l_start_time, end_time, 60, 'Sum')
@@ -122,11 +122,11 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
 
     for metric in ['NetworkBytesOut', 'BytesUsedForCache', 'EvalBasedCmds', 'EvalBasedCmdsLatency', 'GetTypeCmds', 'NetworkBytesIn', 'NetworkBytesOut', 'ReplicationBytes', 'SetTypeCmds']:
 
-        # The the average of the below metrics
+        # Retrieve the average for the below metrics
         if metric in ['BytesUsedForCache', 'EvalBasedCmdsLatency']:
             aggregated_data = get_metric_data(metric, primary_node, start_time, end_time, stat='Average')
 
-        # The sum of values for the rest of the metrics
+        # The sum for the rest of the metrics
         else:
             aggregated_data = get_metric_data(metric, primary_node, start_time, end_time, stat='Sum')
 
@@ -136,7 +136,7 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
             collected_data[timestamp][metric] = value
 
     # For a read replica nodes the metrics GetTypeCmds and NetworkBytesOut are needed only
-    #  and stored in special Reader<metric> field
+    # and are stored in special Reader<metric> field
     for metric in ['GetTypeCmds', 'NetworkBytesOut']:
             aggregated_data = get_metric_data(metric, reader_node, start_time, end_time, stat='Sum')
             reader_metric = 'Reader' + metric
@@ -147,7 +147,7 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
     dataKeys.sort()
     sorted_collected_data = {i: collected_data[i] for i in dataKeys}
 
-    # At this point we have all the data sorted and ready to caclucate
+    # At this point we have all the data sorted and ready to calculate
 
     import numpy as np
     import pandas as pd
@@ -156,7 +156,7 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
     df = pd.DataFrame(sorted_collected_data)
     df = df.transpose()
 
-    # Since certain fields might not be populated set them to 0
+    # Since certain fields might not be populated, for lack of data, set them to 0
     df['GetTypeCmds'] = df.get('GetTypeCmds', 0)
     df['SetTypeCmds'] = df.get('SetTypeCmds', 0)
     df['EvalBasedCmds'] = df.get('EvalBasedCmds', 0)

@@ -36,9 +36,10 @@ python ./cost-calculator.py --region us-east-1 --cluster cluster-name <--day-ran
 
 --output: default value cost_estimate_cluster_name_"%H:%M_%d_%m_%Y".csv. The name of the output file in CSV format.
 
-## Security
+## Authors and acknowledgment
 
-See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+Author: Steven Hancz shancz@amazon.com 
+Contributors: Lakshmi Peri lvperi@amazon.com, Yann Richard yannrich@amazon.com
 
 ## License
 
