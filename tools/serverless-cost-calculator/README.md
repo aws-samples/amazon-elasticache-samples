@@ -6,7 +6,11 @@
 ## Limitations
 
 This script uses the default AWS CLI profile to connect to a cluster in the default profile.
-In order to speed up calculations the script assumes even key distribution among all shards and even workload distribution. Uneven key distribution and or a hot spot will effect calculation accuracy.
+In order to speed up calculations the script assumes even key distribution among all shards and even workload distribution. Uneven key distribution and or a hot spot will effect calculation accuracy. The costs calculated are published rates at the time of publishing.
+
+## Compute
+
+This calculator uses the Amazon ElastiCache Valkey compute engine cost bases.
 
 ## Installation
 
