@@ -37,6 +37,9 @@ Deploy infrastructe as code
 - [Amazon ElastiCache with Redis OSS compatibility Cluster Mode Disabled](devops/aws-cdk/typescript/elasticache-redis-cmd/README.md)
 
 ---
+## Tools 
+Tools and documentation for using the [Amazon ElastiCache](https://aws.amazon.com/elasticache/)
+[Serverless cost calculator] (tools/serverless-cost-calculator/README.md)
 
 ## Security
 
