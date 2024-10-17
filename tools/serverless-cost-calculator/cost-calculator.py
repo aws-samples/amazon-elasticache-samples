@@ -124,7 +124,7 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
     collected_data = {}
 
     # For a primary node collect the following metrics
-    for metric in ['NetworkBytesOut', 'BytesUsedForCache', 'EvalBasedCmds', 'EvalBasedCmdsLatency', 'GetTypeCmds', 'NetworkBytesIn', 'NetworkBytesOut', 'ReplicationBytes', 'SetTypeCmds']:
+    for metric in ['BytesUsedForCache', 'EvalBasedCmds', 'EvalBasedCmdsLatency', 'GetTypeCmds', 'NetworkBytesIn', 'NetworkBytesOut', 'ReplicationBytes', 'SetTypeCmds']:
 
         # Retrieve the average for the below metrics
         if metric in ['BytesUsedForCache', 'EvalBasedCmdsLatency']:
