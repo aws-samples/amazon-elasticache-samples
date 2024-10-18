@@ -28,7 +28,7 @@ pip install -r requirements.txt
 ## How to run it
 
 ```bash
-python ./cost-calculator.py --region us-east-1 --cluster cluster-name <--day-range 1> <--output hourly_cost_estimate.scv>
+python ./cost-calculator.py --region us-east-1 --cluster cluster-name <--day-range 1> <--output hourly_cost_estimate.csv>
 ```
 
 ## Mandatory parameters
