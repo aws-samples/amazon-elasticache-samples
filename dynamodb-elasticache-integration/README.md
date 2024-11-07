@@ -5,7 +5,7 @@
 This repository provides a reference implementation (in Python) showing how to
 integrate DynamoDB and Elasticache. It accompanies the AWS Prescriptive
 Guidance "A pattern for Amazon DynamoDB and Amazon ElastiCache integration
-using read-through caching" available at <link>.
+using read-through caching" available at https://docs.aws.amazon.com/prescriptive-guidance/latest/dynamodb-elasticache-integration/.
 
 The CacheClient included here presents the usual DynamoDB client API to callers
 and internally provides read-through caching using ElastiCache / Redis as the
