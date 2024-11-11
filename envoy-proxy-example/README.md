@@ -94,10 +94,6 @@ From your EC2 system, clone the repository:
 
 `git clone https://github.com/aws-samples/amazon-elasticache-samples.git`
 
-Change directory to the repo:
-
-`cd amazon-elasticache-samples`
-
 ### Install and setup Docker on the EC2 system
 
 The following commands will install Docker, add your user to run Docker, and restart the docker daemon.
@@ -110,6 +106,10 @@ sudo systemctl start docker
 ```
 
 Log out and then SSH back in to ensure the Docker group permissions were applied.
+
+Change directory to the Envoy directory:
+
+`cd amazon-elasticache-samples/envoy-proxy-example/`
 
 ### Create another EC2 security group
 
@@ -157,6 +157,10 @@ You'll need to wait for ElastiCache clusters to provision because you'll need th
 ### Setup the yaml file
 
 On the EC2 system, copy one of the example yaml files to `envoy.yaml` and modify it to suit your needs.
+
+As an example, you can run the following command to copy the dual-write yaml file to a new file:
+
+`cp dual-write.yaml envoy.yaml`
 
 - [dual-write.yaml](dual-write.yaml) Writes to cluster1 and cluster2
 - [triple-write.yaml](triple-write.yaml) Writes to cluster1, cluster2, cluster3
