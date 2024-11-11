@@ -13,8 +13,8 @@ data store.
 
 ## Getting started
 
-The CacheClient class works as a client-side shim that's drop-in compatible
-with the existing DynamoDB client. Construct a CacheClient by passing a
+The CacheClient class works as a client-side shim that presents the same
+interface as the usual DynamoDB client. Construct a CacheClient by passing a
 DynamoDB client and a Redis client, then use the shim instead of the usual
 DynamoDB client. Optionally specify a TTL duration in seconds.
 
@@ -150,3 +150,17 @@ start again with an empty cache.
 
 Code by Jason Hunter, test work by Arjan Schaaf, helpful technical advice by
 Damon LaCaille and Roberto Luna Rojas.
+
+
+## License
+
+Refer to the LICENSE file in the root of the repository. Please note specifically
+this part of the LICENSE:
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
