@@ -4,27 +4,32 @@
 
 This application demonstrates how to the Valkey-GLIDE client, compress data in a Python app, then save it to Valkey (or Redis OSS), and show the compression results.
 
+## Benefits
+
+By using compression in your application, you can save significant space. Since Valkey and Redis OSS are both in-memory data stores, memory can be consumed quickly, especially with very large key values.
+
+This code shows a simple way of compressing string values and saving them. Depending on the number of keys and words you specify in parameters, you can see anywhere from 20% to 50% compression.
+
 ## Requirements
 
 The following libraries, defined in `requirements.txt`, are required:
 
-lz4
-valkey-glide
-numpy
-python-dotenv
-
+- lz4
+- valkey-glide
+- numpy
+- python-dotenv
 
 ## Usage
 
 Run with the `-h` flag to see the options:
 
-```bash
+```text
 ./app.py -h
 ```
 
 Output:
 
-```bash
+```text
 usage: app.py [-h] [-k NUM_OF_KEYS] [-w NUM_OF_WORDS] [-e ENDPOINT] [-p N] [-c] [-s]
               [-a] [-v]
 
@@ -49,12 +54,12 @@ options:
 
 ## Example
 
-Command:
+Command to launch against a Valkey or Redis OSS cluster with TLS enabled, providing a username and password, and in cluster mode.
 
-```bash
+```text
 export USER_NAME="my_valkey_or_redis_user"
 export USER_PASS="my_valkey_or_redis_password"
-./app.py -e my_cluster_dns_name -p 3679 -s -a
+./app.py -e my_cluster_dns_name -k 1000 -w 400 -s -a -c
 ```
 
 Output:
@@ -67,15 +72,10 @@ NOTE! Remember to delete keys with the prefix of 'testkeys:' after running this 
 
 RESULTS:
 
-       Total raw bytes written: 3,084,165
-Total compressed bytes written: 2,733,604
+       Total raw bytes written: 2,147,118
+Total compressed bytes written: 1,186,749
 
-     Average compression ratio: 0.11249866244241477
+     Average compression ratio: 0.4471723474195586
 
-Compression ratio is less than 30%. Try a different number
-of words or keys to increase compression ratio.
-
-Executed in 3.96 seconds
-
+Executed in 3.51 seconds
 ```
-

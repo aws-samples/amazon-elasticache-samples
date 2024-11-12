@@ -41,16 +41,9 @@ class Connection:
             
             print ('')
             print ('Testing connection to %s:%s - please wait...' % (args.endpoint, args.port))
-            self.addresses = [NodeAddress (args.endpoint, int(args.port))]
-            self.credentials = None
             
-            if USER_PASS is not None:
-                
-                self.credentials = ServerCredentials (USER_PASS, USER_NAME)
-                
-            else:
-                
-                self.credentials = ServerCredentials (USER_NAME)
+            self.addresses = [NodeAddress (args.endpoint, int(args.port))]
+            self.credentials = ServerCredentials (USER_PASS, USER_NAME)
 
             if args.cluster_mode_enabled:
 
@@ -79,7 +72,6 @@ class Connection:
             if response_text == "PONG":
                 
                 print ('Successful connection!')
-                print ('')
 
         except Exception as e:
                     
@@ -189,4 +181,3 @@ async def main():
 loop = asyncio.get_event_loop()
 loop.set_exception_handler(handle_exception)
 loop.run_until_complete(main())
-
