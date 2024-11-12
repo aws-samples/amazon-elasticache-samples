@@ -1,5 +1,0 @@
-lz4
-valkey-glide
-numpy
-python-dotenv
-
