@@ -29,6 +29,14 @@ In order to speed up calculations the script assumes even key distribution among
 
 This calculator uses the Amazon ElastiCache Valkey compute engine cost bases.
 
+## Execution Environment
+
+This script is flexible and can be run in various environments, provided they have access to valid AWS credentials. Suitable execution environments include:
+
+1. Local Machine: Run the script on your personal computer or workstation.
+2. [AWS CloudShell](https://aws.amazon.com/cloudshell): Execute directly from the AWS Management Console using CloudShell.
+3. [EC2 Instance](https://aws.amazon.com/ec2): Deploy and run on an Amazon EC2 instance within your AWS environment.
+
 ## Installation
 
 Cone the repository and change to cost-calculator directory then execute the following steps
