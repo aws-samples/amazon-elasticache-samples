@@ -69,7 +69,7 @@ python ./cost-calculator.py --region us-east-1 --cluster cluster-name <--day-ran
 ## Authors and acknowledgment
 
 Author: Steven Hancz shancz@amazon.com 
-Contributors: Lakshmi Peri lvperi@amazon.com, Yann Richard yannrich@amazon.com
+Contributors: Lakshmi Peri lvperi@amazon.com, Yann Richard yannrich@amazon.com, Luis Morales lluim@amazon.com
 
 ## License
 
