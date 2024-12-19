@@ -1,3 +1,20 @@
+# ElastiCache Serverless Valkey Cost Estimator
+
+The ElastiCache Serverless Valkey Cost Estimator is a Python script designed to help AWS users estimate the potential costs of migrating their existing ElastiCache clusters to the serverless Valkey engine. This tool analyzes the current usage patterns of your ElastiCache clusters and projects what those workloads would cost if run on the Valkey serverless architecture.
+
+### Key Features:
+
+- **Serverless Cost Projection**: Uses metrics from your current ElastiCache clusters to estimate costs for the Valkey serverless engine.
+- **CloudWatch Integration**: Leverages AWS CloudWatch metrics to gather accurate usage data from your existing clusters.
+- **Flexible Analysis Period**: Allows cost estimation over custom time ranges, from a single day to multiple weeks.
+- **Comprehensive Metric Analysis**: Processes various ElastiCache metrics including memory usage, network I/O, and command executions to provide a holistic cost estimate.
+- **Detailed CSV Output**: Generates an hourly breakdown of projected costs in an easy-to-analyze CSV format.
+- **Versatile Deployment**: Can be run in various environments including local machines, AWS CloudShell, or EC2 instances.
+
+Whether you're a cloud architect, DevOps engineer, or finance analyst, this tool provides the data you need to make informed decisions about your ElastiCache deployments. By understanding your usage patterns and associated costs, you can optimize your cache strategy, improve performance, and control expenses.
+
+Get started with the ElastiCache Cost Calculator to gain deeper insights into your AWS ElastiCache usage and costs!
+
 ## Requirements
 
 * AWC CLI installed on the host and AWS credentials configured for more information  http://aws.amazon.com/cli/
