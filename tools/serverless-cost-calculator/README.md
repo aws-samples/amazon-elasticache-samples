@@ -39,7 +39,7 @@ This script is flexible and can be run in various environments, provided they ha
 
 ## Installation
 
-Cone the repository and change to cost-calculator directory then execute the following steps
+Clone the [repository](https://github.com/aws-samples/amazon-elasticache-samples) and change to `tools/serverless-cost-calculator` directory then execute the following steps
 
 * Create a virtual python environment and install the requirements
 
