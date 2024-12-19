@@ -17,7 +17,7 @@ Get started with the ElastiCache Cost Calculator to gain deeper insights into yo
 
 ## Requirements
 
-* AWC CLI installed on the host and AWS credentials configured for more information  http://aws.amazon.com/cli/
+* [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed on the host and AWS credentials configured for more information  http://aws.amazon.com/cli/
 * Python 3.x preferably 3.8
 
 ## Limitations
