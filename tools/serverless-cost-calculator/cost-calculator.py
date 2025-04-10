@@ -3,7 +3,11 @@ import boto3
 import csv
 from datetime import datetime, timedelta
 import sys
-import string, random
+import string
+import random
+from decimal import Decimal
+import numpy as np
+import pandas as pd
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Collect AWS ElastiCache metrics with specific aggregation rules.')
@@ -14,13 +18,13 @@ parser.add_argument('-o', '--output', required=False, help='Output CSV file name
 args = parser.parse_args()
 
 if not args.region:
-  print("ERROR: Missing region parameter. Please pass in the region name [US-EAST-1, US-EAST-2, and so on]")
-  exit(1)
+    print("ERROR: Missing region parameter. Please pass in the region name [US-EAST-1, US-EAST-2, and so on]")
+    exit(1)
 
 print(f"Region Name: {args.region}")
 if not args.cluster:
-  print("ERROR: Missing cluster name parameter. Please pass in the cluster name <example-elasti-cache>")
-  exit(1)
+    print("ERROR: Missing cluster name parameter. Please pass in the cluster name <example-elasti-cache>")
+    exit(1)
 
 print(f"Cluster Name: {args.cluster}")
 
@@ -29,77 +33,75 @@ if not args.output:
 
 # Initialize AWS clients
 try:
-
     elasticache = boto3.client('elasticache', region_name=args.region)
     cloudwatch = boto3.client('cloudwatch', region_name=args.region)
-
 except Exception as e:
-        print(f"Error initializing AWS client, credential are probably missing: {e}")
-        sys.exit(1)
+    print(f"Error initializing AWS client, credential are probably missing: {e}")
+    sys.exit(1)
 
+def calculate_total_costs(df):
+    """Calculate total costs across the date range"""
+    total_storage_cost = Decimal(str(df['StorageCost'].sum()))
+    total_cpu_cost = Decimal(str(df['eCPUCost'].sum()))
+    total_cost = Decimal(str(df['TotalCost'].sum()))
+    
+    return {
+        'storage_cost': total_storage_cost,
+        'cpu_cost': total_cpu_cost,
+        'total_cost': total_cost,
+        'hours_analyzed': len(df)
+    }
 
-# Function to get the all nodes of a cluster
 def get_nodes(cluster_id):
     """Retrieve primary nodes considering cluster mode enabled scenarios."""
     try:
         response = elasticache.describe_replication_groups(ReplicationGroupId=cluster_id)
         all_nodes = response['ReplicationGroups'][0].get('MemberClusters', [])
-
         return all_nodes
-
     except Exception as e:
         print(f"Error retrieving cluster node details: {e}")
         sys.exit(1)
 
-
 def get_metric_data(metric_name, node_id, start_time, end_time, period=3600, stat='Average'):
     """Aggregate metric data for given node ID over the specified time range."""
-
     aggregated_data = {}
-
+    
     response = cloudwatch.get_metric_statistics(
-            Namespace='AWS/ElastiCache',
-            MetricName=metric_name,
-            Dimensions=[{'Name': 'CacheClusterId', 'Value': node_id}],
-            StartTime=start_time,
-            EndTime=end_time,
-            Period=period,  # default 3600 seconds or 1 hour
-            Statistics=[stat],
-        )
-        #  Unit='Megabytes',
+        Namespace='AWS/ElastiCache',
+        MetricName=metric_name,
+        Dimensions=[{'Name': 'CacheClusterId', 'Value': node_id}],
+        StartTime=start_time,
+        EndTime=end_time,
+        Period=period,  # default 3600 seconds or 1 hour
+        Statistics=[stat],
+    )
 
     for datapoint in response['Datapoints']:
-            timestamp = datapoint['Timestamp'].strftime('%Y-%m-%d %H:%M:%S')
-            if timestamp not in aggregated_data:
-                aggregated_data[timestamp] = datapoint[stat]
-            else:
-                # print('datapoint in aggreage accumulate data')
-                aggregated_data[timestamp] += datapoint[stat]
+        timestamp = datapoint['Timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+        if timestamp not in aggregated_data:
+            aggregated_data[timestamp] = datapoint[stat]
+        else:
+            aggregated_data[timestamp] += datapoint[stat]
     return aggregated_data
 
-
 def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
-    """Main function that collects, displays, and saves metrics data to a  csv file."""
-
+    """Main function that collects, displays, and saves metrics data to a csv file."""
     primary_nodes = []
     reader_nodes = []
-
+    
     all_nodes = get_nodes(cluster_id)
 
     # Identify the primary and read replica nodes
     try:
-      # Generate a list of current primary and read replica nodes
-      # based on the role each cluster node played in the last minute
-      l_start_time = end_time - timedelta(minutes=1)
-      for node in all_nodes:
-          aggregated_data = get_metric_data('IsMaster', node, l_start_time, end_time, 60, 'Sum')
-          #print(list(aggregated_data.values())[0])
-
-          if next(iter(aggregated_data.values())) == 1.0:
-             primary_nodes.append(node)
-          else:
-             reader_nodes.append(node)
-
+        # Generate a list of current primary and read replica nodes
+        # based on the role each cluster node played in the last minute
+        l_start_time = end_time - timedelta(minutes=1)
+        for node in all_nodes:
+            aggregated_data = get_metric_data('IsMaster', node, l_start_time, end_time, 60, 'Sum')
+            if next(iter(aggregated_data.values())) == 1.0:
+                primary_nodes.append(node)
+            else:
+                reader_nodes.append(node)
     except Exception as e:
         print(f"No metrics exist for cluster: {cluster_id}")
         sys.exit(1)
@@ -124,12 +126,11 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
     collected_data = {}
 
     # For a primary node collect the following metrics
-    for metric in ['BytesUsedForCache', 'EvalBasedCmds', 'EvalBasedCmdsLatency', 'GetTypeCmds', 'NetworkBytesIn', 'NetworkBytesOut', 'ReplicationBytes', 'SetTypeCmds']:
-
+    for metric in ['BytesUsedForCache', 'EvalBasedCmds', 'EvalBasedCmdsLatency', 'GetTypeCmds', 
+                   'NetworkBytesIn', 'NetworkBytesOut', 'ReplicationBytes', 'SetTypeCmds']:
         # Retrieve the average for the below metrics
         if metric in ['BytesUsedForCache', 'EvalBasedCmdsLatency']:
             aggregated_data = get_metric_data(metric, primary_node, start_time, end_time, stat='Average')
-
         # The sum for the rest of the metrics
         else:
             aggregated_data = get_metric_data(metric, primary_node, start_time, end_time, stat='Sum')
@@ -140,7 +141,6 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
             collected_data[timestamp][metric] = value
 
     # For a read replica node only the GetTypeCmds and NetworkBytesOut metrics are needed
-    # and are stored in special Reader<metricName> fields
     if reader_node is not None:
         for metric in ['GetTypeCmds', 'NetworkBytesOut']:
             aggregated_data = get_metric_data(metric, reader_node, start_time, end_time, stat='Sum')
@@ -151,11 +151,6 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
     dataKeys = list(collected_data.keys())
     dataKeys.sort()
     sorted_collected_data = {i: collected_data[i] for i in dataKeys}
-
-    # At this point we have all the data sorted and ready to calculate
-
-    import numpy as np
-    import pandas as pd
 
     pd.set_option('display.max_rows', None)
     df = pd.DataFrame(sorted_collected_data)
@@ -171,56 +166,100 @@ def collect_and_write_metrics(cluster_id, start_time, end_time, filename):
     df['ReplicationBytes'] = df.get('ReplicationBytes', 0)
     df = df.fillna(0)
 
-    columns = ['BytesUsedForCache', 'EvalBasedCmds', 'EvalBasedCmdsLatency', 'GetTypeCmds', 'ReaderGetTypeCmds', 'NetworkBytesIn', 'NetworkBytesOut', 'ReaderNetworkBytesOut', 'ReplicationBytes', 'SetTypeCmds']
+    columns = ['BytesUsedForCache', 'EvalBasedCmds', 'EvalBasedCmdsLatency', 'GetTypeCmds', 
+               'ReaderGetTypeCmds', 'NetworkBytesIn', 'NetworkBytesOut', 'ReaderNetworkBytesOut', 
+               'ReplicationBytes', 'SetTypeCmds']
     df = df[columns]
+    
     df['TotalSizeMB'] = df['BytesUsedForCache'].div(1000*1000).mul(num_shards).round(2).apply(lambda x : "{:,}".format(x))
     df['EvaleCPU'] = (df['EvalBasedCmds'].mul(num_shards) * df['EvalBasedCmdsLatency'].div(2)).astype(int)
     df['EvalBasedCmds'] = df['EvalBasedCmds'].mul(num_shards)
+    
     # Prevent division by 0
     df['AVGInSize'] = np.where(df['SetTypeCmds'] == 0, 0,
-                            df['NetworkBytesIn'].div(1000)/df['SetTypeCmds'].astype(int))
-    # If avg inbound size is >0< 1 KB round to 1 by using the number of SetTypeCmds
-    df['PrimaryIneCPU'] = np.where((df['AVGInSize'] > 0) & (df['AVGInSize'] < 1), df['SetTypeCmds'] * num_shards,
-                            df['SetTypeCmds'] * df['AVGInSize'] * num_shards)
+                              df['NetworkBytesIn'].div(1000)/df['SetTypeCmds'].astype(int))
+    
+    df['PrimaryIneCPU'] = np.where((df['AVGInSize'] > 0) & (df['AVGInSize'] < 1), 
+                                  df['SetTypeCmds'] * num_shards,
+                                  df['SetTypeCmds'] * df['AVGInSize'] * num_shards)
 
     df['GetTypeCmds'] = df['GetTypeCmds'].astype(int)
     df['ReaderGetTypeCmds'] = df['ReaderGetTypeCmds'].astype(int)
 
-    # Prevent division by 0
-    # Remove replication bytes from primary node only as that does not count
     df['AVGOutSize'] = np.where(df['GetTypeCmds'] == 0, 0,
-                               ((df['NetworkBytesOut'].div(1000))-(df['ReplicationBytes'].div(1000).mul(num_readers)))/df['GetTypeCmds'].astype(int))
-    # Not removing replication  df['NetworkBytesOut'].div(1000)/df['GetTypeCmds'].astype(int))
+                               ((df['NetworkBytesOut'].div(1000))-
+                                (df['ReplicationBytes'].div(1000).mul(num_readers)))/
+                               df['GetTypeCmds'].astype(int))
 
-    # Prevent division by 0
     df['ReaderAVGOutSize'] = np.where(df['ReaderGetTypeCmds'] == 0, 0,
-                             df['ReaderNetworkBytesOut'].div(1000)/df['ReaderGetTypeCmds'].astype(int))
+                                     df['ReaderNetworkBytesOut'].div(1000)/
+                                     df['ReaderGetTypeCmds'].astype(int))
 
-    # If avg outbound size is >0 and <1 KB round to 1 by using the number of SetTypeCmds
-    df['PrimaryOuteCPU'] = np.where((df['AVGOutSize'] > 0) & (df['AVGOutSize'] < 1), df['GetTypeCmds'] * num_shards,
-                              df['GetTypeCmds'] * df['AVGOutSize'] * num_shards)
+    df['PrimaryOuteCPU'] = np.where((df['AVGOutSize'] > 0) & (df['AVGOutSize'] < 1), 
+                                   df['GetTypeCmds'] * num_shards,
+                                   df['GetTypeCmds'] * df['AVGOutSize'] * num_shards)
 
-    # Do the same for the reader but multiply by the number of readers
-    df['ReaderOuteCPU'] = np.where((df['ReaderAVGOutSize'] > 0) & (df['ReaderAVGOutSize'] <= 1), df['ReaderGetTypeCmds'].astype(int) * num_readers,
-                            df['ReaderGetTypeCmds'].astype(int) * df['ReaderAVGOutSize'] * num_readers)
+    df['ReaderOuteCPU'] = np.where((df['ReaderAVGOutSize'] > 0) & (df['ReaderAVGOutSize'] <= 1), 
+                                  df['ReaderGetTypeCmds'].astype(int) * num_readers,
+                                  df['ReaderGetTypeCmds'].astype(int) * df['ReaderAVGOutSize'] * num_readers)
 
     df['SetTypeCmds'] = df['SetTypeCmds'].astype(int)
 
     # Minimum storage cost is for 100MB
-    df['StorageCost'] = np.where(df['BytesUsedForCache'].div(1000*1000).mul(num_shards).round(4) <= 100, (0.00825), \
-                                 df['BytesUsedForCache'].div(1000*1000*1000).mul(num_shards).mul(0.08125).round(2))
+    df['StorageCost'] = np.where(df['BytesUsedForCache'].div(1000*1000).mul(num_shards).round(4) <= 100, 
+                                (0.084),
+                                df['BytesUsedForCache'].div(1000*1000*1000).mul(num_shards).mul(0.084).round(2))
 
-    df['eCPUCost'] = df['EvaleCPU'].mul(0.0000000034).apply(lambda x: round(x, 4)) + \
-                     df['PrimaryIneCPU'].mul(0.0000000034).apply(lambda x: round(x, 4)) + \
-                     df['PrimaryOuteCPU'].mul(0.0000000034).apply(lambda x: round(x, 4)) + \
-                     df['ReaderOuteCPU'].mul(0.0000000034).apply(lambda x: round(x, 4))
+    df['eCPUCost'] = (df['EvaleCPU'].mul(0.0000000023).apply(lambda x: round(x, 4)) + 
+                      df['PrimaryIneCPU'].mul(0.0000000023).apply(lambda x: round(x, 4)) + 
+                      df['PrimaryOuteCPU'].mul(0.0000000023).apply(lambda x: round(x, 4)) + 
+                      df['ReaderOuteCPU'].mul(0.0000000023).apply(lambda x: round(x, 4)))
+    
     df['TotalCost'] = (df['StorageCost'] + df['eCPUCost']).round(3)
 
-    # df.index.name = 'Date Time'
     print("")
-    # print(df[['TotalSizeMB', 'GetTypeCmds', 'NetworkBytesOut', 'ReaderGetTypeCmds', 'ReaderNetworkBytesOut', 'ReaderAVGOutSize', 'SetTypeCmds', 'EvalBasedCmds', 'StorageCost', 'eCPUCost', 'TotalCost']])
-    print(df[['TotalSizeMB', 'EvaleCPU', 'PrimaryIneCPU', 'PrimaryOuteCPU', 'ReaderOuteCPU', 'StorageCost', 'eCPUCost', 'TotalCost']])
+    print(df[['TotalSizeMB', 'EvaleCPU', 'PrimaryIneCPU', 'PrimaryOuteCPU', 'ReaderOuteCPU', 
+              'StorageCost', 'eCPUCost', 'TotalCost']])
 
+    # Calculate total costs across the date range
+    total_costs = calculate_total_costs(df)
+    
+    print("\nSummary for the entire period:")
+    print(f"Total Hours Analyzed: {total_costs['hours_analyzed']}")
+    print(f"Total Cost: ${total_costs['total_cost']:.3f}")
+    
+    # Add summary rows to DataFrame
+    summary_rows = [
+        pd.Series({
+            'TotalSizeMB': '',
+            'StorageCost': '',
+            'eCPUCost': '',
+            'TotalCost': ''
+        }, name=''),
+        pd.Series({
+            'TotalSizeMB': 'SUMMARY',
+            'StorageCost': '',
+            'eCPUCost': '',
+            'TotalCost': ''
+        }, name='Summary Statistics'),
+        pd.Series({
+            'TotalSizeMB': f'Total Hours Analyzed: {total_costs["hours_analyzed"]}',
+            'StorageCost': '',
+            'eCPUCost': '',
+            'TotalCost': ''
+        }, name=''),
+        pd.Series({
+            'TotalSizeMB': f'Total Cost: ${total_costs["total_cost"]:.3f}',
+            'StorageCost': '',
+            'eCPUCost': '',
+            'TotalCost': ''
+        }, name='')
+    ]
+
+    # Concatenate the original DataFrame with the summary rows
+    df = pd.concat([df] + [pd.DataFrame([row]) for row in summary_rows])
+
+    # Write to CSV
     with open(filename, 'w', newline='') as csvfile:
         df.to_csv(csvfile, index=True)
 
