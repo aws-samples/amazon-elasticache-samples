@@ -51,14 +51,14 @@ The demo code provided implements this in a simple AWS Command Line Interface (A
 ## Prerequisites
 You will build and run the demo application on an Amazon Elastic Compute Cloud (Amazon EC2) Linux instance, running Linux from AWS. To create an EC2 instance and connect to it using Session Manager, a capability of AWS Systems Manager, refer to Connect to an Amazon EC2 instance by using Session Manager. After you create the instance, note the following information:
 
-•	The IDs of the subnets for the virtual private cloud (VPC) your EC2 instance lives in
-•	The ID of the security group assigned to the instance
-•	The ID of the EC2 instance
+- The IDs of the subnets for the virtual private cloud (VPC) your EC2 instance lives in
+- The ID of the security group assigned to the instance
+- The ID of the EC2 instance
 
 To build the application, you must have the following prerequisites:
 
-•	*Java 17* – To install the Java Development Kit (JDK) 17, run `sudo yum install -y java-17-amazon-corretto-devel` on your EC2 instance
-•	*Maven* – To install Apache Maven, run `sudo yum install -y maven` on your EC2 instance
+- *Java 17* – To install the Java Development Kit (JDK) 17, run `sudo yum install -y java-17-amazon-corretto-devel` on your EC2 instance
+- *Maven* – To install Apache Maven, run `sudo yum install -y maven` on your EC2 instance
 
 To run the demo application, you also need an ElastiCache cache. We will create this in the next section of this post.
 
