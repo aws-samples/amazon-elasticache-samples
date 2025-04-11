@@ -7,7 +7,8 @@ import org.springframework.cache.annotation.Cacheable;
 public class CacheableComponent {
 
     @Cacheable("test")
-    public String getCacheableValue(String key) {
+    public String getCacheableValue(String key) throws Exception {
+        Thread.sleep(5000);
         return key + System.currentTimeMillis();
     }
 }
