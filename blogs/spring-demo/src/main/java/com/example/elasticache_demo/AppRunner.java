@@ -14,20 +14,19 @@ public class AppRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        String lastValue = null;
         int cacheHits = 0;
         int cacheMisses = 0;
 
         for( int i=0 ; i < 100 ; i++ ) {
+            long started = System.currentTimeMillis();
             String newValue = cacheableComponent.getCacheableValue("test-key");
-            if ( newValue.equals(lastValue) ) {
+            long completed = System.currentTimeMillis();
+            if ( completed - started < 4000 ) {
                 cacheHits++;
             }
             else {
                 cacheMisses++;               
             }
-
-            lastValue = newValue;
         }
 
         System.out.println("");
