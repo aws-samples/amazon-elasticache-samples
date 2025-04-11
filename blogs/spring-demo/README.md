@@ -1,13 +1,13 @@
 # Integrate your Spring Boot application with Amazon ElastiCache
 
-This repository provides the demo code for the blog post [https://aws.amazon.com/blogs/database/faster-development-with-amazon-dynamodb-and-amazon-q-developer/](Integrate your Spring Boot application with Amazon ElastiCache).
+This repository provides the demo code for the blog post https://aws.amazon.com/blogs/database/integrate-your-spring-boot-application-with-amazon-elasticache.
 
 Spring Framework supports transparently implementing caching in an application by providing an abstraction layer. The following code demonstrates a simple example of adding caching to a method by including the `@Cacheable` annotation. Before invoking the `getCacheableValue` method, Spring Framework looks for an entry in a cache named `myTestCache` that matches the `myKey` argument. If an entry is found, the content in the cache is immediately returned to the caller, and the method is not invoked. Otherwise, the method is invoked, and the cache is updated before returning the value.
 
+```
 import org.springframework.stereotype.Component;
 import org.springframework.cache.annotation.Cacheable;
 
-```
 @Component
 public class CacheableComponent {
 
@@ -136,7 +136,7 @@ Start the upgrade to Valkey:
 ```
 aws elasticache modify-serverless-cache \
 --serverless-cache-name spring-boot-demo \
---engine valkey 
+--engine valkey \
 --major-engine-version <major engine version>
 ```
 
