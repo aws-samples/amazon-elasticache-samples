@@ -1,7 +1,7 @@
 from flask import Flask, request, session, render_template_string, redirect, url_for, make_response
-import redis
 import os
-import rediscluster
+import redis
+from redis.cluster import RedisCluster
 import uuid  # Import uuid library for generating session tokens
 from datetime import timedelta
 
@@ -15,12 +15,18 @@ app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=15)
 app.config['SESSION_KEY_PREFIX'] = 'session:'
 app.config['SESSION_USE_SIGNER'] = True
+REDIS_URL = os.environ.get('REDIS_URL', default=None)
 # Initialize the session extension
-session_redis = rediscluster.RedisCluster(host='REDIS_URL', port=6379, decode_responses=True, skip_full_coverage_check=True)
-
+#session_redis = RedisCluster(host='REDIS_URL', port=6379, decode_responses=True, skip_full_coverage_check=True)
+session_redis=RedisCluster(
+           host=REDIS_URL, 
+           port=6379,
+           ssl=True, 
+           decode_responses=True, 
+           ssl_cert_reqs="none")
 app.config['SESSION_REDIS'] = session_redis
 
-redis_client = rediscluster.RedisCluster(host='REDIS_URL', port=6379, decode_responses=True, skip_full_coverage_check=True)
+redis_client = RedisCluster(host=REDIS_URL, port=6379, decode_responses=True, ssl=True, skip_full_coverage_check=True)
 
 # Redis Set to capture expired session users
 expired_users_set = "expired_users"
