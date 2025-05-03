@@ -17,5 +17,5 @@ resource "aws_elasticache_serverless_cache" "serverless_cache" {
   snapshot_retention_limit = var.snapshot_retention_limit
   security_group_ids       = [module.vpc.security_group.id]
   subnet_ids               = module.vpc.private_subnets.*.id
-  kms_key_id               = aws_kms_key.custom_kms_key.arn
+  kms_key_id               = aws_kms_key.encrypt_cache.arn
 }
