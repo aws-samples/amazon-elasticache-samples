@@ -10,7 +10,7 @@ resource "aws_kms_key" "encrypt_cache" {
 }
 #https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias
 resource "aws_kms_alias" "key" {
-  name          = "alias/cache-${var.name}"
+  name          = "alias/${var.name}-encrypt-cache"
   target_key_id = aws_kms_key.encrypt_cache.id
 }
 #https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key_policy
