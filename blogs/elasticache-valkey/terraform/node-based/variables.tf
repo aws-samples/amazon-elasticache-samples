@@ -33,3 +33,33 @@ variable "subnet_cidr_private" {
   type        = list(any)
   default     = ["12.25.25.0/27", "12.25.25.32/27"]
 }
+variable "node_type" {
+  description = "Instance class to be used."
+  type        = string
+  default     = "cache.t2.small"
+}
+variable "engine_version" {
+  description = "Version number of the cache engine to be used for the cache clusters in this replication group."
+  type        = string
+  default     = "8.0"
+}
+variable "port" {
+  description = "Port number on which each of the cache nodes will accept connections."
+  type        = number
+  default     = 6379
+}
+variable "num_node_groups" {
+  description = "Number of node groups (shards) for the replication group. Changing this number will trigger a resizing operation before other settings modifications"
+  type        = number
+  default     = 3
+}
+variable "replicas_per_node_group" {
+  description = "Number of replica nodes in each node group."
+  type        = number
+  default     = 2
+}
+variable "parameter_group_name" {
+  description = "Name of the parameter group to associate with this replication group."
+  type        = string
+  default     = "default.valkey8.cluster.on"
+}
