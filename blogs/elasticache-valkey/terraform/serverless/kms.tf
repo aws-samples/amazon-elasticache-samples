@@ -17,7 +17,7 @@ resource "aws_kms_alias" "key" {
 resource "aws_kms_key_policy" "encrypt_policy" {
   key_id = aws_kms_key.encrypt_cache.id
   policy = jsonencode({
-    Id = "encrypt-serverless-cache"
+    Id = "${var.name}-encrypt-cache"
     Statement = [
       {
         Action = "kms:*"
