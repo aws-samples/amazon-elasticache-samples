@@ -51,7 +51,7 @@ variable "daily_snapshot_time" {
 variable "major_engine_version" {
   description = "The version of the cache engine that will be used to create the serverless cache."
   type        = string
-  default     = "7"
+  default     = "8"
 }
 variable "snapshot_retention_limit" {
   description = "The number of snapshots that will be retained for the serverless cache that is being created."
