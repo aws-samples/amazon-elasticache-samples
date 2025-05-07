@@ -107,7 +107,23 @@ terraform plan
 terraform apply
 ```
 
-### 7. Clean Up Resources
+### 7. Expected Deployment Results
+
+After running `terraform apply`, you should see output messages indicating successful resource creation. The deployment time varies between the two deployment models:
+
+**Node-based deployment** (typically takes 8-10 minutes):
+```
+aws_elasticache_replication_group.node_based: Creation complete after 9m29s [id=elasticache-valkey-node-based-demo]
+```
+
+**Serverless deployment** (typically takes 2-3 minutes):
+```
+aws_elasticache_serverless_cache.serverless_cache: Creation complete after 2m17s [id=elasticache-valkey-serverless-demo]
+```
+
+Once deployment is complete, you can access your ElastiCache for Valkey instance using the connection information available in the AWS Management Console or through AWS CLI commands.
+
+### 8. Clean Up Resources
 
 When you're done, you can destroy all created resources:
 
