@@ -12,7 +12,7 @@ resource "aws_elasticache_serverless_cache" "serverless_cache" {
     }
   }
   daily_snapshot_time      = var.daily_snapshot_time
-  description              = "Valkey cache server for ${var.name}"
+  description              = "ElastiCache cluster for ${var.name}"
   major_engine_version     = var.major_engine_version
   snapshot_retention_limit = var.snapshot_retention_limit
   security_group_ids       = [module.vpc.security_group.id]
