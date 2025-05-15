@@ -16,7 +16,6 @@ export class ElasticacheServerlessStack extends cdk.Stack {
     const elastiCacheRedisPortReadOnly = 6380;
     const elastiCacheVPCName = "ElastiCacheVPC";
     const elastiCacheSubnetIds = [];
-    const elastiCacheSubnetGroupName = "ElastiCacheSubnetGroup";
     const elastiCacheSecurityGroupName = "ElastiCacheSecurityGroup";
     const elastiCacheServerlessName = "ElastiCacheServerlessRedis";
 
@@ -26,16 +25,6 @@ export class ElasticacheServerlessStack extends cdk.Stack {
       console.log(`Private Subnet Id: ${subnet.subnetId}`);
       elastiCacheSubnetIds.push(subnet.subnetId);
     }
-
-    const elastiCacheSubnetGroup = new ElastiCache.CfnSubnetGroup(
-      this,
-      elastiCacheSubnetGroupName.toLowerCase(),
-      {
-        description: "ElastiCache Subnet Group CDK",
-        cacheSubnetGroupName: elastiCacheSubnetGroupName.toLowerCase(),
-        subnetIds: elastiCacheSubnetIds,
-      }
-    );
 
     const elastiCacheSecurityGroup = new SecurityGroup(
       this,
@@ -58,7 +47,7 @@ export class ElasticacheServerlessStack extends cdk.Stack {
       "ElastiCache for Redis Read Only Port"
     );
 
-    const elastiCacheServerless = new ElastiCache.CfnServerlessCache(
+    new ElastiCache.CfnServerlessCache(
       this,
       elastiCacheServerlessName.toLowerCase(),
       {
