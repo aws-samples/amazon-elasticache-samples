@@ -18,6 +18,8 @@ The following are tutorials covering various use cases for [Amazon ElastiCache](
 
 - [Lambda Feature Store](./lambda-feature-store/) - Learn how Amazon ElastiCache can serve as the focal point for a custom-trained ML model to present recommendations to application and web users. Lambda functions are used to facilitate the interactions between ElastiCache with Redis OSS compatibility and Amazon S3. Then review how AWS Lambda interacts with Amazon ElastiCache with Redis OSS compatibility with insights loaded from a custom-built ML recommendation engine.
 
+- [Spring Framework with GLIDE](./tutorials/spring-framework-glide-example/) - See an example implementation of Spring Boot caching using the [Valkey GLIDE](https://github.com/valkey-io/valkey-glide) client.
+
 ## Webinars
 
 - [Generative AI Virtual Assistant](./webinars/genai-chatbot/) - Build a generative AI Virtual Assistant with [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Langchain](https://github.com/langchain-ai/langchain) and [Amazon Elasticache](https://aws.amazon.com/elasticache/). See [YouTube Video](https://www.youtube.com/watch?v=yWxDmQYelvg).
