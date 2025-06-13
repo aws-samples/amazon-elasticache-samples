@@ -8,7 +8,9 @@ The ElastiCache Serverless Valkey Cost Estimator is a Python script designed to 
 - **CloudWatch Integration**: Leverages AWS CloudWatch metrics to gather accurate usage data from your existing clusters.
 - **Flexible Analysis Period**: Allows cost estimation over custom time ranges, from a single day to multiple weeks.
 - **Comprehensive Metric Analysis**: Processes various ElastiCache metrics including memory usage, network I/O, and command executions to provide a holistic cost estimate.
-- **Detailed CSV Output**: Generates an hourly breakdown of projected costs in an easy-to-analyze CSV format.
+- **Detailed Excel Report**: Generates comprehensive Excel reports with hourly breakdowns and cost comparisons between node-based and serverless deployments.
+- **Advanced Metrics Analysis**: Calculates eCPU usage based on command latency, network I/O, and replication metrics.
+- **Multi-Node Support**: Analyzes both primary and reader nodes for complete cluster cost assessment.
 - **Versatile Deployment**: Can be run in various environments including local machines, AWS CloudShell, or EC2 instances.
 
 Whether you're a cloud architect, DevOps engineer, or finance analyst, this tool provides the data you need to make informed decisions about your ElastiCache deployments. By understanding your usage patterns and associated costs, you can optimize your cache strategy, improve performance, and control expenses.
@@ -25,9 +27,22 @@ Get started with the ElastiCache Cost Calculator to gain deeper insights into yo
 This script uses the default AWS CLI profile to connect to a cluster in the default profile.
 In order to speed up calculations the script assumes even key distribution among all shards and even workload distribution. Uneven key distribution and or a hot spot will effect calculation accuracy. The costs calculated are published rates at the time of publishing.
 
-## Compute
+## Cost Calculation
 
-This calculator uses the Amazon ElastiCache Valkey compute engine cost bases.
+The calculator performs comprehensive cost analysis considering multiple factors:
+
+1. **Storage Costs**: Based on actual memory usage (BytesUsedForCache) with a minimum of 0.1GB
+2. **Compute (eCPU) Costs**: Calculated from:
+   - Command evaluation costs (EvalBasedCmds × EvalBasedCmdsLatency)
+   - Network I/O costs for both primary and reader nodes
+   - Replication costs between nodes
+3. **Node-based vs Serverless Comparison**:
+   - Hourly and monthly cost projections for both deployment types
+   - Detailed breakdowns in Excel format with separate sheets for:
+     - Hourly metrics and costs
+     - Overall cost comparison summary
+
+The calculator retrieves real-time pricing information from AWS Price List API to ensure accuracy.
 
 ## Execution Environment
 
@@ -53,7 +68,7 @@ pip install -r requirements.txt
 ## How to run it
 
 ```bash
-python ./cost-calculator.py --region us-east-1 --cluster cluster-name [--day-range 1] [--output hourly_cost_estimate.csv]
+python ./cost-calculator.py --region us-east-1 --cluster cluster-name [--day-range 1] [--output elasticache_cost_report.xlsx]
 ```
 
 ## Mandatory parameters
@@ -64,7 +79,7 @@ python ./cost-calculator.py --region us-east-1 --cluster cluster-name [--day-ran
 ### Optional parameters 
 `--day-range`: default value of 1. The number of day to calculate estimated AWS ElastiCache cost in one hour increments.
 
-`--output`: default value cost_estimate_cluster_name_"%H:%M_%d_%m_%Y".csv. The name of the output file in CSV format.
+`--output`: default value elasticache_cost_cluster_name_"%Y%m%d_%H%M".xlsx. The name of the output Excel file containing detailed metrics and cost comparisons.
 
 ## Authors and acknowledgment
 
