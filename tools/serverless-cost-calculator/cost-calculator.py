@@ -34,7 +34,7 @@ METRICS = {
         ('ReplicationBytes', 'Sum'),
         ('SetTypeCmds', 'Sum')
     ],
-    'reader': [
+    'replicas_per_shard': [
         ('GetTypeCmds', 'Sum'),
         ('NetworkBytesOut', 'Sum')
     ]
@@ -83,7 +83,7 @@ class ElastiCacheCostCalculator:
         """Get the price per hour for a specific node type."""
         for sku, product in data.get('products', {}).items():
             attrs = product.get('attributes', {})
-            if (attrs.get('instanceType') == node_type and 
+            if (attrs.get('instanceType') == node_type and
                 (not engine or engine.lower() in attrs.get('cacheEngine', '').lower())):
                 term = list(data['terms']['OnDemand'][sku].values())[0]
                 price_dim = list(term['priceDimensions'].values())[0]
@@ -94,19 +94,19 @@ class ElastiCacheCostCalculator:
         """Get serverless pricing for storage and eCPU."""
         cached, ecpu = None, None
         for sku, product in data.get('products', {}).items():
-            if (product['productFamily'] == 'ElastiCache Serverless' and 
+            if (product['productFamily'] == 'ElastiCache Serverless' and
                 engine.lower() in product['attributes'].get('cacheEngine', '').lower()):
                 attrs = product['attributes']
                 term = list(data['terms']['OnDemand'][sku].values())[0]
                 price = float(list(term['priceDimensions'].values())[0]['pricePerUnit']['USD'])
-                
+
                 if 'CachedData' in attrs['usagetype']:
                     cached = price
                 elif 'ElastiCacheProcessingUnits' in attrs['usagetype']:
                     ecpu = price
         return cached, ecpu
 
-    def get_metric_data(self, metric: str, node_id: str, start: datetime, 
+    def get_metric_data(self, metric: str, node_id: str, start: datetime,
                        end: datetime, period: int = DEFAULT_PERIOD, stat: str = 'Average') -> Dict[str, float]:
         """Retrieve metric data from CloudWatch."""
         try:
@@ -119,31 +119,52 @@ class ElastiCacheCostCalculator:
                 Period=period,
                 Statistics=[stat]
             )
-            return {p['Timestamp'].strftime('%Y-%m-%d %H:%M:%S'): p[stat] 
+            return {p['Timestamp'].strftime('%Y-%m-%d %H:%M:%S'): p[stat]
                    for p in response['Datapoints']}
         except Exception as e:
             self.logger.error(f"Failed to get metric data for {metric}: {str(e)}")
             return {}
 
-    def get_cluster_nodes(self) -> Dict[str, str]:
-        """Get primary and reader nodes for the cluster."""
+    def get_cluster_nodes(self) -> Dict[str, Any]:
+        """Get cluster nodes and their roles."""
         try:
-            nodes = self.elasticache.describe_replication_groups(
+            # Get all nodes in the cluster
+            response = self.elasticache.describe_replication_groups(
                 ReplicationGroupId=self.cluster_id
-            )['ReplicationGroups'][0]['MemberClusters']
-            
-            roles = {'primary': None, 'reader': None}
-            check_time = datetime.now(timezone.utc) - timedelta(minutes=1)
-            
-            for node in nodes:
-                metric = self.get_metric_data('IsMaster', node, check_time, 
-                                            datetime.now(timezone.utc), 60, 'Sum')
-                if metric and list(metric.values())[0] == 1.0:
-                    roles['primary'] = node
+            )
+            all_nodes = response['ReplicationGroups'][0].get('MemberClusters', [])
+
+            # Initialize lists for primary and replica nodes
+            primary_nodes = []
+            replica_nodes = []
+
+            # Check the role each node played in the last minute
+            end_time = datetime.now(timezone.utc)
+            start_time = end_time - timedelta(minutes=1)
+
+            for node in all_nodes:
+                metric_data = self.get_metric_data('IsMaster', node, start_time, end_time, 60, 'Sum')
+                if metric_data and next(iter(metric_data.values())) == 1.0:
+                    primary_nodes.append(node)
                 else:
-                    roles['reader'] = node
-            
-            return roles
+                    replica_nodes.append(node)
+
+            # Calculate cluster structure
+            num_shards = len(primary_nodes)
+            num_replicas = len(replica_nodes)
+            num_replicas_per_shard = int(num_replicas/num_shards) if num_shards > 0 else 0
+            total_nodes = num_shards + num_replicas
+
+            self.logger.info(f"Found {num_shards} primaries and {num_replicas} replicas ({num_replicas_per_shard} per shard)")
+
+            return {
+                'primary': primary_nodes,
+                'replicas_per_shard': replica_nodes,
+                'num_shards': num_shards,
+                'num_replicas': num_replicas,
+                'num_replicas_per_shard': num_replicas_per_shard,
+                'total_nodes': total_nodes
+            }
         except Exception as e:
             self.logger.error(f"Failed to get cluster nodes: {str(e)}")
             raise
@@ -154,18 +175,18 @@ class ElastiCacheCostCalculator:
             info = self.elasticache.describe_replication_groups(
                 ReplicationGroupId=self.cluster_id
             )['ReplicationGroups'][0]
-            
+
             node_type = info['CacheNodeType']
             engine = info.get('Engine')
-            
+
             if not engine:
                 node_id = info.get('MemberClusters', [])[0]
                 node_info = self.elasticache.describe_cache_clusters(
-                    CacheClusterId=node_id, 
+                    CacheClusterId=node_id,
                     ShowCacheNodeInfo=False
                 )
                 engine = node_info['CacheClusters'][0]['Engine']
-            
+
             return node_type, engine
         except Exception as e:
             self.logger.error(f"Failed to get cluster info: {str(e)}")
@@ -178,54 +199,95 @@ class ElastiCacheCostCalculator:
 
         # Initialize all expected columns with zeros
         expected_columns = [metric for metric, _ in METRICS['primary']]
-        expected_columns.extend([f'Reader{metric}' for metric, _ in METRICS['reader']])
-        
-        # Collect primary node metrics
-        for metric, stat in METRICS['primary']:
-            data = self.get_metric_data(metric, nodes['primary'], start, end, DEFAULT_PERIOD, stat)
-            for t, v in data.items():
-                collected.setdefault(t, {metric: 0 for metric in expected_columns})[metric] = v
+        expected_columns.extend([f'ReplicasPerShard{metric}' for metric, _ in METRICS['replicas_per_shard']])
 
-        # Collect reader node metrics if available
-        if nodes['reader']:
-            for metric, stat in METRICS['reader']:
-                data = self.get_metric_data(metric, nodes['reader'], start, end, DEFAULT_PERIOD, stat)
+        # Collect primary node metrics
+        for primary in nodes['primary']:
+            for metric, stat in METRICS['primary']:
+                data = self.get_metric_data(metric, primary, start, end, DEFAULT_PERIOD, stat)
                 for t, v in data.items():
-                    if t not in collected:
-                        collected[t] = {metric: 0 for metric in expected_columns}
-                    collected[t][f'Reader{metric}'] = v
+                    collected.setdefault(t, {metric: 0 for metric in expected_columns})
+                    # Aggregate metrics from all primaries
+                    existing = collected[t].get(metric, 0)
+                    collected[t][metric] = existing + v
+
+        # Collect replica node metrics if available
+        if nodes['replicas_per_shard']:
+            for replica in nodes['replicas_per_shard']:
+                for metric, stat in METRICS['replicas_per_shard']:
+                    data = self.get_metric_data(metric, replica, start, end, DEFAULT_PERIOD, stat)
+                    for t, v in data.items():
+                        if t not in collected:
+                            collected[t] = {metric: 0 for metric in expected_columns}
+                        # Aggregate metrics from all replicas
+                        existing = collected[t].get(f'ReplicasPerShard{metric}', 0)
+                        collected[t][f'ReplicasPerShard{metric}'] = existing + v
 
         df = pd.DataFrame.from_dict(collected, orient='index').fillna(0)
-        
+
         # Ensure all expected columns exist
         for col in expected_columns:
             if col not in df.columns:
                 df[col] = 0
-                
+
         return df
 
-    def calculate_costs(self, df: pd.DataFrame, storage_price: float, 
+    def calculate_costs(self, df: pd.DataFrame, storage_price: float,
                        ecpu_price: float, node_price: float) -> pd.DataFrame:
         """Calculate costs based on collected metrics."""
-        # Calculate eCPU usage
-        df['EvaleCPU'] = (df['EvalBasedCmds'] * df['EvalBasedCmdsLatency'] / 2).fillna(0).astype(int)
-        df['PrimaryIn'] = df['SetTypeCmds'] * (df['NetworkBytesIn']/1000 / df['SetTypeCmds'].replace(0,1))
-        df['PrimaryOut'] = df['GetTypeCmds'] * (df['NetworkBytesOut']/1000 - df['ReplicationBytes']/1000) / df['GetTypeCmds'].replace(0,1)
-        df['ReaderOut'] = df['ReaderGetTypeCmds'] * (df['ReaderNetworkBytesOut']/1000) / df['ReaderGetTypeCmds'].replace(0,1)
+        nodes = self.get_cluster_nodes()
+        num_shards = nodes['num_shards']
+        num_replicas_per_shard = nodes['num_replicas_per_shard']
 
-        # Set minimum values
-        df['BytesUsedForCache'] = df['BytesUsedForCache'].replace(0, 1024)
-        df['EvaleCPU'] = df['EvaleCPU'].replace(0, 1)
+        # Calculate total size in MB per shard
+        df['TotalSizeMB'] = df['BytesUsedForCache'].div(1000*1000).mul(num_shards).round(2)
+
+        # Calculate eCPU usage
+        df['EvaleCPU'] = (df['EvalBasedCmds'].mul(num_shards) * df['EvalBasedCmdsLatency'].div(2)).astype(int)
+        df['EvalBasedCmds'] = df['EvalBasedCmds'].mul(num_shards)
+
+        # Calculate average input size and primary input eCPU
+        df['AVGInSize'] = np.where(df['SetTypeCmds'] == 0, 0,
+                                  df['NetworkBytesIn'].div(1000)/df['SetTypeCmds'].astype(int))
+        df['PrimaryIneCPU'] = np.where((df['AVGInSize'] > 0) & (df['AVGInSize'] < 1),
+                                      df['SetTypeCmds'] * num_shards,
+                                      df['SetTypeCmds'] * df['AVGInSize'] * num_shards)
+
+        # Calculate average output sizes and eCPU for primary and replicas
+        df['AVGOutSize'] = np.where(df['GetTypeCmds'] == 0, 0,
+                                   ((df['NetworkBytesOut'].div(1000)) -
+                                    (df['ReplicationBytes'].div(1000).mul(num_replicas_per_shard)))/
+                                   df['GetTypeCmds'].astype(int))
+
+        df['ReaderAVGOutSize'] = np.where(df['ReplicasPerShardGetTypeCmds'] == 0, 0,
+                                         df['ReplicasPerShardNetworkBytesOut'].div(1000)/
+                                         df['ReplicasPerShardGetTypeCmds'].astype(int))
+
+        df['PrimaryOuteCPU'] = np.where((df['AVGOutSize'] > 0) & (df['AVGOutSize'] < 1),
+                                       df['GetTypeCmds'] * num_shards,
+                                       df['GetTypeCmds'] * df['AVGOutSize'] * num_shards)
+
+        df['ReaderOuteCPU'] = np.where((df['ReaderAVGOutSize'] > 0) & (df['ReaderAVGOutSize'] <= 1),
+                                      df['ReplicasPerShardGetTypeCmds'].astype(int) * num_replicas_per_shard,
+                                      df['ReplicasPerShardGetTypeCmds'].astype(int) * df['ReaderAVGOutSize'] * num_replicas_per_shard)
 
         # Calculate costs
-        df['StorageCost'] = (np.maximum(df['BytesUsedForCache'] / BYTES_TO_GB, MIN_STORAGE_GB) * storage_price).round(4)
-        df['eCPUCost'] = ((df['EvaleCPU'] + df['PrimaryIn'] + df['PrimaryOut'] + df['ReaderOut']) * ecpu_price).round(4)
-        df['eCPUCost'] = df['eCPUCost'].where(df['EvaleCPU'] + df['PrimaryIn'] + df['PrimaryOut'] + df['ReaderOut'] > 0, 0.0)
-        df['TotalCost'] = df['StorageCost'] + df['eCPUCost']
+        # Minimum storage cost is for 100MB
+        df['StorageCost'] = np.where(df['BytesUsedForCache'].div(1000*1000).mul(num_shards).round(4) <= 100,
+                                    (0.1 * storage_price),
+                                    df['BytesUsedForCache'].div(1000*1000*1000).mul(num_shards).mul(storage_price).round(2))
+
+        df['eCPUCost'] = (df['EvaleCPU'].mul(ecpu_price).apply(lambda x: round(x, 4)) +
+                         df['PrimaryIneCPU'].mul(ecpu_price).apply(lambda x: round(x, 4)) +
+                         df['PrimaryOuteCPU'].mul(ecpu_price).apply(lambda x: round(x, 4)) +
+                         df['ReaderOuteCPU'].mul(ecpu_price).apply(lambda x: round(x, 4)))
+
+        df['TotalCost'] = (df['StorageCost'] + df['eCPUCost']).round(3)
 
         # Add node-based costs for comparison
-        df['NodeBasedCost'] = node_price
-        df['NodeMonthly'] = node_price * HOUR_IN_MONTH
+        total_nodes = nodes['total_nodes']
+        df['NodeBasedCost'] = node_price * total_nodes
+        df['NodeMonthly'] = node_price * HOUR_IN_MONTH * total_nodes
         df['ServerlessMonthly'] = df['TotalCost'].mean() * HOUR_IN_MONTH
 
         return df
@@ -249,11 +311,18 @@ class ElastiCacheCostCalculator:
             df = self.collect_metrics(start, end)
             df = self.calculate_costs(df, storage_price, ecpu_price, node_price)
 
+            # Get node counts
+            nodes = self.get_cluster_nodes()
+            num_nodes = len(nodes['primary']) + len(nodes['replicas_per_shard'])
+
             # Generate summary
             summary = pd.DataFrame({
                 'Total Hours': [len(df)],
-                'NodeBased/hr': [node_price],
-                'NodeBased/month': [node_price * HOUR_IN_MONTH],
+                'Total Nodes': [num_nodes],
+                'Primary Nodes': [len(nodes['primary'])],
+                'Replica Nodes': [len(nodes['replicas_per_shard'])],
+                'NodeBased/hr': [node_price * num_nodes],
+                'NodeBased/month': [node_price * HOUR_IN_MONTH * num_nodes],
                 'Serverless/hr (avg)': [df['TotalCost'].mean()],
                 'Serverless/month': [df['TotalCost'].mean() * HOUR_IN_MONTH]
             })
@@ -278,7 +347,7 @@ def main():
     parser.add_argument('-o', '--output', help='Output file path')
 
     args = parser.parse_args()
-    
+
     if not args.output:
         args.output = (f"elasticache_cost_{args.cluster}_"
                       f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.xlsx")
