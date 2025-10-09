@@ -175,6 +175,9 @@ cython_debug/
 # Built Visual Studio Code Extensions
 *.vsix
 
+# Claude Code settings
+.claude/*
+
 # Logs
 logs
 *.log
