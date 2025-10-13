@@ -1,0 +1,7 @@
+langchain~=0.3
+langchain_community~=0.3
+langchain-aws~=0.2
+valkey~=6.1
+numpy~=2.3
+boto3~=1.40
+beautifulsoup4~=4.12
