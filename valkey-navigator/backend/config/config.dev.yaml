@@ -1,0 +1,95 @@
+# Development environment configuration overrides
+# This file extends the base config.yaml with development-specific settings
+
+server:
+  debug_mode: true
+  port: 8001  # Use a different port for development
+
+logging:
+  level: "DEBUG"
+
+# Development-specific settings
+execute:
+  allowlist:
+    enabled: false  # Disable allowlist for development
+    mode: "exact"
+    commands:
+      # System commands for development
+      - "ls"
+      - "ls -la"
+      - "ls -l"
+      - "pwd"
+      - "date"
+      - "whoami"
+      - "ps aux"
+      - "df -h"
+      - "python3 --version"
+      - "python --version"
+      - "echo"
+      - "cat /etc/os-release"
+      - "curl"
+      - "wget"
+      - "vim --version"
+      - "node --version"
+      - "npm --version"
+      
+      # JSON operations (for consistency with production)
+      - "JSON.SET"
+      - "JSON.GET"
+      
+      # TTL operations
+      - "TTL"
+      - "PTTL"
+      - "EXPIRE"
+      - "PEXPIRE"
+      - "EXPIREAT"
+      - "PEXPIREAT"
+      - "PERSIST"
+      
+      # Sorted Set operations
+      - "ZADD"
+      - "ZCARD"
+      - "ZCOUNT"
+      - "ZDIFF"
+      - "ZDIFFSTORE"
+      - "ZINCRBY"
+      - "ZINTER"
+      - "ZINTERCARD"
+      - "ZINTERSTORE"
+      - "ZLEXCOUNT"
+      - "ZMPOP"
+      - "ZMSCORE"
+      - "ZPOPMAX"
+      - "ZPOPMIN"
+      - "ZRANDMEMBER"
+      - "ZRANGE"
+      - "ZRANGEBYLEX"
+      - "ZRANGEBYSCORE"
+      - "ZRANGESTORE"
+      - "ZRANK"
+      - "ZREM"
+      - "ZREMRANGEBYLEX"
+      - "ZREMRANGEBYRANK"
+      - "ZREMRANGEBYSCORE"
+      - "ZREVRANGE"
+      - "ZREVRANGEBYLEX"
+      - "ZREVRANGEBYSCORE"
+      - "ZREVRANK"
+      - "ZSCAN"
+      - "ZSCORE"
+      - "ZUNION"
+      - "ZUNIONSTORE"
+      
+      # Information and diagnostic commands
+      - "PING"
+      - "INFO"
+      - "DBSIZE"
+      - "KEYS"
+      - "SCAN"
+
+valkey:
+  # You can override connection settings for local development
+  # host: "localhost"
+  # port: 6379
+  # use_tls: false
+  # use_cluster: false
