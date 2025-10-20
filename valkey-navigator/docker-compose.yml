@@ -1,0 +1,54 @@
+# version: "3.9"
+
+services:
+  backend:
+    build:
+      context: backend
+    image: valkey-navigator-backend:latest
+    container_name: valkey-navigator-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Override these as needed or use .env file alongside compose
+      - SERVER_PORT=8000
+      - REGION=us-east-1
+      - AWS_KEY=<YOUR_AWS_KEY_HERE>                     # \  for security reasons these keys are not yet edited in UI
+      - SECRET_ACCESS_KEY=<YOUR_SECRET_ACESS_KEY_HERE>  # /  This is to not expose credentials outside to the UI
+      - USE_STRANDS=True # - controls agent invocation
+      - AGENT_ID=<YOUR_AGENT_ID> #  \
+      - ALIAS_ID=<YOUR_ALIAS_ID> #    --- not needed if USE_STRANDS is set to True
+      - SESSION_ID=MY_SESSION_ID #  /
+      - METRICS_COLLECTION_INTERVAL_SECONDS=15
+      # following environment variables control which InfluxDB instance is used.
+      # These can be overwritten in Settings dialog to use different InfluxDB instances
+      - INFLUXDB_ENDPOINT=your_instance.us-east-1.timestream-influxdb.amazonaws.com
+      - INFLUXDB_PORT=8086
+      - INFLUXDB_ORG=your-org
+      - INFLUXDB_BUCKET=valkey-navigator # example
+      - INFLUXDB_TOKEN=your_token
+      - INFLUXDB_SCHEME=https
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: frontend
+    image: valkey-navigator-frontend:latest
+    container_name: valkey-navigator-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      # Frontend will target backend on the same host IP at port 8000 by default
+      - VITE_API_PORT=8000
+      - VITE_API_SSL=false
+      # Optional explicit endpoint override (otherwise uses window.location.hostname)
+      # - VITE_API_ENDPOINT=localhost
+      - INFLUXDB_ENDPOINT=your_instance.us-east-1.timestream-influxdb.amazonaws.com
+      - INFLUXDB_PORT=8086
+      - INFLUXDB_SCHEME=https
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  default:
+    name: valkey-navigator-net
