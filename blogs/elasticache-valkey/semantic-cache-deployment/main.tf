@@ -273,7 +273,7 @@ resource "aws_api_gateway_rest_api" "semantic_cache_api" {
         Resource = "*"
         Condition = {
           IpAddress = {
-            "aws:SourceIp" = "0.0.0.0/0"
+            "aws:SourceIp" = local.config.allowed_ip_cidr
           }
         }
       }
