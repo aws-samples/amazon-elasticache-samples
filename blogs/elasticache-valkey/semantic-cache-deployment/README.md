@@ -80,7 +80,7 @@ python setup_application.py
 # Start the web interface
 python web_ui_iam.py
 
-# Open browser to http://localhost:5000
+# Open browser to http://localhost:5000 
 ```
 
 ## Architecture
