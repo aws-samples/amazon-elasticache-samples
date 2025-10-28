@@ -12,8 +12,10 @@ services:
       # Override these as needed or use .env file alongside compose
       - SERVER_PORT=8000
       - REGION=us-east-1
-      - AWS_KEY=<YOUR_AWS_KEY_HERE>                     # \  for security reasons these keys are not yet edited in UI
-      - SECRET_ACCESS_KEY=<YOUR_SECRET_ACESS_KEY_HERE>  # /  This is to not expose credentials outside to the UI
+# When running Docker on AWS architecture like on EC2 the following credentials are not required.
+# Please make sure the IAM role used in that EC2 instance has Bedrock access
+#      - AWS_KEY=<YOUR_AWS_KEY_HERE>                     # \  for security reasons these keys are not yet edited in UI
+#      - SECRET_ACCESS_KEY=<YOUR_SECRET_ACESS_KEY_HERE>  # /  This is to not expose credentials outside to the UI
       - USE_STRANDS=True # - controls agent invocation
       - AGENT_ID=<YOUR_AGENT_ID> #  \
       - ALIAS_ID=<YOUR_ALIAS_ID> #    --- not needed if USE_STRANDS is set to True

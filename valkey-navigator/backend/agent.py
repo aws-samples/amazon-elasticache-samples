@@ -91,9 +91,9 @@ def invoke_strands_agent(cluster_info):
     session = None
 
     if aws_key is '' or 'AWS' in aws_key: # note this could run if IAM roles are defined
-        print('-- calling session without aws key')
+        print('-- calling Bedrock Model without aws key -------------------')
         session = boto3.Session(
-            aws_access_key_id=aws_key,
+        #    aws_access_key_id=aws_key,
         #    aws_secret_access_key=secret_access_key,
         #        aws_session_token=aws_session_token,  # If using temporary credentials
             region_name=region,
