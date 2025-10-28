@@ -18,7 +18,7 @@ export function Layout() {
             <Outlet />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-              Please log in
+              <img src="/initial_login.png" alt="initial login"/>
             </div>
           )}
         </main>
