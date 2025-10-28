@@ -11,21 +11,18 @@ from botocore.awsrequest import AWSRequest
 import requests
 import json
 import time
+import argparse
+import sys
 
-# Configuration - UPDATE THESE VALUES
-from config import AWS_REGION, AWS_ACCOUNT_ID
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Semantic Cache Web UI')
+parser.add_argument('--api-url', required=True, help='API Gateway URL')
+parser.add_argument('--region', required=True, help='AWS Region')
+args = parser.parse_args()
 
-# Get API Gateway URL from terraform outputs
-try:
-    import subprocess
-    result = subprocess.run(['terraform', 'output', '-raw', 'api_gateway_url'], 
-                          capture_output=True, text=True, cwd='.')
-    if result.returncode == 0:
-        API_GATEWAY_URL = result.stdout.strip()
-    else:
-        API_GATEWAY_URL = f'https://YOUR_API_ID.execute-api.{AWS_REGION}.amazonaws.com/dev/search'
-except:
-    API_GATEWAY_URL = f'https://YOUR_API_ID.execute-api.{AWS_REGION}.amazonaws.com/dev/search'
+# Configuration from command line
+API_GATEWAY_URL = args.api_url
+AWS_REGION = args.region
 
 app = Flask(__name__)
 
