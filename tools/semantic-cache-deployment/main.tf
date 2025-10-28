@@ -225,6 +225,10 @@ module "lambda" {
   runtime       = "python3.12"
 
   source_path = "./lambda"
+  
+  # Fix for cross-platform builds (Mac/Windows -> Linux Lambda)
+  build_in_docker = true
+  docker_image    = "public.ecr.aws/lambda/python:3.12"
 
   vpc_subnet_ids                     = aws_subnet.private[*].id
   vpc_security_group_ids             = [aws_security_group.semantic_cache_sg.id]

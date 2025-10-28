@@ -1,0 +1,8 @@
+{
+  "s3_bucket": "semantic-cache-kb-5fgpr9wg",
+  "knowledge_base_id": "RFUXOWSXMD",
+  "data_source_id": "YOUR_DATA_SOURCE_ID",
+  "api_gateway_url": "https://zshd3cwcl7.execute-api.us-east-1.amazonaws.com/dev/search",
+  "valkey_endpoint": "your-valkey-endpoint.cache.amazonaws.com",
+  "opensearch_collection_endpoint": "https://your-collection.us-east-1.aoss.amazonaws.com"
+}
