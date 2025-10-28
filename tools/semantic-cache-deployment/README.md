@@ -7,7 +7,7 @@ AWS semantic caching system using ElastiCache Valkey and Bedrock Knowledge Base.
 ### 1. Clone Repository
 ```bash
 git clone https://github.com/aws-samples/amazon-elasticache-samples.git
-cd amazon-elasticache-samples/blogs/elasticache-valkey/semantic-cache-deployment
+cd  amazon-elasticache-samples/tools/semantic-cache-deployment
 ```
 
 ### 2. Prerequisites
