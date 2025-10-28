@@ -5,6 +5,9 @@
 *.tfvars
 .terraform.lock.hcl
 
+# Terraform outputs config (keep .example file)
+terraform_outputs.json
+
 # Lambda builds
 builds/
 

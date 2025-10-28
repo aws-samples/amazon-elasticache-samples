@@ -70,9 +70,25 @@ pip install -r requirements_deployment.txt
 python setup_application.py
 
 # Alternative options:
-# python setup_application.py --skip-download  # Skip dataset download
-# python setup_application.py --sync           # Only run sync job
-# python setup_application.py --monitor        # Monitor existing job
+python setup_application.py --skip-download                    # Skip dataset download
+python setup_application.py --sync                             # Only run sync job
+python setup_application.py --monitor                          # Monitor existing job
+python setup_application.py --local-file /path/to/data.jsonl   # Use local JSONL file
+
+# For remote Terraform state (when terraform output doesn't work):
+terraform output -json > terraform_outputs.json  # Export outputs to local file
+python setup_application.py                       # Script will use local config
+```
+
+**Remote State Support:**
+If using remote Terraform state, create `terraform_outputs.json`:
+```json
+{
+  "s3_bucket": "your-bucket-name",
+  "knowledge_base_id": "YOUR_KB_ID",
+  "data_source_id": "YOUR_DS_ID",
+  "api_gateway_url": "https://your-api.execute-api.region.amazonaws.com/dev/search"
+}
 ```
 
 ### 7. Test the Demo 
@@ -103,6 +119,9 @@ python web_ui_iam.py
 - **403 Errors**: Wait 2 minutes for IAM policy propagation
 - **Connection Issues**: Check VPC endpoints are created
 - **Cache Misses**: Adjust `score_threshold` in web UI (default: 0.7)
+- **S3 Upload Errors**: Check AWS credentials have `s3:PutObject` permission on the bucket
+- **Remote State Issues**: Use `terraform output -json > terraform_outputs.json` then run setup script
+- **Large Dataset Issues**: Script automatically splits data into <50MB chunks for Bedrock compatibility
 
 ## Cleanup
 
