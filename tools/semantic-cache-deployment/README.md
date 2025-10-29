@@ -35,6 +35,11 @@ EMBEDDING_MODEL = "amazon.titan-embed-text-v2:0"
 INFERENCE_PROFILE = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
 VECTOR_DIMENSION = 1024
 
+# Lambda Layer Configuration (REQUIRED)
+# Must provide numpy layer ARN for your region
+# AWS managed layer: arn:aws:lambda:REGION:336392948345:layer:AWSSDKPandas-Python312:VERSION
+NUMPY_LAYER_ARN = "arn:aws:lambda:us-east-2:336392948345:layer:AWSSDKPandas-Python312:19"
+
 # Deployment Configuration
 DEPLOYMENT_NAME = "semantic-cache"
 ```
@@ -66,18 +71,22 @@ terraform apply
 # Install Python dependencies
 pip install -r requirements_deployment.txt
 
-# Run application setup (downloads dataset, uploads to S3, starts ingestion)
-python setup_application.py
+# Get terraform outputs for required values
+terraform output -json > terraform_outputs.json
+
+# Extract values from terraform outputs
+S3_BUCKET=$(terraform output -raw s3_bucket)
+KB_ID=$(terraform output -raw knowledge_base_id)
+DS_ID=$(terraform output -raw data_source_id)
+
+# Run application setup with command line arguments
+python setup_application.py --s3-bucket $S3_BUCKET --kb-id $KB_ID --ds-id $DS_ID
 
 # Alternative options:
-python setup_application.py --skip-download                    # Skip dataset download
-python setup_application.py --sync                             # Only run sync job
-python setup_application.py --monitor                          # Monitor existing job
-python setup_application.py --local-file /path/to/data.jsonl   # Use local JSONL file
-
-# For remote Terraform state (when terraform output doesn't work):
-terraform output -json > terraform_outputs.json  # Export outputs to local file
-python setup_application.py                       # Script will use local config
+python setup_application.py --s3-bucket $S3_BUCKET --kb-id $KB_ID --ds-id $DS_ID --skip-download
+python setup_application.py --s3-bucket $S3_BUCKET --kb-id $KB_ID --ds-id $DS_ID --sync
+python setup_application.py --s3-bucket $S3_BUCKET --kb-id $KB_ID --ds-id $DS_ID --monitor
+python setup_application.py --s3-bucket $S3_BUCKET --kb-id $KB_ID --ds-id $DS_ID --local-file /path/to/data.jsonl
 ```
 
 **Remote State Support:**
@@ -93,8 +102,12 @@ If using remote Terraform state, create `terraform_outputs.json`:
 
 ### 7. Test the Demo 
 ```bash
-# Start the web interface
-python web_ui_iam.py
+# Get API Gateway URL from terraform outputs
+API_URL=$(terraform output -raw api_gateway_url)
+REGION=$(terraform output -raw aws_region)
+
+# Start the web interface with command line arguments
+python web_ui_iam.py --api-url $API_URL --region $REGION
 
 # Open browser to http://localhost:5000 
 ```

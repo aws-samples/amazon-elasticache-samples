@@ -96,7 +96,7 @@ HTML_TEMPLATE = '''
     </style>
 </head>
 <body>
-    <h1>🚀 Semantic Cache Demo</h1>
+    <h1>Starting Semantic Cache Demo</h1>
     <div class="powered-by">
         Ask questions about headsets and see the power of semantic caching! <br>
         Powered by <span class="tech-stack">🔥 ElastiCache Valkey</span> & <span class="tech-stack">🧠 Bedrock Knowledge Base</span>
@@ -144,7 +144,7 @@ HTML_TEMPLATE = '''
                 if (data.error) {
                     resultsDiv.innerHTML = `
                         <div class="result error">
-                            <strong>❌ Error:</strong> ${data.error}
+                            <strong>ERROR: Error:</strong> ${data.error}
                         </div>
                     `;
                 } else {
@@ -187,7 +187,7 @@ HTML_TEMPLATE = '''
             } catch (error) {
                 resultsDiv.innerHTML = `
                     <div class="result error">
-                        <strong>❌ Network Error:</strong> ${error.message}
+                        <strong>ERROR: Network Error:</strong> ${error.message}
                         <br><small>Check if the API Gateway URL is correct and you have proper AWS credentials.</small>
                     </div>
                 `;

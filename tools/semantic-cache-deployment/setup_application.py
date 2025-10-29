@@ -4,53 +4,46 @@ Setup script for semantic cache application.
 Run this after Terraform deployment to configure the application.
 
 Usage:
-  python setup_application.py                    # Full setup with dataset download
-  python setup_application.py --skip-download    # Skip dataset download
-  python setup_application.py --sync             # Only run sync job (no download)
-  python setup_application.py --monitor          # Monitor existing ingestion job
-  python setup_application.py --local-file /path/to/file.jsonl  # Use local file instead of downloading
+  python setup_application.py --s3-bucket BUCKET --kb-id KB_ID --ds-id DS_ID [options]
+  
+Required arguments:
+  --s3-bucket BUCKET      S3 bucket name for data storage
+  --kb-id KB_ID          Knowledge base ID
+  --ds-id DS_ID          Data source ID
+  
+Optional arguments:
+  --skip-download        Skip dataset download
+  --sync                 Only run sync job (no download)
+  --monitor              Monitor existing ingestion job
+  --local-file PATH      Use local file instead of downloading
 """
 
 import json
 import subprocess
 import sys
+import argparse
 from config import AWS_REGION
 
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='Setup semantic cache application')
+    parser.add_argument('--s3-bucket', required=True, help='S3 bucket name')
+    parser.add_argument('--kb-id', required=True, help='Knowledge base ID')
+    parser.add_argument('--ds-id', required=True, help='Data source ID')
+    parser.add_argument('--skip-download', action='store_true', help='Skip dataset download')
+    parser.add_argument('--sync', action='store_true', help='Only run sync job')
+    parser.add_argument('--monitor', action='store_true', help='Monitor existing job')
+    parser.add_argument('--local-file', help='Use local JSONL file')
+    return parser.parse_args()
+
 def get_terraform_outputs():
-    """Get Terraform outputs from local command or config file"""
-    import os
-    try:
-        # First try terraform output command
-        result = subprocess.run(['terraform', 'output', '-json'], 
-                              capture_output=True, text=True, check=True)
-        outputs_raw = json.loads(result.stdout)
-        outputs = {k: v['value'] for k, v in outputs_raw.items()}
-        print("✅ Retrieved outputs from terraform command")
-        return outputs
-    except Exception as e:
-        print(f"⚠️  Could not get terraform outputs via command: {e}")
-        
-        # Fallback to local config file
-        config_file = "terraform_outputs.json"
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r') as f:
-                    outputs = json.load(f)
-                print(f"✅ Retrieved outputs from {config_file}")
-                return outputs
-            except Exception as config_error:
-                print(f"❌ Error reading {config_file}: {config_error}")
-        else:
-            print(f"❌ {config_file} not found. Create it with your terraform outputs.")
-            print("Example terraform_outputs.json:")
-            print(json.dumps({
-                "s3_bucket": "your-bucket-name",
-                "knowledge_base_id": "YOUR_KB_ID", 
-                "data_source_id": "YOUR_DS_ID",
-                "api_gateway_url": "https://your-api.execute-api.region.amazonaws.com/dev/search"
-            }, indent=2))
-        
-        return {}
+    """Get Terraform outputs from command line arguments"""
+    args = parse_arguments()
+    return {
+        's3_bucket': args.s3_bucket,
+        'knowledge_base_id': args.kb_id,
+        'data_source_id': args.ds_id
+    }
 
 def download_dataset(local_file_path=None):
     """Download and prepare dataset, splitting into chunks under 50MB"""
@@ -63,7 +56,7 @@ def download_dataset(local_file_path=None):
     if local_file_path:
         print(f"Using local file: {local_file_path}")
         if not os.path.exists(local_file_path):
-            print(f"❌ Local file not found: {local_file_path}")
+            print(f"ERROR: Local file not found: {local_file_path}")
             return False
         local_filename = local_file_path
     else:
@@ -75,7 +68,7 @@ def download_dataset(local_file_path=None):
     kb_id = outputs.get('knowledge_base_id')
     
     if not s3_bucket or not kb_id:
-        print("❌ Missing S3 bucket or Knowledge Base ID")
+        print("ERROR: Missing S3 bucket or Knowledge Base ID")
         return False
     
     s3 = boto3.client('s3', region_name=AWS_REGION)
@@ -146,16 +139,16 @@ def download_dataset(local_file_path=None):
             try:
                 # Upload chunk
                 s3.put_object(Bucket=s3_bucket, Key=filename, Body=chunk_bytes)
-                print(f"✅ Uploaded {filename} ({len(chunk_bytes)/1024/1024:.1f}MB, {len(chunk_data)} items)")
+                print(f"SUCCESS: Uploaded {filename} ({len(chunk_bytes)/1024/1024:.1f}MB, {len(chunk_data)} items)")
             except Exception as upload_error:
-                print(f"❌ Error uploading {filename} to S3: {upload_error}")
+                print(f"ERROR: Error uploading {filename} to S3: {upload_error}")
                 return False
         
         # Start ingestion job
         return start_sync_job()
         
     except Exception as e:
-        print(f"❌ Error processing dataset: {e}")
+        print(f"ERROR: Error processing dataset: {e}")
         return False
 
 def start_sync_job():
@@ -168,7 +161,7 @@ def start_sync_job():
         data_source_id = outputs.get('data_source_id')
         
         if not kb_id or not data_source_id:
-            print("❌ Missing Knowledge Base ID or data source ID")
+            print("ERROR: Missing Knowledge Base ID or data source ID")
             return False
             
         bedrock_agent = boto3.client('bedrock-agent', region_name=AWS_REGION)
@@ -180,7 +173,7 @@ def start_sync_job():
         )
         
         job_id = ingestion_response['ingestionJob']['ingestionJobId']
-        print(f"✅ Started ingestion job: {job_id}")
+        print(f"SUCCESS: Started ingestion job: {job_id}")
         
         # Monitor job progress
         import time
@@ -197,11 +190,11 @@ def start_sync_job():
             print(f"Status: {status}")
             
             if status == 'COMPLETE':
-                print("✅ Ingestion job completed successfully!")
+                print("SUCCESS: Ingestion job completed successfully!")
                 break
             elif status == 'FAILED':
                 failure_reasons = response['ingestionJob'].get('failureReasons', [])
-                print(f"❌ Ingestion job failed: {failure_reasons}")
+                print(f"ERROR: Ingestion job failed: {failure_reasons}")
                 return False
             elif status in ['IN_PROGRESS', 'STARTING']:
                 print("Job in progress, waiting 30 seconds...")
@@ -212,7 +205,7 @@ def start_sync_job():
         
         return True
     except Exception as e:
-        print(f"❌ Error starting sync job: {e}")
+        print(f"ERROR: Error starting sync job: {e}")
         return False
 
 def monitor_latest_job():
@@ -225,7 +218,7 @@ def monitor_latest_job():
         data_source_id = outputs.get('data_source_id')
         
         if not kb_id or not data_source_id:
-            print("❌ Missing Knowledge Base ID or data source ID")
+            print("ERROR: Missing Knowledge Base ID or data source ID")
             return False
             
         bedrock_agent = boto3.client('bedrock-agent', region_name=AWS_REGION)
@@ -238,7 +231,7 @@ def monitor_latest_job():
         )
         
         if not response['ingestionJobSummaries']:
-            print("❌ No ingestion jobs found")
+            print("ERROR: No ingestion jobs found")
             return False
             
         latest_job = response['ingestionJobSummaries'][0]
@@ -259,11 +252,11 @@ def monitor_latest_job():
             print(f"Status: {status}")
             
             if status == 'COMPLETE':
-                print("✅ Ingestion job completed successfully!")
+                print("SUCCESS: Ingestion job completed successfully!")
                 break
             elif status == 'FAILED':
                 failure_reasons = job_response['ingestionJob'].get('failureReasons', [])
-                print(f"❌ Ingestion job failed: {failure_reasons}")
+                print(f"ERROR: Ingestion job failed: {failure_reasons}")
                 return False
             elif status in ['IN_PROGRESS', 'STARTING']:
                 print("Job in progress, waiting 30 seconds...")
@@ -274,32 +267,30 @@ def monitor_latest_job():
         
         return True
     except Exception as e:
-        print(f"❌ Error monitoring job: {e}")
+        print(f"ERROR: Error monitoring job: {e}")
         return False
 
 def main():
     """Main setup function"""
-    skip_download = '--skip-download' in sys.argv
-    sync_only = '--sync' in sys.argv
-    monitor_only = '--monitor' in sys.argv
+    args = parse_arguments()
     
-    # Check for local file parameter
-    local_file = None
-    for i, arg in enumerate(sys.argv):
-        if arg == '--local-file' and i + 1 < len(sys.argv):
-            local_file = sys.argv[i + 1]
-            break
+    skip_download = args.skip_download
+    sync_only = args.sync
+    monitor_only = args.monitor
+    local_file = args.local_file
     
-    print("🚀 Starting semantic cache application setup...")
+    print("Starting Starting semantic cache application setup...")
     
-    # Get terraform outputs
+    # Get terraform outputs from command line arguments
     outputs = get_terraform_outputs()
     
     if not outputs:
-        print("❌ Could not get terraform outputs. Make sure Terraform deployment completed successfully.")
+        print("ERROR: Could not get terraform outputs. Make sure all required arguments are provided.")
         return False
     
-    print(f"Found {len(outputs)} terraform outputs")
+    print(f"Using S3 bucket: {outputs['s3_bucket']}")
+    print(f"Using Knowledge Base ID: {outputs['knowledge_base_id']}")
+    print(f"Using Data Source ID: {outputs['data_source_id']}")
     
     # Handle different modes
     if monitor_only:
@@ -311,7 +302,7 @@ def main():
         print("Starting sync job...")
         result = start_sync_job()
         if not result:
-            print("❌ Sync job failed")
+            print("ERROR: Sync job failed")
     else:
         download_dataset(local_file)
     

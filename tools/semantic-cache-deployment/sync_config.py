@@ -22,6 +22,7 @@ locals {{
     inference_profile  = "{INFERENCE_PROFILE}"
     vector_dimension   = {VECTOR_DIMENSION}
     deployment_name    = "{DEPLOYMENT_NAME}"
+    numpy_layer_arn    = "{NUMPY_LAYER_ARN}"
   }}
 }}'''
     
@@ -29,11 +30,11 @@ locals {{
     with open('config.tf', 'w') as f:
         f.write(config_tf_content)
     
-    print("✅ Configuration synced from config.py to config.tf")
+    print("SUCCESS: Configuration synced from config.py to config.tf")
     
 except ImportError as e:
-    print(f"❌ Error importing config.py: {e}")
+    print(f"ERROR: Error importing config.py: {e}")
     sys.exit(1)
 except Exception as e:
-    print(f"❌ Error syncing configuration: {e}")
+    print(f"ERROR: Error syncing configuration: {e}")
     sys.exit(1)
