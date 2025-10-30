@@ -135,11 +135,11 @@ class InfluxQuery:
             org = os.environ.get("INFLUXDB_ORG")
             url = "https:" + os.environ.get("INFLUXDB_ENDPOINT") + ":" + str(os.environ.get("INFLUXDB_PORT"))
 
-            if 'amazonaws.com' in influxEndpoint:
-                token = influxToken
-                bucket = influxBucket
-                org = influxOrg
-                url = 'https://' + influxEndpoint + ':' + influxPort
+#            if 'amazonaws.com' in influxEndpoint:
+            token = influxToken
+            bucket = influxBucket
+            org = influxOrg
+            url = 'https://' + influxEndpoint + ':' + influxPort
 
             print("------ Executing query --------------")
             print(f'{url}-{token}-{org}')
