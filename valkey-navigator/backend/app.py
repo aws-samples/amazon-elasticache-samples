@@ -465,6 +465,10 @@ async def get_history_series(
         logger.error(f"Error querying history series: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to query history: {str(e)}")
 
+def santize_error_message(input):
+    message = "Details: " + input
+    return message
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -487,11 +491,12 @@ async def health_check():
             )
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
+        message = santize_error_message(str(e))
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
                 "status": "unhealthy",
-                "error": str(e),
+                "error": message,
                 "timestamp": datetime.utcnow().isoformat()
             }
         )
