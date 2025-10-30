@@ -11,21 +11,18 @@ from botocore.awsrequest import AWSRequest
 import requests
 import json
 import time
+import argparse
+import sys
 
-# Configuration - UPDATE THESE VALUES
-from config import AWS_REGION, AWS_ACCOUNT_ID
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Semantic Cache Web UI')
+parser.add_argument('--api-url', required=True, help='API Gateway URL')
+parser.add_argument('--region', required=True, help='AWS Region')
+args = parser.parse_args()
 
-# Get API Gateway URL from terraform outputs
-try:
-    import subprocess
-    result = subprocess.run(['terraform', 'output', '-raw', 'api_gateway_url'], 
-                          capture_output=True, text=True, cwd='.')
-    if result.returncode == 0:
-        API_GATEWAY_URL = result.stdout.strip()
-    else:
-        API_GATEWAY_URL = f'https://YOUR_API_ID.execute-api.{AWS_REGION}.amazonaws.com/dev/search'
-except:
-    API_GATEWAY_URL = f'https://YOUR_API_ID.execute-api.{AWS_REGION}.amazonaws.com/dev/search'
+# Configuration from command line
+API_GATEWAY_URL = args.api_url
+AWS_REGION = args.region
 
 app = Flask(__name__)
 
@@ -99,7 +96,7 @@ HTML_TEMPLATE = '''
     </style>
 </head>
 <body>
-    <h1>🚀 Semantic Cache Demo</h1>
+    <h1>Semantic Cache Demo</h1>
     <div class="powered-by">
         Ask questions about headsets and see the power of semantic caching! <br>
         Powered by <span class="tech-stack">🔥 ElastiCache Valkey</span> & <span class="tech-stack">🧠 Bedrock Knowledge Base</span>
@@ -147,7 +144,7 @@ HTML_TEMPLATE = '''
                 if (data.error) {
                     resultsDiv.innerHTML = `
                         <div class="result error">
-                            <strong>❌ Error:</strong> ${data.error}
+                            <strong>ERROR: Error:</strong> ${data.error}
                         </div>
                     `;
                 } else {
@@ -190,7 +187,7 @@ HTML_TEMPLATE = '''
             } catch (error) {
                 resultsDiv.innerHTML = `
                     <div class="result error">
-                        <strong>❌ Network Error:</strong> ${error.message}
+                        <strong>ERROR: Network Error:</strong> ${error.message}
                         <br><small>Check if the API Gateway URL is correct and you have proper AWS credentials.</small>
                     </div>
                 `;

@@ -26,5 +26,8 @@ EMBEDDING_MODEL = "amazon.titan-embed-text-v2:0"
 INFERENCE_PROFILE = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
 VECTOR_DIMENSION = 1024
 
+# Lambda Layer Configuration (REQUIRED)
+NUMPY_LAYER_ARN = "arn:aws:lambda:us-east-2:336392948345:layer:AWSSDKPandas-Python312:19"
+
 # Deployment Configuration
 DEPLOYMENT_NAME = "semantic-cache"

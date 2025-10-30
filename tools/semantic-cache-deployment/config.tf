@@ -1,7 +1,7 @@
 # Read configuration from config.py
 locals {
   config = {
-    aws_region         = "us-east-1"
+    aws_region         = "us-east-2"
     aws_account_id     = "1234567890"
     allowed_ip_cidr    = "0.0.0.0/0"
     dataset_file       = "https://amazon-pqa.s3.amazonaws.com/amazon_pqa_headsets.json"
@@ -9,5 +9,6 @@ locals {
     inference_profile  = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
     vector_dimension   = 1024
     deployment_name    = "semantic-cache"
+    numpy_layer_arn    = "arn:aws:lambda:us-east-2:336392948345:layer:AWSSDKPandas-Python312:19"
   }
 }

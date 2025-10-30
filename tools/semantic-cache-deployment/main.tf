@@ -203,6 +203,15 @@ resource "aws_elasticache_replication_group" "semantic_cache_cluster" {
   at_rest_encryption_enabled = true
 }
 
+# Validation
+resource "null_resource" "validate_numpy_layer" {
+  count = local.config.numpy_layer_arn == "" ? 1 : 0
+  
+  provisioner "local-exec" {
+    command = "echo 'ERROR: NUMPY_LAYER_ARN must be provided in config.py. Find layers at: https://github.com/keithrozario/Klayers' && exit 1"
+  }
+}
+
 ################################################################################
 # Lambda
 ################################################################################
@@ -223,12 +232,12 @@ module "lambda" {
   description   = "Semantic cache function with Valkey and Knowledge Base"
   handler       = "app.lambda_handler"
   runtime       = "python3.12"
+  memory_size   = 512
 
   source_path = "./lambda"
   
-  # Fix for cross-platform builds (Mac/Windows -> Linux Lambda)
-  build_in_docker = true
-  docker_image    = "public.ecr.aws/lambda/python:3.12"
+  # Require numpy layer ARN to be provided
+  layers = [local.config.numpy_layer_arn]
 
   vpc_subnet_ids                     = aws_subnet.private[*].id
   vpc_security_group_ids             = [aws_security_group.semantic_cache_sg.id]

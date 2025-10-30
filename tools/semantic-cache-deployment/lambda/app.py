@@ -7,7 +7,7 @@ import time
 import os
 
 def lambda_handler(event, context):
-    """Complete semantic caching logic: Valkey → Knowledge Base → Cache"""
+    """Complete semantic caching logic: Valkey -> Knowledge Base -> Cache"""
     
     try:
         # Handle API Gateway event format
