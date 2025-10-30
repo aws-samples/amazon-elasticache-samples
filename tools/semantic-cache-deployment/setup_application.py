@@ -306,8 +306,7 @@ def main():
     else:
         download_dataset(local_file)
     
-    print("🎉 Semantic cache application setup complete!")
-    print(f"API Gateway URL: {outputs.get('api_gateway_url', 'Not found')}")
+    print("SUCCESS: Semantic cache application setup complete!")
     print(f"Knowledge Base ID: {outputs.get('knowledge_base_id', 'Not found')}")
     print(f"S3 Bucket: {outputs.get('s3_bucket', 'Not found')}")
     

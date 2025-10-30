@@ -89,17 +89,6 @@ python setup_application.py --s3-bucket $S3_BUCKET --kb-id $KB_ID --ds-id $DS_ID
 python setup_application.py --s3-bucket $S3_BUCKET --kb-id $KB_ID --ds-id $DS_ID --local-file /path/to/data.jsonl
 ```
 
-**Remote State Support:**
-If using remote Terraform state, create `terraform_outputs.json`:
-```json
-{
-  "s3_bucket": "your-bucket-name",
-  "knowledge_base_id": "YOUR_KB_ID",
-  "data_source_id": "YOUR_DS_ID",
-  "api_gateway_url": "https://your-api.execute-api.region.amazonaws.com/dev/search"
-}
-```
-
 ### 7. Test the Demo 
 ```bash
 # Get API Gateway URL from terraform outputs

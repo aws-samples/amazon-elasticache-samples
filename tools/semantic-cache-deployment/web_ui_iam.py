@@ -96,7 +96,7 @@ HTML_TEMPLATE = '''
     </style>
 </head>
 <body>
-    <h1>Starting Semantic Cache Demo</h1>
+    <h1>Semantic Cache Demo</h1>
     <div class="powered-by">
         Ask questions about headsets and see the power of semantic caching! <br>
         Powered by <span class="tech-stack">🔥 ElastiCache Valkey</span> & <span class="tech-stack">🧠 Bedrock Knowledge Base</span>
