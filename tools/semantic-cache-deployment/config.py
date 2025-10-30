@@ -13,7 +13,7 @@ try:
     AWS_ACCOUNT_ID = account_info['Account']
 except:
     # Fallback if AWS CLI not configured
-    AWS_ACCOUNT_ID = "900661324596"
+    AWS_ACCOUNT_ID = "1234567890"
 
 # Network Configuration
 ALLOWED_IP_CIDR = "0.0.0.0/0"  # Restrict to your IP for security
