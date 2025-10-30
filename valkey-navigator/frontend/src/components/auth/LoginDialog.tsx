@@ -97,6 +97,7 @@ export function LoginDialog({ open, onOpenChange }: Props) {
             </>
           )}
         </DialogFooter>
+            Note: This is the basic login dialog not yet extended. ANY user or password will work and are not stored or checked. Please extend as needed.
       </DialogContent>
     </Dialog>
   );

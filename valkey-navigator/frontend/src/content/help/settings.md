@@ -16,4 +16,16 @@ The **Populate from Session** button will use the Docker Endpoint from where the
 
 ![Edit Settings Details](/help/SettingsDetails.png)
 
-For recording historical metrics, ValkeyNavigator uses am InfluxDB time series database. Please refer to InfluxDB documentation for how to create the Token and bucket. Valkey Navigator will work also without InfluxDB, but then you will not have historical data in the monitoring page.
+# Historical Metrics
+
+For recording historical metrics, ValkeyNavigator uses am InfluxDB V2.x time series database. This can be :
+* [Amazon Timestream for InfluxDB V2 instance](https://docs.aws.amazon.com/timestream/latest/developerguide/timestream-for-influxdb.html)
+* Self manged InfluxDB V2 instance in your own environment
+
+Metrics from clusters are currently written to InfluxDB every 15 seconds. Given for this volume the following sizing is initially recommended in a single AZ deployment:
+
+* Instance db.influx.large:         $170.00
+* Storage 100 GB:                   $15.00     
+* **Total**  **$185.00**   
+
+Please refer to InfluxDB documentation for how to create the Token and bucket. Valkey Navigator will work also without InfluxDB, but then you will not have historical data in the monitoring page.
