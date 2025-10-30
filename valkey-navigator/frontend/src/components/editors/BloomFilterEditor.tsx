@@ -171,7 +171,7 @@ export function BloomFilterEditor({ value, onChange, disabled = false, keyName }
       if (operation.type === 'BF.EXISTS') {
         // Execute individual BF.EXISTS commands
         for (const item of validItems) {
-          const command = `BF.EXISTS "${keyName}" "${item.replace(/"/g, '\\"')}"`;
+          const command = `BF.EXISTS "${keyName}" "${item.replace('"', '\\"')}"`;
           const result = await valkeyApi.executeRedisCommand(command);
           
           if (result.success) {
