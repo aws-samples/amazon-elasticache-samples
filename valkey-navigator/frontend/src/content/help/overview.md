@@ -4,7 +4,7 @@ Welcome to **ValkeyNavigator** Help & Documentation.
 
 **ValkeyNavigator** is a unified observability tool that allows to interact with your Valkey clusters. While it is built for Valkey it also works for Redis OSS caches.
 
-The source of this tool can be found in our GitHub repository at [AWS Samples - Amazon Elasticache Samples](https://github.com/aws-samples/amazon-elasticache-samples/valkey-navigator)
+The source of this tool can be found in our GitHub repository at [AWS Samples - Amazon Elasticache Samples](https://github.com/aws-samples/amazon-elasticache-samples/tree/main/valkey-navigator)
 
 This section provides a quick overview of the app. Currently this guide contains instructions on how to configure Valkey Navigator App the first time you use it after successfully Docker installation
 - **Settings** - One time settings to allow Front-End Docker app to communicate with Back-End Docker app
