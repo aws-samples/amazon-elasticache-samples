@@ -1,0 +1,158 @@
+# Main configuration file for Valkey Cluster API Server
+# Values here can be overridden by environment variables or environment-specific config files
+
+valkey:
+  host: "clustercfg.redis-demo-cache.a1oizt.usw2.cache.amazonaws.com"
+  port: 6379
+  use_tls: true
+  use_cluster: true
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug_mode: false
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+execute:
+  allowlist:
+    enabled: true
+    mode: "exact"  # Options: "exact", "prefix", "regex"
+    commands:
+      # String operations
+      - "SET"
+      - "SETEX"
+      - "SETNX"
+      - "MSET"
+      - "APPEND"
+      - "INCR"
+      - "INCRBY"
+      - "DECR"
+      - "DECRBY"
+      - "GETRANGE"
+      - "SETRANGE"
+      
+      # Hash operations
+      - "HSET"
+      - "HSETNX"
+      - "HMSET"
+      - "HINCRBY"
+      - "HINCRBYFLOAT"
+      - "HDEL"
+      
+      # List operations
+      - "LPUSH"
+      - "RPUSH"
+      - "LINSERT"
+      - "LSET"
+      - "LPOP"
+      - "RPOP"
+      - "LREM"
+      - "LTRIM"
+      
+      # Set operations
+      - "SADD"
+      - "SREM"
+      - "SPOP"
+      
+      # Sorted Set operations
+      - "ZADD"
+      - "ZCARD"
+      - "ZCOUNT"
+      - "ZDIFF"
+      - "ZDIFFSTORE"
+      - "ZINCRBY"
+      - "ZINTER"
+      - "ZINTERCARD"
+      - "ZINTERSTORE"
+      - "ZLEXCOUNT"
+      - "ZMPOP"
+      - "ZMSCORE"
+      - "ZPOPMAX"
+      - "ZPOPMIN"
+      - "ZRANDMEMBER"
+      - "ZRANGE"
+      - "ZRANGEBYLEX"
+      - "ZRANGEBYSCORE"
+      - "ZRANGESTORE"
+      - "ZRANK"
+      - "ZREM"
+      - "ZREMRANGEBYLEX"
+      - "ZREMRANGEBYRANK"
+      - "ZREMRANGEBYSCORE"
+      - "ZREVRANGE"
+      - "ZREVRANGEBYLEX"
+      - "ZREVRANGEBYSCORE"
+      - "ZREVRANK"
+      - "ZSCAN"
+      - "ZSCORE"
+      - "ZUNION"
+      - "ZUNIONSTORE"
+      
+      # HyperLogLog operations
+      - "PFADD"
+      - "PFMERGE"
+      
+      # Bloom Filter operations (Valkey 8.1+)
+      - "BF.RESERVE"
+      - "BF.ADD"
+      - "BF.MADD"
+      - "BF.INSERT"
+      - "BF.EXISTS"
+      - "BF.MEXISTS"
+      - "BF.CARD"
+      - "BF.INFO"
+      - "BF.SCANDUMP"
+      - "BF.LOADCHUNK"
+      
+      # JSON operations
+      - "JSON.SET"
+      - "JSON.GET"
+      
+      # TTL operations
+      - "TTL"
+      - "PTTL"
+      - "EXPIRE"
+      - "PEXPIRE"
+      - "EXPIREAT"
+      - "PEXPIREAT"
+      - "PERSIST"
+      
+      # Read operations (for verification)
+      - "GET"
+      - "HGET"
+      - "HGETALL"
+      - "LRANGE"
+      - "SMEMBERS"
+      - "PFCOUNT"
+      
+      # Information and diagnostic commands
+      - "PING"
+      - "INFO"
+      - "DBSIZE"
+      - "KEYS"
+      - "SCAN"
+      - "TYPE"
+    patterns:  # For regex mode
+      - "^SET.*"
+      - "^HSET.*"
+      - "^LPUSH.*"
+      - "^RPUSH.*"
+      - "^SADD.*"
+      - "^PFADD.*"
+      - '^BF\..*'
+    prefixes:  # For prefix mode
+      - "SET"
+      - "HSET"
+      - "LPUSH"
+      - "RPUSH"
+      - "SADD"
+      - "PFADD"
+      - "BF."
+
+app:
+  name: "Valkey Cluster API Server"
+  version: "1.0.0"
+  description: "Python API server for React applications to interact with Valkey cluster and retrieve metrics"
