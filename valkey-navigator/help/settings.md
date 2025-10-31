@@ -16,13 +16,13 @@ Variables:
 
 The Settings dialog can be opened by clicking the Gearbox on the top left in the header
 
-![Edit Settings](help/SettingsEdit.png)
+![Edit Settings](SettingsEdit.png)
 
 Normally when running the docker containers on your local machine, the Docker Endpoint should be **localhost** but can be set to any host
 
 The **Populate from Session** button will use the Docker Endpoint from where the front end runs.
 
-![Edit Settings Details](help/SettingsDetails.png)
+![Edit Settings Details](SettingsDetails.png)
 
 # Historical Metrics
 

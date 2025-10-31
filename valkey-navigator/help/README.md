@@ -17,11 +17,11 @@ The following diagram shows how components interact:
 - Backend interacts with ElastiCache clusters according to function performed
 - Optional: Historical metrics can be stored in Timestream for InfluxDB
 
-![Architecture](help/Architecture.png)
+![Architecture](Architecture.png)
 
 Valkey Navigator is built as a Docker Application so it can be deployed in many environments. This includes local desktops, servers or other services like Amazon EKS. Here is how it looks like in a local Desktop environment:
 
 Here is an example on how Valkey Navigator is deployed in Docker Desktop. Visible are the two containers for frontend and backend linked together as docker composer.
 
-![Docker Desktop](help/Docker.png)
+![Docker Desktop](Docker.png)
 

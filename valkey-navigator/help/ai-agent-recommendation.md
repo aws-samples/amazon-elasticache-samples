@@ -24,7 +24,7 @@ The Recommendations tab on the Monitoring page takes performance metrics and gen
 ## Configuration
 
 If you see the following error message:
-![AI Recommendation Security Settings](help/AI_Recommendations.png)
+![AI Recommendation Security Settings](AI_Recommendations.png)
 
 The following configurations need to be established
 

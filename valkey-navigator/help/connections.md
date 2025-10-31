@@ -8,7 +8,7 @@ To Help Topic:
 
 ## On the connection page you can add or modify available connections to ElastiCache clusters
 
-![Add Connection](help/Connections.png)
+![Add Connection](Connections.png)
 
 The following attributes can be set:
 - **Name** - Readable name to identify your cluster in the connection list
@@ -17,4 +17,4 @@ The following attributes can be set:
 - **TLS** - Setting for TLS enabled, disables
 - **Use Cluster** - Check if ElasiCache is in Cluster or non-cluster mode
 
-![Connection Settings](help/ConnectionsSettings.png)
+![Connection Settings](ConnectionsSettings.png)
