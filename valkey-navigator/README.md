@@ -1,7 +1,24 @@
 # ValkeyNavigator
 
 
-ValkeyNavigator aims to address the need for unified observability and diagnostics capabilities in ElastiCache clusters running Valkey & Redis OSS. As customers migrate from Redis OSS to Valkey, we see a need for powerful yet simple tools to monitor, troubleshoot, and optimize cache performance with minimal operational overhead.
+ValkeyNavigator aims to address the need for unified observability and diagnostics capabilities in ElastiCache clusters 
+running Valkey & Redis OSS. As customers migrate from Redis OSS to Valkey, they can use ValkeyNavigator as a 
+powerful yet simple set of tools to monitor, troubleshoot, and optimize cache performance with minimal 
+operational overhead.
+
+Valkey Navigator is a Unified Observability tool that allows to interact with ElastiCache Valkey clusters. While it is built for ElastiCache for Valkey it also works for Valkey OSS and Redis OSS caches. Valkey Navigator includes features such as
+
+* **Cluster Monitoring metrics** such as Memory/CPU usage, connected clients, key statistics and hit rate
+* **AI recommendation agent** to optimize ElastiCache clusters based on  observability metrics
+* **Key Browser** to allow inspecting and modifying keys
+* **CLI Interface** to interact directly in Valkey Navigator as a unified tool
+* **Command Logs** such as slow commands, large requests and large replies
+
+
+---
+### ValkeyNavigator provides an easy interface thru the browser :
+![ApplicationOverview](help/ValkeyNavigatorApp.png) 
+---
 
 ## Overview
 
