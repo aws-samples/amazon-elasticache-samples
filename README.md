@@ -1,6 +1,6 @@
 ## Amazon ElastiCache Samples
 
-Samples and documentation for using with [Amazon ElastiCache](https://aws.amazon.com/elasticache/) for Valkey, Memcached and Redis OSS.
+Code Samples, tools and documentation for using with [Amazon ElastiCache](https://aws.amazon.com/elasticache/) for Valkey, Memcached and Redis OSS.
 
 ---
 
