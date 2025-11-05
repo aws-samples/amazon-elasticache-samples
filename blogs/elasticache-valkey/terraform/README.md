@@ -182,6 +182,7 @@ The node-based deployment includes CloudWatch Logs integration for:
 
 ## Additional Resources
 
+- [Building Secure Amazon ElastiCache for Valkey Deployments with Terraform](https://aws.amazon.com/blogs/database/building-secure-amazon-elasticache-for-valkey-deployments-with-terraform/) - Supporting blog post for this repository
 - [Amazon ElastiCache Documentation](https://docs.aws.amazon.com/elasticache/)
 - [What is Valkey?](https://aws.amazon.com/elasticache/what-is-valkey/)
 - [Terraform AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
