@@ -162,7 +162,7 @@ terraform destroy
 | `data_storage` | Maximum data storage in GB | `10` |
 | `ecpu_per_second` | Maximum ECPUs per second | `5000` |
 | `daily_snapshot_time` | Time for daily snapshots | `09:00` |
-| `major_engine_version` | Valkey major engine version | `7` |
+| `major_engine_version` | Valkey major engine version | `8` |
 | `snapshot_retention_limit` | Number of days to retain snapshots | `1` |
 
 ## Security Features
