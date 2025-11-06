@@ -162,7 +162,7 @@ terraform destroy
 | `data_storage` | Maximum data storage in GB | `10` |
 | `ecpu_per_second` | Maximum ECPUs per second | `5000` |
 | `daily_snapshot_time` | Time for daily snapshots | `09:00` |
-| `major_engine_version` | Valkey major engine version | `7` |
+| `major_engine_version` | Valkey major engine version | `8` |
 | `snapshot_retention_limit` | Number of days to retain snapshots | `1` |
 
 ## Security Features
@@ -182,6 +182,7 @@ The node-based deployment includes CloudWatch Logs integration for:
 
 ## Additional Resources
 
+- [Building Secure Amazon ElastiCache for Valkey Deployments with Terraform](https://aws.amazon.com/blogs/database/building-secure-amazon-elasticache-for-valkey-deployments-with-terraform/) - Supporting blog post for this repository
 - [Amazon ElastiCache Documentation](https://docs.aws.amazon.com/elasticache/)
 - [What is Valkey?](https://aws.amazon.com/elasticache/what-is-valkey/)
 - [Terraform AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
