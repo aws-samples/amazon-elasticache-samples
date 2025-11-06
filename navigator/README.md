@@ -6,7 +6,7 @@ running Valkey & Redis OSS. As customers migrate from Redis OSS to Valkey, they 
 powerful yet simple set of tools to monitor, troubleshoot, and optimize cache performance with minimal 
 operational overhead.
 
-ElastiCacheNavigator is a Unified Observability tool that allows to interact with ElastiCache Valkey clusters. While it is built for ElastiCache for Valkey it also works for Valkey OSS and Redis OSS caches. ElastiCacheNavigator includes features such as
+ElastiCache Navigator is a Unified Observability tool that allows to interact with ElastiCache Valkey clusters. While it is built for ElastiCache for Valkey it also works for Valkey OSS and Redis OSS caches. ElastiCacheNavigator includes features such as
 
 * **Cluster Monitoring metrics** such as Memory/CPU usage, connected clients, key statistics and hit rate
 * **AI recommendation agent** to optimize ElastiCache clusters based on  observability metrics
