@@ -1,0 +1,323 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CodeBuild project for automated AgentCore deployment (eliminates EC2 jump host)"
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: "semantic-cache-demo"
+
+  AgentName:
+    Type: String
+    Default: "semantic_cache_demo"
+
+  AwsRegion:
+    Type: String
+    Default: "us-east-2"
+
+  # VPC Configuration
+  VpcId:
+    Type: String
+    Default: "vpc-0f9b5afd31283e9d1"
+
+  SubnetIds:
+    Type: String
+    Default: "subnet-0257db422851c0d6b,subnet-0da73b5aadcb5e744,subnet-0e80dd54d46959a91"
+
+  SecurityGroupId:
+    Type: String
+    Default: "sg-077091f3ac5a55b60"
+
+  # Agent Configuration
+  ElastiCacheEndpoint:
+    Type: String
+    Description: "ElastiCache primary endpoint (without port)"
+
+  SimilarityThreshold:
+    Type: String
+    Default: "0.80"
+
+  EmbeddingModel:
+    Type: String
+    Default: "amazon.titan-embed-text-v2:0"
+
+  # Import from AgentCore stack
+  AgentCoreStackName:
+    Type: String
+    Default: "semantic-cache-demo-agentcore"
+
+Resources:
+  #############################################
+  # S3 Bucket for Agent Source Code
+  #############################################
+  AgentSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-agent-source-${AWS::AccountId}-${AwsRegion}"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupOldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-agent-source"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # CodeBuild IAM Role (for running agentcore CLI)
+  #############################################
+  CodeBuildDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-codebuild-deploy-${AwsRegion}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # CloudWatch Logs
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:aws:logs:${AwsRegion}:${AWS::AccountId}:log-group:/aws/codebuild/*"
+
+        # S3 - source code access
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt AgentSourceBucket.Arn
+                  - !Sub "${AgentSourceBucket.Arn}/*"
+                  # AgentCore CLI creates its own source bucket
+                  - !Sub "arn:aws:s3:::bedrock-agentcore-codebuild-sources-${AWS::AccountId}-${AwsRegion}"
+                  - !Sub "arn:aws:s3:::bedrock-agentcore-codebuild-sources-${AWS::AccountId}-${AwsRegion}/*"
+
+        # ECR - container registry
+        - PolicyName: ECRAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeRepositories
+                  - ecr:CreateRepository
+                  - ecr:TagResource
+                Resource: !Sub "arn:aws:ecr:${AwsRegion}:${AWS::AccountId}:repository/bedrock-agentcore-*"
+
+        # Bedrock AgentCore - full access for CLI
+        - PolicyName: BedrockAgentCore
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:*
+                  - bedrock:*
+                Resource: "*"
+
+        # CodeBuild - for nested builds triggered by agentcore CLI
+        - PolicyName: CodeBuildManagement
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:*
+                Resource: !Sub "arn:aws:codebuild:${AwsRegion}:${AWS::AccountId}:project/bedrock-agentcore-*"
+              - Effect: Allow
+                Action:
+                  - codebuild:ListProjects
+                  - codebuild:ListBuilds
+                Resource: "*"
+
+        # EC2 - VPC validation and network interfaces
+        - PolicyName: EC2Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+                  - ec2:CreateNetworkInterface
+                  - ec2:CreateNetworkInterfacePermission
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                  - ec2:DescribeDhcpOptions
+                  - ec2:AssignPrivateIpAddresses
+                  - ec2:UnassignPrivateIpAddresses
+                Resource: "*"
+
+        # IAM - pass roles to AgentCore
+        - PolicyName: IAMPassRole
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - Fn::ImportValue: !Sub "${AgentCoreStackName}-RuntimeRoleArn"
+                  - Fn::ImportValue: !Sub "${AgentCoreStackName}-CodeBuildRoleArn"
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:CreateServiceLinkedRole
+                Resource: "*"
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-codebuild-deploy-role"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # CodeBuild Project
+  #############################################
+  AgentDeployProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${ProjectName}-agent-deploy"
+      Description: "Deploys AgentCore agent using agentcore CLI (eliminates EC2 jump host)"
+      ServiceRole: !GetAtt CodeBuildDeployRole.Arn
+      TimeoutInMinutes: 30
+      Source:
+        Type: S3
+        Location: !Sub "${AgentSourceBucket}/agent-source.zip"
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: 3.12
+              commands:
+                - echo "Installing AgentCore CLI..."
+                - pip install bedrock-agentcore-starter-toolkit
+            pre_build:
+              commands:
+                - echo "Verifying environment..."
+                - agentcore --version || echo "CLI installed"
+                - ls -la
+                - ls -la agents/ || echo "No agents directory at root"
+            build:
+              commands:
+                - echo "Configuring agent..."
+                - cd agents
+                - |
+                  agentcore configure \
+                    --entrypoint entrypoint.py \
+                    --name $AGENT_NAME \
+                    --execution-role $RUNTIME_ROLE_ARN \
+                    --code-build-execution-role $CB_ROLE_ARN \
+                    --disable-memory \
+                    --region $AWS_REGION \
+                    --vpc \
+                    --subnets $SUBNET_IDS \
+                    --security-groups $SECURITY_GROUP_ID \
+                    --non-interactive
+                - echo "Deploying agent..."
+                - |
+                  agentcore deploy \
+                    --env ELASTICACHE_ENDPOINT=$ELASTICACHE_ENDPOINT \
+                    --env ELASTICACHE_PORT=6379 \
+                    --env SIMILARITY_THRESHOLD=$SIMILARITY_THRESHOLD \
+                    --env EMBEDDING_MODEL=$EMBEDDING_MODEL \
+                    --env AWS_REGION=$AWS_REGION \
+                    --env CLOUDWATCH_NAMESPACE=SemanticSupportDesk \
+                    --auto-update-on-conflict
+            post_build:
+              commands:
+                - echo "Checking agent status..."
+                - agentcore status --agent $AGENT_NAME || true
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        EnvironmentVariables:
+          - Name: AGENT_NAME
+            Value: !Ref AgentName
+          - Name: AWS_REGION
+            Value: !Ref AwsRegion
+          - Name: RUNTIME_ROLE_ARN
+            Value:
+              Fn::ImportValue: !Sub "${AgentCoreStackName}-RuntimeRoleArn"
+          - Name: CB_ROLE_ARN
+            Value:
+              Fn::ImportValue: !Sub "${AgentCoreStackName}-CodeBuildRoleArn"
+          - Name: SUBNET_IDS
+            Value: !Ref SubnetIds
+          - Name: SECURITY_GROUP_ID
+            Value: !Ref SecurityGroupId
+          - Name: ELASTICACHE_ENDPOINT
+            Value: !Ref ElastiCacheEndpoint
+          - Name: SIMILARITY_THRESHOLD
+            Value: !Ref SimilarityThreshold
+          - Name: EMBEDDING_MODEL
+            Value: !Ref EmbeddingModel
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-agent-deploy"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+Outputs:
+  CodeBuildProjectName:
+    Description: "CodeBuild project name for agent deployment"
+    Value: !Ref AgentDeployProject
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeBuildProject"
+
+  AgentSourceBucketName:
+    Description: "S3 bucket for uploading agent source code"
+    Value: !Ref AgentSourceBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-SourceBucket"
+
+  DeployCommand:
+    Description: "Commands to deploy agent"
+    Value: !Sub |
+      # 1. Upload agent source code
+      cd ${!PWD}
+      zip -r agent-source.zip agents/
+      aws s3 cp agent-source.zip s3://${AgentSourceBucket}/agent-source.zip
+      
+      # 2. Start CodeBuild
+      aws codebuild start-build --project-name ${AgentDeployProject} --region ${AwsRegion}

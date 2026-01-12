@@ -1,0 +1,22 @@
+node_modules/
+*.excalidraw
+
+# Python
+__pycache--/
+*.pyc
+.venv/
+
+# AgentCore CLI - generate config, machine-specific paths
+.bedrock_agentcore.yaml
+
+# Generated from pyproject.toml for local testing only
+# Production deployments should use pyproject.toml
+requirements.txt
+
+# Go build artifacts
+bootstrap
+*.zip
+
+# SAM build artifacts
+.aws-sam/
+
