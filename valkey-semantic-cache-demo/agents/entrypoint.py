@@ -22,8 +22,8 @@ from cache_constants import (
     KEY_PREFIX_REQUEST_RESPONSE,
     KEY_PREFIX_VECTOR,
     VECTOR_DIM,
-    CLAUDE_SONNET_4_INPUT_COST,
-    CLAUDE_SONNET_4_OUTPUT_COST,
+    NOVA_PREMIER_INPUT_COST,
+    NOVA_PREMIER_OUTPUT_COST,
 )
 from support_agent import invoke_agent
 
@@ -150,8 +150,8 @@ def cache_response(request_text: str, response_text: str, embedding: list[float]
     )
     
     # Calculate cost in dollars
-    cost = (input_tokens * CLAUDE_SONNET_4_INPUT_COST / 1_000_000 + 
-            output_tokens * CLAUDE_SONNET_4_OUTPUT_COST / 1_000_000)
+    cost = (input_tokens * NOVA_PREMIER_INPUT_COST / 1_000_000 +
+            output_tokens * NOVA_PREMIER_OUTPUT_COST / 1_000_000)
 
     client.hset(
         rr_key,
@@ -272,8 +272,8 @@ def invoke(request):
             # Estimate input tokens for current request, use cached output tokens
             input_tokens = estimate_tokens(request_text)
             output_tokens = int(cached.get("tokens_output", 0))
-            cost_avoided = (input_tokens * CLAUDE_SONNET_4_INPUT_COST / 1_000_000 + 
-                          output_tokens * CLAUDE_SONNET_4_OUTPUT_COST / 1_000_000)
+            cost_avoided = (input_tokens * NOVA_PREMIER_INPUT_COST / 1_000_000 + 
+                          output_tokens * NOVA_PREMIER_OUTPUT_COST / 1_000_000)
             
             emit_metrics(cached=True, latency_ms=latency, similarity=similarity, cost_avoided=cost_avoided)
             
@@ -300,8 +300,8 @@ def invoke(request):
     latency = (time.time() - start_time) * 1000
     
     # Calculate actual cost paid for this agent invocation
-    cost_paid = (input_tokens * CLAUDE_SONNET_4_INPUT_COST / 1_000_000 + 
-                 output_tokens * CLAUDE_SONNET_4_OUTPUT_COST / 1_000_000)
+    cost_paid = (input_tokens * NOVA_PREMIER_INPUT_COST / 1_000_000 + 
+                 output_tokens * NOVA_PREMIER_OUTPUT_COST / 1_000_000)
     
     emit_metrics(cached=False, latency_ms=latency, similarity=similarity, cost_paid=cost_paid)
     

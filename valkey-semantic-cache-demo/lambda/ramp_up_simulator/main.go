@@ -64,7 +64,7 @@ var (
 	loadMu          sync.Mutex
 )
 
-const numSessions = 400          // Stay under 500 concurrent session limit (sessions idle for 15 min)
+const numSessions = 450          // Stay under 500 concurrent session limit (sessions idle for 15 min)
 const maxConcurrentRequests = 25 // Match AgentCore's 25 TPS limit per agent
 
 func loadConfig() {

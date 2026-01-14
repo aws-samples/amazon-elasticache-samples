@@ -117,7 +117,7 @@ Demo context:
 """
 
 order_tracking_agent = Agent(
-    model="us.anthropic.claude-3-5-haiku-20241022-v1:0",
+    model="us.amazon.nova-premier-v1:0",
     system_prompt=SYSTEM_PROMPT,
     tools=[check_order_status, get_delivery_info],
 )
@@ -139,7 +139,11 @@ def invoke_tracking_agent(request_text: str) -> tuple[str, int, int]:
     input_tokens = usage.get("inputTokens", 0)
     output_tokens = usage.get("outputTokens", 0)
 
-    logger.info("OrderTrackingAgent extracted tokens - input: %d, output: %d", input_tokens, output_tokens)
+    logger.info(
+        "OrderTrackingAgent extracted tokens - input: %d, output: %d",
+        input_tokens,
+        output_tokens,
+    )
 
     return str(response), input_tokens, output_tokens
 

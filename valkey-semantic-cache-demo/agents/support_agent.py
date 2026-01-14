@@ -46,7 +46,7 @@ Tone: Professional, empathetic, solution-oriented.
 """
 
 support_agent = Agent(
-    model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+    model="us.amazon.nova-premier-v1:0",
     system_prompt=SYSTEM_PROMPT,
     tools=[lookup_order_tracking],
 )
@@ -79,7 +79,12 @@ def invoke_agent(request_text: str) -> tuple[str, int, int]:
     if sub_input > 0 or sub_output > 0:
         logger.info(
             "Token usage - SupportAgent: %d/%d, OrderTrackingAgent: %d/%d, Total: %d/%d",
-            input_tokens, output_tokens, sub_input, sub_output, total_input, total_output
+            input_tokens,
+            output_tokens,
+            sub_input,
+            sub_output,
+            total_input,
+            total_output,
         )
 
     return str(response), total_input, total_output
