@@ -168,5 +168,5 @@ agentcore launch --local
 | `ELASTICACHE_ENDPOINT` | `localhost`                    | Valkey/Redis host            |
 | `ELASTICACHE_PORT`     | `6379`                         | Valkey/Redis port            |
 | `SIMILARITY_THRESHOLD` | `0.85`                         | Min similarity for cache hit |
-| `EMBEDDING_MODEL`      | `amazon.titan-embed-text-v2:0` | Bedrock embedding model      |
+| `EMBEDDING_MODEL`      | `amazon.nova-embed-text-v1:0` | Bedrock embedding model      |
 | `AWS_REGION`           | `us-east-2`                    | AWS region for Bedrock calls |

@@ -52,7 +52,7 @@ This application provides developers and AWS customers with a concrete, measurab
 - AWS Account with Bedrock model access enabled:
   - Claude Sonnet 4 (`anthropic.claude-sonnet-4-20250514`)
   - Claude 3.5 Haiku (`anthropic.claude-3-5-haiku-20241022`)
-  - Titan Embeddings v2 (`amazon.titan-embed-text-v2:0`)
+  - Nova Embeddings (`amazon.nova-embed-text-v1:0`)
 - IAM permissions to create: Lambda, ElastiCache, CloudWatch, CodeBuild, ECR, IAM roles
 
 **Required Tools:**
@@ -348,7 +348,7 @@ AWS_REGION=us-east-1
 ELASTICACHE_ENDPOINT=your-cluster.cache.amazonaws.com:6379
 BEDROCK_SUPPORT_AGENT_MODEL=anthropic.claude-sonnet-4-20250514
 BEDROCK_TRACKING_AGENT_MODEL=anthropic.claude-sonnet-3-5-v2
-EMBEDDING_MODEL=amazon.titan-embed-text-v2:0
+EMBEDDING_MODEL=amazon.nova-embed-text-v1:0
 SIMILARITY_THRESHOLD=0.80
 CLOUDWATCH_NAMESPACE=SemanticSupportDesk
 ```

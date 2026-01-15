@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 ELASTICACHE_ENDPOINT = os.environ.get("ELASTICACHE_ENDPOINT", "localhost")
 ELASTICACHE_PORT = int(os.environ.get("ELASTICACHE_PORT", "6379"))
 SIMILARITY_THRESHOLD = float(os.environ.get("SIMILARITY_THRESHOLD", "0.80"))
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "amazon.nova-embed-text-v1:0")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 
 # This is the serverless runtime for running Titan Embeddings only - not to
@@ -70,10 +70,15 @@ def estimate_tokens(text: str) -> int:
 
 
 def generate_embedding(text: str) -> list[float]:
-    """Generate Titan embeddings for the passed in text parameter."""
+    """Generate Nova embeddings for the passed in text parameter."""
+    request_body = {
+        "inputText": text,
+        "dimensions": VECTOR_DIM,
+        "embeddingTypes": ["float"],
+    }
     response = bedrock_runtime.invoke_model(
         modelId=EMBEDDING_MODEL,
-        body=json.dumps({"inputText": text, "dimensions": VECTOR_DIM}),
+        body=json.dumps(request_body),
     )
     return json.loads(response["body"].read())["embedding"]
 

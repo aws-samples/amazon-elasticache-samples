@@ -39,7 +39,7 @@ Parameters:
 
   EmbeddingModel:
     Type: String
-    Default: "amazon.titan-embed-text-v2:0"
+    Default: "amazon.nova-embed-text-v1:0"
 
   # Import from AgentCore stack
   AgentCoreStackName:
