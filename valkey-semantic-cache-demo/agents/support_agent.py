@@ -45,11 +45,14 @@ Typical timelines:
 Tone: Professional, empathetic, solution-oriented. 
 """
 
-support_agent = Agent(
-    model="us.amazon.nova-premier-v1:0",
-    system_prompt=SYSTEM_PROMPT,
-    tools=[lookup_order_tracking],
-)
+
+def create_support_agent():
+    """Factory function to create a fresh SupportAgent instance."""
+    return Agent(
+        model="us.amazon.nova-premier-v1:0",
+        system_prompt=SYSTEM_PROMPT,
+        tools=[lookup_order_tracking],
+    )
 
 
 def invoke_agent(request_text: str) -> tuple[str, int, int]:
@@ -64,7 +67,8 @@ def invoke_agent(request_text: str) -> tuple[str, int, int]:
     """
     reset_token_accumulator()
 
-    response = support_agent(request_text)
+    agent = create_support_agent()
+    response = agent(request_text)
 
     # Extract token usage from metrics.accumulated_usage
     usage = response.metrics.accumulated_usage if response.metrics else {}

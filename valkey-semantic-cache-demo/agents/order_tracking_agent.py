@@ -116,11 +116,14 @@ Demo context:
     - Same order_id or tracking_number will return consistent results
 """
 
-order_tracking_agent = Agent(
-    model="us.amazon.nova-premier-v1:0",
-    system_prompt=SYSTEM_PROMPT,
-    tools=[check_order_status, get_delivery_info],
-)
+
+def create_order_tracking_agent():
+    """Factory function to create a fresh OrderTrackingAgent instance."""
+    return Agent(
+        model="us.amazon.nova-premier-v1:0",
+        system_prompt=SYSTEM_PROMPT,
+        tools=[check_order_status, get_delivery_info],
+    )
 
 
 def invoke_tracking_agent(request_text: str) -> tuple[str, int, int]:
@@ -133,7 +136,8 @@ def invoke_tracking_agent(request_text: str) -> tuple[str, int, int]:
     Returns:
         Tuple of (response_text, input_tokens, output_tokens)
     """
-    response = order_tracking_agent(request_text)
+    agent = create_order_tracking_agent()
+    response = agent(request_text)
 
     usage = response.metrics.accumulated_usage if response.metrics else {}
     input_tokens = usage.get("inputTokens", 0)
