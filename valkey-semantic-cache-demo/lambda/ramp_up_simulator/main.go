@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -57,15 +60,18 @@ var (
 	cfg             Config
 	s3Client        *s3.Client
 	agentCoreClient *bedrockagentcore.Client
+	httpClient      *http.Client
 	baseQuestions   []string // 50 base questions (cache primers)
 	variations      []string // 450 variations
 	sessionIDs      []string // Pre-generated session IDs to stay under 500 concurrent limit
 	questionsLoaded bool
 	loadMu          sync.Mutex
+	isLocalMode     bool
 )
 
 const numSessions = 450          // Stay under 500 concurrent session limit (sessions idle for 15 min)
 const maxConcurrentRequests = 25 // Match AgentCore's 25 TPS limit per agent
+const localEndpoint = "http://localhost:8080/invocations"
 
 func loadConfig() {
 	cfg = Config{
@@ -90,6 +96,14 @@ func loadConfig() {
 func init() {
 	loadConfig()
 
+	_, isLambda := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME")
+	isLocalMode = !isLambda
+
+	if isLocalMode {
+		log.Println("Running in LOCAL mode - will use HTTP to localhost:8080")
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+
 	// Initialize AWS SDK clients
 	awsCfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
@@ -97,7 +111,9 @@ func init() {
 	}
 
 	s3Client = s3.NewFromConfig(awsCfg)
-	agentCoreClient = bedrockagentcore.NewFromConfig(awsCfg)
+	if !isLocalMode {
+		agentCoreClient = bedrockagentcore.NewFromConfig(awsCfg)
+	}
 }
 
 func loadQuestionsFromS3(ctx context.Context) error {
@@ -108,20 +124,30 @@ func loadQuestionsFromS3(ctx context.Context) error {
 		return nil
 	}
 
-	log.Printf("Loading seed questions from s3://%s/%s", cfg.SeedQuestionsBucket, cfg.SeedQuestionsKey)
+	var reader io.ReadCloser
 
-	result, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &cfg.SeedQuestionsBucket,
-		Key:    &cfg.SeedQuestionsKey,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get S3 object: %w", err)
+	if isLocalMode {
+		log.Println("Loading seed questions from local file: seed-questions.json")
+		f, err := os.Open("seed-questions.json")
+		if err != nil {
+			return fmt.Errorf("failed to open local seed-questions.json: %w", err)
+		}
+		reader = f
+	} else {
+		log.Printf("Loading seed questions from s3://%s/%s", cfg.SeedQuestionsBucket, cfg.SeedQuestionsKey)
+		result, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &cfg.SeedQuestionsBucket,
+			Key:    &cfg.SeedQuestionsKey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get S3 object: %w", err)
+		}
+		reader = result.Body
 	}
-
-	defer result.Body.Close()
+	defer reader.Close()
 
 	var seedData SeedQuestions
-	if err := json.NewDecoder(result.Body).Decode(&seedData); err != nil {
+	if err := json.NewDecoder(reader).Decode(&seedData); err != nil {
 		return fmt.Errorf("failed to parse seed questions JSON: %w", err)
 	}
 
@@ -144,7 +170,34 @@ func initSessionIDs() {
 	log.Printf("Initialized %d session IDs", len(sessionIDs))
 }
 
+func invokeLocal(ctx context.Context, question string) error {
+	payload := map[string]string{"request_text": question}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", localEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, respBody)
+	}
+	return nil
+}
+
 func invokeAgentCore(ctx context.Context, question string, requestIndex int) error {
+	if isLocalMode {
+		return invokeLocal(ctx, question)
+	}
+
 	payload := map[string]string{
 		"request_text": question,
 	}
@@ -283,5 +336,14 @@ func selectQuestion(elapsedSecs, totalDuration, requestIndex int) string {
 }
 
 func main() {
-	lambda.Start(handleRequest)
+	if isLocalMode {
+		log.Println("Starting local ramp-up simulation...")
+		resp, err := handleRequest(context.Background(), LambdaRequest{})
+		if err != nil {
+			log.Fatalf("Simulation failed: %v", err)
+		}
+		log.Printf("Result: %+v", resp)
+	} else {
+		lambda.Start(handleRequest)
+	}
 }
