@@ -1,6 +1,11 @@
-"""Cache management Lambda for semantic caching demo."""
+"""Cache management Lambda for semantic caching demo.
 
+Dual-mode: runs as Lambda (cloud) or HTTP server (local).
+"""
+
+import json
 import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, cast
 
 from glide_sync import GlideClient, GlideClientConfiguration, NodeAddress, TEncodable
@@ -16,8 +21,9 @@ HNSW_EF_CONSTRUCTION = 200
 
 
 def get_client() -> GlideClient:
+    host = os.environ.get("ELASTICACHE_ENDPOINT", "localhost")
     config = GlideClientConfiguration(
-        addresses=[NodeAddress(host=os.environ["ELASTICACHE_ENDPOINT"], port=6379)],
+        addresses=[NodeAddress(host=host, port=6379)],
         client_name="cache-management-lambda",
     )
     return GlideClient.create(config)
@@ -92,3 +98,40 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, str]:
 
     finally:
         client.close()
+
+
+# --- Local HTTP server mode ---
+
+class CacheHandler(BaseHTTPRequestHandler):
+    def _send_json(self, data: dict, status: int = 200):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path == "/reset":
+            result = handler({"action": "reset-cache"}, None)
+            self._send_json(result)
+        elif self.path == "/health":
+            result = handler({"action": "health-check"}, None)
+            self._send_json(result)
+        else:
+            self._send_json({"error": "not found"}, 404)
+
+    def log_message(self, format, *args):
+        print(f"[cache-mgmt] {args[0]}")
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8082"))
+    print(f"Cache management server running on http://localhost:{port}")
+    print("Endpoints: POST /reset, POST /health")
+    HTTPServer(("", port), CacheHandler).serve_forever()

@@ -337,12 +337,33 @@ func selectQuestion(elapsedSecs, totalDuration, requestIndex int) string {
 
 func main() {
 	if isLocalMode {
-		log.Println("Starting local ramp-up simulation...")
-		resp, err := handleRequest(context.Background(), LambdaRequest{})
-		if err != nil {
-			log.Fatalf("Simulation failed: %v", err)
-		}
-		log.Printf("Result: %+v", resp)
+		http.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			go func() {
+				log.Println("Starting ramp-up simulation...")
+				resp, err := handleRequest(context.Background(), LambdaRequest{})
+				if err != nil {
+					log.Printf("Simulation failed: %v", err)
+				} else {
+					log.Printf("Result: %+v", resp)
+				}
+			}()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"status": "started"}`))
+		})
+		log.Println("Ramp-up simulator listening on :8081")
+		log.Fatal(http.ListenAndServe(":8081", nil))
 	} else {
 		lambda.Start(handleRequest)
 	}

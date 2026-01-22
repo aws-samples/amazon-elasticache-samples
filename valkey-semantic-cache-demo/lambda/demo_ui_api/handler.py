@@ -1,4 +1,4 @@
-"""Demo UI API Lambda - metrics, start, reset endpoints."""
+"""Demo UI API Lambda - metrics and reset endpoints."""
 
 import json
 import os
@@ -8,9 +8,6 @@ import boto3
 
 NAMESPACE = os.environ.get("METRIC_NAMESPACE", "SemanticSupportDesk")
 REGION = os.environ.get("AWS_REGION", "us-east-2")
-RAMP_UP_FUNCTION = os.environ.get(
-    "RAMP_UP_FUNCTION", "semantic-cache-demo-ramp-up-simulator"
-)
 CACHE_MGMT_FUNCTION = os.environ.get(
     "CACHE_MGMT_FUNCTION", "semantic-cache-demo-cache-management"
 )
@@ -123,8 +120,6 @@ def handler(event: dict, context) -> dict:
     try:
         if path == "/metrics" and method == "GET":
             body = get_metrics()
-        elif path == "/start" and method == "POST":
-            body = invoke_lambda(RAMP_UP_FUNCTION, {})
         elif path == "/reset" and method == "POST":
             body = invoke_lambda(CACHE_MGMT_FUNCTION, {"action": "reset-cache"})
         else:
