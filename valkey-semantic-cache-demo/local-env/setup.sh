@@ -15,9 +15,9 @@ NC=$'\033[0m' # No Color
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-AWS_PROFILE="${AWS_PROFILE:-semantic-cache-demo}"
-AWS_REGION="${AWS_REGION:-us-east-2}"
-EMBEDDING_MODEL="${EMBEDDING_MODEL:-amazon.titan-embed-text-v2:0}"
+export AWS_PROFILE="${AWS_PROFILE:-semantic-cache-demo}"
+export AWS_REGION="${AWS_REGION:-us-east-2}"
+export EMBEDDING_MODEL="${EMBEDDING_MODEL:-amazon.titan-embed-text-v2:0}"
 
 print_header() {
   echo -e "${GREEN}==========================================${NC}"
@@ -54,23 +54,8 @@ check_command() {
   return 0
 }
 
-check_agentcore() {
-  # Check in agents venv first, then globally
-  if [ -f "$PROJECT_ROOT/agents/.venv/bin/agentcore" ]; then
-    print_success "agentcore found (in agents/.venv)"
-    return 0
-  elif command -v agentcore &> /dev/null; then
-    print_success "agentcore found"
-    return 0
-  else
-    print_error "agentcore is not installed"
-    echo "  Install: cd agents && uv pip install bedrock-agentcore"
-    return 1
-  fi
-}
-
 verify_dependencies() {
-  print_step "1/11" "Verifying dependencies..."
+  print_step "1/12" "Verifying dependencies..."
   
   local failed=0
   
@@ -80,7 +65,6 @@ verify_dependencies() {
   check_command "aws" "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html" || failed=1
   check_command "sam" "https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html" || failed=1
   check_command "uv" "curl -LsSf https://astral.sh/uv/install.sh | sh" || failed=1
-  check_agentcore || failed=1
   
   if [ $failed -eq 1 ]; then
     echo ""
@@ -92,7 +76,7 @@ verify_dependencies() {
 }
 
 verify_aws_credentials() {
-  print_step "2/11" "Verifying AWS credentials..."
+  print_step "2/12" "Verifying AWS credentials..."
   
   if ! aws sts get-caller-identity --profile "$AWS_PROFILE" &> /dev/null; then
     print_error "AWS credentials not configured for profile '$AWS_PROFILE'"
@@ -106,7 +90,7 @@ verify_aws_credentials() {
 }
 
 start_valkey() {
-  print_step "3/11" "Starting local Valkey..."
+  print_step "3/12" "Starting local Valkey..."
   
   if docker ps --format '{{.Names}}' | grep -q '^valkey$'; then
     print_info "Valkey container already running"
@@ -128,23 +112,28 @@ start_valkey() {
   echo ""
 }
 
-create_vector_index() {
-  print_step "4/11" "Creating vector index..."
+sync_dependencies() {
+  print_step "4/12" "Syncing Python dependencies..."
   
   cd "$PROJECT_ROOT/agents"
   
-  if [ ! -d ".venv" ]; then
-    print_info "Creating Python virtual environment..."
-    uv venv > /dev/null
-  fi
+  print_info "Installing dependencies (includes agentcore)..."
+  uv sync > /dev/null 2>&1
+  
+  print_success "Dependencies synced"
+  cd "$SCRIPT_DIR"
+  echo ""
+}
+
+create_vector_index() {
+  print_step "5/12" "Creating vector index..."
+  
+  cd "$PROJECT_ROOT/agents"
   
   source .venv/bin/activate
-  uv pip install -q valkey > /dev/null 2>&1
   
   # Check if index exists
-  local index_exists=$(docker exec valkey valkey-cli FT._LIST 2>/dev/null | grep -c "idx:requests" || echo "0")
-  
-  if [ "$index_exists" -gt 0 ]; then
+  if docker exec valkey valkey-cli FT._LIST 2>/dev/null | grep -q "idx:requests"; then
     print_info "Vector index already exists"
   else
     uv run python ../infrastructure/elasticache_config/create_vector_index.py > /dev/null 2>&1
@@ -157,7 +146,7 @@ create_vector_index() {
 }
 
 deploy_cloudwatch_dashboard() {
-  print_step "5/11" "Deploying CloudWatch dashboard..."
+  print_step "6/12" "Deploying CloudWatch dashboard..."
   
   if aws cloudformation describe-stacks --stack-name semantic-cache-demo-dashboard \
       --profile "$AWS_PROFILE" --region "$AWS_REGION" &> /dev/null; then
@@ -170,13 +159,9 @@ deploy_cloudwatch_dashboard() {
 }
 
 generate_requirements() {
-  print_step "6/11" "Generating requirements.txt..."
+  print_step "7/12" "Generating requirements.txt..."
   
   cd "$PROJECT_ROOT/agents"
-  
-  if [ ! -d ".venv" ]; then
-    uv venv > /dev/null
-  fi
   
   source .venv/bin/activate
   uv pip compile pyproject.toml -o requirements.txt > /dev/null 2>&1
@@ -188,15 +173,20 @@ generate_requirements() {
 }
 
 configure_agentcore() {
-  print_step "7/11" "Configuring AgentCore..."
+  print_step "8/12" "Configuring AgentCore..."
   
   cd "$PROJECT_ROOT/agents"
   
   if [ -f ".bedrock_agentcore.yaml" ]; then
     print_info "AgentCore already configured"
   else
+    source .venv/bin/activate
     agentcore configure -e entrypoint.py -n entrypoint -rf requirements.txt \
-      -dt direct_code_deploy -rt PYTHON_3_12 --disable-memory --non-interactive > /dev/null 2>&1
+      -dt direct_code_deploy -rt PYTHON_3_12 --disable-memory --non-interactive || {
+        print_error "AgentCore configuration failed"
+        exit 1
+      }
+    deactivate
     print_success "AgentCore configured"
   fi
   
@@ -205,7 +195,7 @@ configure_agentcore() {
 }
 
 start_agentcore() {
-  print_step "8/11" "Starting AgentCore..."
+  print_step "9/12" "Starting AgentCore..."
   
   # Check if already running
   if curl -s http://localhost:8080/health > /dev/null 2>&1; then
@@ -242,7 +232,7 @@ start_agentcore() {
 }
 
 start_ramp_simulator() {
-  print_step "9/11" "Starting ramp-up simulator..."
+  print_step "10/12" "Starting ramp-up simulator..."
   
   # Check if already running
   if curl -s http://localhost:8081/health > /dev/null 2>&1; then
@@ -278,7 +268,7 @@ start_ramp_simulator() {
 }
 
 start_cache_management() {
-  print_step "10/11" "Starting cache management..."
+  print_step "11/12" "Starting cache management..."
   
   # Check if already running
   if curl -s -X POST http://localhost:8082/health > /dev/null 2>&1; then
@@ -311,7 +301,7 @@ start_cache_management() {
 }
 
 start_metrics_api() {
-  print_step "11/11" "Starting metrics API (SAM)..."
+  print_step "12/12" "Starting metrics API (SAM)..."
   
   # Check if already running
   if curl -s http://localhost:3000/metrics > /dev/null 2>&1; then
@@ -379,6 +369,7 @@ main() {
   verify_dependencies
   verify_aws_credentials
   start_valkey
+  sync_dependencies
   create_vector_index
   deploy_cloudwatch_dashboard
   generate_requirements
