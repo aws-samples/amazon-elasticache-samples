@@ -9,7 +9,7 @@ import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUT = os.path.join(SCRIPT_DIR, "products_esci_vec_64d.jsonl.gz")
-HOST = sys.argv[1] if len(sys.argv) > 1 else "sivasams-cluster.lajljv.ng.0001.euw1devo.cache.amazonaws.com"
+HOST = sys.argv[1] if len(sys.argv) > 1 else "your-cluster.cache.amazonaws.com"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 6379
 INDEX = "products_vec_index"
 PREFIX = "pv:"
