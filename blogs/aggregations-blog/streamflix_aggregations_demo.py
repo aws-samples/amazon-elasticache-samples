@@ -16,7 +16,7 @@ with microsecond latency across shards without a separate analytics layer.
 
 Prerequisites
 -------------
-1. Python 3.8 or later
+1. Python 3.9 or later
      macOS:   brew install python3
      Amazon Linux 2023:  sudo dnf install python3
      Ubuntu:  sudo apt install python3 python3-pip
@@ -133,7 +133,8 @@ VALKEY_PORT = 6379
 
 # URL for the sample catalog data (50 movie titles with metadata).
 CATALOG_CSV_URL = (
-    "https://github.com/aws-samples/amazon-elasticache-samples/blogs/aggregations-blog/catalog_data.csv"
+    "https://raw.githubusercontent.com/aws-samples/amazon-elasticache-samples"
+    "/main/blogs/aggregations-blog/catalog_data.csv"
 )
 
 
@@ -165,6 +166,11 @@ print("Connected to", VALKEY_CLUSTER_ENDPOINT)
 # covers all hash keys regardless of which shard owns them.
 # You can create the index before or after loading data. If keys matching
 # the prefix already exist, Valkey Search backfills them automatically.
+#
+# Equivalent Valkey command:
+#   FT.CREATE catalog_index ON HASH PREFIX 1 title: SCHEMA
+#     title TEXT genre TAG language TAG studio TAG
+#     release_year NUMERIC rating NUMERIC views_24h NUMERIC
 
 client.ft("catalog_index").create_index(
     fields=[
@@ -217,6 +223,10 @@ time.sleep(2)
 # The user's filters are passed in the query string so only matching
 # documents enter the GROUPBY stage — this is a best practice to reduce
 # the number of documents flowing through the pipeline.
+#
+# Equivalent Valkey command (for genre=drama, language=english):
+#   FT.AGGREGATE catalog_index "@genre:{drama} @language:{english}"
+#     LOAD 1 @genre GROUPBY 1 @genre REDUCE COUNT 0 AS count
 
 def get_facet_counts(filters):
     # Build query string from user-selected filters
@@ -263,6 +273,12 @@ pprint.pprint({dim: rows_to_dicts(rows) for dim, rows in facets.items()})
 #
 # MAX is passed to SORTBY so the engine tracks only the top results
 # rather than sorting the entire working set — another best practice.
+#
+# Equivalent Valkey command:
+#   FT.AGGREGATE catalog_index "@rating:[-inf +inf]"
+#     LOAD 2 @genre @views_24h
+#     GROUPBY 1 @genre REDUCE MAX 1 @views_24h AS max_views
+#     SORTBY 2 @max_views DESC MAX 10
 
 def get_trending_by_genre(limit=10):
     # Get the highest view count per genre
@@ -302,6 +318,15 @@ pprint.pprint(rows_to_dicts(trending_by_genre))
 # Note: The AVG reducer returns full-precision decimals (e.g.
 # '4.3333333333' rather than '4.33'). You can add an APPLY stage with
 # format() to round if needed.
+#
+# Equivalent Valkey command:
+#   FT.AGGREGATE catalog_index "@rating:[-inf +inf]"
+#     LOAD 3 @studio @rating @views_24h
+#     GROUPBY 1 @studio
+#       REDUCE COUNT 0 AS title_count
+#       REDUCE AVG 1 @rating AS avg_rating
+#       REDUCE SUM 1 @views_24h AS total_views
+#     SORTBY 2 @total_views DESC
 
 def get_studio_report():
     # Studio performance: title count, average rating, total 24h views
