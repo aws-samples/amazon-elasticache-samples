@@ -30,7 +30,7 @@ All three patterns run as single `FT.AGGREGATE` commands on the ElastiCache clus
 |---|---|
 | **AWS account** | With permissions to create ElastiCache clusters and EC2 instances |
 | **AWS CLI** | [Install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
-| **Python 3.8+** | `brew install python3` (macOS) · `sudo dnf install python3` (Amazon Linux 2023) · `sudo apt install python3 python3-pip` (Ubuntu) |
+| **Python 3.9+** | `brew install python3` (macOS) · `sudo dnf install python3` (Amazon Linux 2023) · `sudo apt install python3 python3-pip` (Ubuntu) |
 | **redis-py ≤ 5.1.1** | `pip install "redis<=5.1.1"` |
 
 ### Why redis-py ≤ 5.1.1?
