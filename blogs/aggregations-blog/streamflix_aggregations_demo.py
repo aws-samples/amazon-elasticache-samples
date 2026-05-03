@@ -21,23 +21,12 @@ Prerequisites
      Amazon Linux 2023:  sudo dnf install python3
      Ubuntu:  sudo apt install python3 python3-pip
 
-2. redis-py <= 5.1.1
-     pip install "redis<=5.1.1"
+2. valkey-py 6.1.1 or later
+     pip install valkey
 
-   Why this version?
-   - redis-py >= 5.2.0 adds a SCORER TFIDF argument to every FT.AGGREGATE
-     command. Valkey 9.0 does not support SCORER on aggregations, so all
-     aggregation queries fail with "Unexpected argument `SCORER`".
-   - redis-py >= 5.2.0 also routes FT.CREATE to a single shard instead of
-     broadcasting it to all shards. This means the index is only created on
-     one shard and aggregation results are incomplete.
-   - redis-py <= 5.1.1 does not send SCORER and correctly broadcasts
-     FT.CREATE to every shard in cluster mode.
-
-   Why redis-py and not valkey-py?
-   - valkey-py (as of 6.1.1) does not include a search module. Importing
-     from valkey.search raises ModuleNotFoundError. redis-py includes full
-     search and aggregation support out of the box.
+   valkey-py includes a full search and aggregation module at
+   valkey.commands.search with high-level classes for index creation,
+   search, and aggregation (AggregateRequest, reducers, field types).
 
 3. AWS CLI (for cluster creation/cleanup)
      https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
@@ -98,17 +87,17 @@ import time
 import urllib.request
 import pprint
 
-import redis
-from redis.commands.search.field import TextField, TagField, NumericField
-from redis.commands.search.indexDefinition import IndexDefinition, IndexType
-from redis.commands.search.aggregation import AggregateRequest, Desc
-from redis.commands.search import reducers
+import valkey
+from valkey.commands.search.field import TextField, TagField, NumericField
+from valkey.commands.search.indexDefinition import IndexDefinition, IndexType
+from valkey.commands.search.aggregation import AggregateRequest, Desc
+from valkey.commands.search import reducers
 
 
 def rows_to_dicts(rows):
     """Convert aggregate result rows to a list of dicts.
 
-    redis-py returns each aggregate row as a flat list of alternating
+    valkey-py returns each aggregate row as a flat list of alternating
     field names and values, e.g. ['genre', 'drama', 'count', '6'].
     This helper turns each row into a dict: {'genre': 'drama', 'count': '6'}.
     """
@@ -144,7 +133,7 @@ CATALOG_CSV_URL = (
 
 # If --transit-encryption-enabled was set during cluster creation, the
 # client must connect over TLS. Set ssl=True to enable this.
-client = redis.RedisCluster(
+client = valkey.ValkeyCluster(
     host=VALKEY_CLUSTER_ENDPOINT,
     port=VALKEY_PORT,
     decode_responses=True,

@@ -31,17 +31,11 @@ All three patterns run as single `FT.AGGREGATE` commands on the ElastiCache clus
 | **AWS account** | With permissions to create ElastiCache clusters and EC2 instances |
 | **AWS CLI** | [Install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
 | **Python 3.9+** | `brew install python3` (macOS) · `sudo dnf install python3` (Amazon Linux 2023) · `sudo apt install python3 python3-pip` (Ubuntu) |
-| **redis-py ≤ 5.1.1** | `pip install "redis<=5.1.1"` |
+| **valkey-py ≥ 6.1.1** | `pip install valkey` |
 
-### Why redis-py ≤ 5.1.1?
+### Why valkey-py?
 
-- **redis-py ≥ 5.2.0** adds a `SCORER TFIDF` argument to every `FT.AGGREGATE` command. Valkey 9.0 does not support `SCORER` on aggregations, so all aggregation queries fail with `Unexpected argument 'SCORER'`.
-- **redis-py ≥ 5.2.0** also routes `FT.CREATE` to a single shard instead of broadcasting it to all shards. This means the index is only created on one shard and aggregation results are incomplete.
-- **redis-py ≤ 5.1.1** does not send `SCORER` and correctly broadcasts `FT.CREATE` to every shard in cluster mode.
-
-### Why redis-py and not valkey-py?
-
-`valkey-py` (as of 6.1.1) does not include a search module. Importing `from valkey.search` raises `ModuleNotFoundError`. `redis-py` includes full search and aggregation support out of the box.
+[valkey-py](https://github.com/valkey-io/valkey-py) is the official Python client for Valkey. Starting with version 6.1.1, it includes a full search and aggregation module at `valkey.commands.search` with high-level classes for index creation (`TextField`, `TagField`, `NumericField`, `IndexDefinition`), aggregation (`AggregateRequest`, `Desc`), and reducers (`count`, `avg`, `sum`, `max`, `min`). The API is wire-compatible with Valkey Search and does not inject unsupported arguments like `SCORER`.
 
 ---
 
@@ -124,7 +118,7 @@ Then SSH into the instance and install dependencies:
 ssh -i <your-key.pem> ec2-user@<ec2-public-ip>
 
 sudo dnf install python3 python3-pip -y
-pip3 install "redis<=5.1.1"
+pip3 install valkey
 ```
 
 ### Option B — SSH tunnel from your local machine
