@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Demo UI API for local development with SAM'
+
+Globals:
+  Api:
+    Cors: "'*'"
+
+Resources:
+  DemoUiApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: demo-ui-api-local
+      CodeUri: ../lambda/demo_ui_api/
+      Handler: handler.handler
+      Runtime: python3.12
+      Architectures:
+        - arm64
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          METRIC_NAMESPACE: "SemanticSupportDesk"
+          AWS_REGION: "us-east-2"
+          # For local testing, these won't be invoked but metrics still read from CW
+          RAMP_UP_FUNCTION: "semantic-cache-demo-ramp-up-simulator"
+          CACHE_MGMT_FUNCTION: "semantic-cache-demo-cache-management"
+      Events:
+        GetMetrics:
+          Type: Api
+          Properties:
+            Path: /metrics
+            Method: GET
+        StartDemo:
+          Type: Api
+          Properties:
+            Path: /start
+            Method: POST
+        ResetCache:
+          Type: Api
+          Properties:
+            Path: /reset
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Description: "Local API URL"
+    Value: "http://127.0.0.1:3000"

@@ -1,0 +1,489 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Bedrock AgentCore IAM roles and resources for semantic caching demo"
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: "semantic-cache-demo"
+    Description: "Project name used for resource naming"
+
+  AgentName:
+    Type: String
+    Default: "semantic_cache_demo"
+    Description: "Agent name (must match agentcore configure --name value)"
+
+  AwsRegion:
+    Type: String
+    Default: "us-east-2"
+    Description: "AWS region for deployment"
+
+  # Import from ElastiCache stack
+  ElastiCacheStackName:
+    Type: String
+    Default: "semantic-cache-demo-infrastructure"
+    Description: "Name of the ElastiCache CloudFormation stack (for security group reference)"
+
+Resources:
+  #############################################
+  # S3 Bucket for CodeBuild Sources
+  #############################################
+  CodeBuildSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-agentcore-sources-${AWS::AccountId}-${AwsRegion}"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupOldSources
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-codebuild-sources"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # ECR Repository for Agent Container
+  #############################################
+  AgentECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "bedrock-agentcore-${AgentName}"
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep only 5 most recent images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-agent-ecr"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # CodeBuild IAM Role
+  #############################################
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "AgentCoreCodeBuild-${AwsRegion}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # CloudWatch Logs - for build logging
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AwsRegion}:${AWS::AccountId}:log-group:/aws/codebuild/*"
+
+        # S3 - for downloading source code
+        - PolicyName: S3SourceAccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !Sub "arn:aws:s3:::bedrock-agentcore-codebuild-sources-${AWS::AccountId}-${AwsRegion}"
+                  - !Sub "arn:aws:s3:::bedrock-agentcore-codebuild-sources-${AWS::AccountId}-${AwsRegion}/*"
+
+        # ECR - for pushing container images
+        - PolicyName: ECRPushPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeRepositories
+                  - ecr:CreateRepository
+                  - ecr:TagResource
+                Resource:
+                  - !GetAtt AgentECRRepository.Arn
+        # CodeBuild - for project management (AgentCore may need this)
+        - PolicyName: CodeBuildSelfManagement
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:CreateReportGroup
+                  - codebuild:CreateReport
+                  - codebuild:UpdateReport
+                  - codebuild:BatchPutTestCases
+                  - codebuild:BatchPutCodeCoverages
+                Resource:
+                  - !Sub "arn:aws:codebuild:${AwsRegion}:${AWS::AccountId}:report-group/*"
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-codebuild-role"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # Runtime IAM Role (for deployed agent)
+  #############################################
+  RuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "AgentCoreRuntime-${AwsRegion}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Allow Bedrock AgentCore service to assume this role
+          - Effect: Allow
+            Principal:
+              Service:
+                - bedrock.amazonaws.com
+                - bedrock-agentcore.amazonaws.com
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # Bedrock - for model invocation (Claude, Titan Embeddings)
+        - PolicyName: BedrockInvokePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                  - bedrock:Converse
+                  - bedrock:ConverseStream
+                Resource:
+                  # Foundation models in local region
+                  - !Sub "arn:aws:bedrock:${AwsRegion}::foundation-model/anthropic.*"
+                  - !Sub "arn:aws:bedrock:${AwsRegion}::foundation-model/amazon.*"
+                  # Foundation models in all US regions (for cross-region inference profiles)
+                  - "arn:aws:bedrock:us-east-1::foundation-model/anthropic.*"
+                  - "arn:aws:bedrock:us-east-1::foundation-model/amazon.*"
+                  - "arn:aws:bedrock:us-west-2::foundation-model/anthropic.*"
+                  - "arn:aws:bedrock:us-west-2::foundation-model/amazon.*"
+                  # Cross-region inference profiles
+                  - !Sub "arn:aws:bedrock:${AwsRegion}:${AWS::AccountId}:inference-profile/us.anthropic.*"
+                  - !Sub "arn:aws:bedrock:${AwsRegion}:${AWS::AccountId}:inference-profile/us.amazon.*"
+
+        # CloudWatch - for metrics and logging
+        - PolicyName: CloudWatchPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: "SemanticSupportDesk"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource:
+                  - !Sub "arn:aws:logs:${AwsRegion}:${AWS::AccountId}:log-group:/aws/bedrock/*"
+                  - !Sub "arn:aws:logs:${AwsRegion}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/*"
+                  - !Sub "arn:aws:logs:${AwsRegion}:${AWS::AccountId}:log-group:/aws/lambda/*"
+
+        # VPC - for ElastiCache access (if running in VPC)
+        - PolicyName: VPCAccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                  - ec2:AssignPrivateIpAddresses
+                  - ec2:UnassignPrivateIpAddresses
+                Resource: "*"
+
+        # ECR - for pulling container images (required by Bedrock AgentCore)
+        - PolicyName: ECRPullPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                Resource:
+                  - !Sub "arn:aws:ecr:${AwsRegion}:${AWS::AccountId}:repository/bedrock-agentcore-*"
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-runtime-role"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # EC2 Instance Role (for jump host running agentcore CLI)
+  #############################################
+  EC2DeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "AgentCoreEC2Deployment-${AwsRegion}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # ECR - for repository management
+        - PolicyName: ECRManagement
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:*
+                Resource:
+                  - !Sub "arn:aws:ecr:${AwsRegion}:${AWS::AccountId}:repository/bedrock-agentcore-*"
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:DescribeRepositories
+                  - ecr:CreateRepository
+                Resource: "*"
+
+        # CodeBuild - for triggering builds
+        - PolicyName: CodeBuildManagement
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:*
+                Resource:
+                  - !Sub "arn:aws:codebuild:${AwsRegion}:${AWS::AccountId}:project/bedrock-agentcore-*"
+              - Effect: Allow
+                Action:
+                  - codebuild:ListProjects
+                  - codebuild:ListBuilds
+                Resource: "*"
+
+        # Bedrock - for agent management
+        - PolicyName: BedrockAgentManagement
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:*
+                Resource: "*"
+
+        # Bedrock AgentCore - for runtime management (separate service namespace)
+        - PolicyName: BedrockAgentCoreManagement
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:*
+                Resource: "*"
+
+        # EC2 - for VPC validation during deployment
+        - PolicyName: EC2VPCValidation
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+                Resource: "*"
+
+        # S3 - for uploading source code
+        - PolicyName: S3SourceUpload
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                  - s3:PutBucketVersioning
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:PutLifecycleConfiguration
+                Resource:
+                  - !Sub "arn:aws:s3:::bedrock-agentcore-codebuild-sources-${AWS::AccountId}-${AwsRegion}"
+                  - !Sub "arn:aws:s3:::bedrock-agentcore-codebuild-sources-${AWS::AccountId}-${AwsRegion}/*"
+
+        # IAM - for passing roles to CodeBuild and Bedrock
+        - PolicyName: IAMPassRole
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt CodeBuildRole.Arn
+                  - !GetAtt RuntimeRole.Arn
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource: "*"
+
+        # CloudWatch Logs - for viewing build logs
+        - PolicyName: CloudWatchLogsRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:GetLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:DescribeLogGroups
+                Resource:
+                  - !Sub "arn:aws:logs:${AwsRegion}:${AWS::AccountId}:log-group:/aws/codebuild/*"
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-ec2-deployment-role"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  # Instance profile for EC2
+  EC2DeploymentInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "AgentCoreEC2Deployment-${AwsRegion}"
+      Roles:
+        - !Ref EC2DeploymentRole
+
+Outputs:
+  CodeBuildRoleArn:
+    Description: "ARN of the CodeBuild IAM role for AgentCore"
+    Value: !GetAtt CodeBuildRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeBuildRoleArn"
+
+  CodeBuildRoleName:
+    Description: "Name of the CodeBuild IAM role"
+    Value: !Ref CodeBuildRole
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeBuildRoleName"
+
+  RuntimeRoleArn:
+    Description: "ARN of the Runtime IAM role for deployed agent"
+    Value: !GetAtt RuntimeRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-RuntimeRoleArn"
+
+  RuntimeRoleName:
+    Description: "Name of the Runtime IAM role"
+    Value: !Ref RuntimeRole
+    Export:
+      Name: !Sub "${AWS::StackName}-RuntimeRoleName"
+
+  EC2InstanceProfileArn:
+    Description: "ARN of the EC2 Instance Profile for deployment"
+    Value: !GetAtt EC2DeploymentInstanceProfile.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-EC2InstanceProfileArn"
+
+  EC2InstanceProfileName:
+    Description: "Name of the EC2 Instance Profile"
+    Value: !Ref EC2DeploymentInstanceProfile
+    Export:
+      Name: !Sub "${AWS::StackName}-EC2InstanceProfileName"
+
+  ECRRepositoryUri:
+    Description: "URI of the ECR repository for agent container"
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AwsRegion}.amazonaws.com/${AgentECRRepository}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ECRRepositoryUri"
+
+  ECRRepositoryName:
+    Description: "Name of the ECR repository"
+    Value: !Ref AgentECRRepository
+    Export:
+      Name: !Sub "${AWS::StackName}-ECRRepositoryName"
+
+  CodeBuildSourceBucketName:
+    Description: "Name of the S3 bucket for CodeBuild sources"
+    Value: !Ref CodeBuildSourceBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeBuildSourceBucket"
+
+  AgentCoreConfigureCommand:
+    Description: "Command to configure AgentCore with these roles (run on EC2)"
+    Value: !Sub |
+      agentcore configure \
+        --entrypoint entrypoint.py \
+        --name ${AgentName} \
+        --disable-memory \
+        --region ${AwsRegion}
+
+  StackName:
+    Description: "Name of this CloudFormation stack"
+    Value: !Ref AWS::StackName
