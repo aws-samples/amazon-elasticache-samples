@@ -143,3 +143,34 @@ For mixed workloads on the same nodes, we get reasonable approximations but not 
 
 This is because there is no way to assign the total outbound and inbound network traffic to read-or-write related commands.
 
+
+## 5. AI-Powered Migration Advisor (Optional)
+
+After running the assessment, you can feed the JSON output to an AI agent that generates detailed ElastiCache for Valkey deployment recommendations.
+
+### One-command workflow
+
+```bash
+# Assess + recommend in one step
+./run_migration_advisor.sh --host <redis-host> --port 6379 --region us-west-2
+
+# Or use an existing assessment JSON
+./run_migration_advisor.sh --file output/output_20251007_231314.json --region us-east-1
+```
+
+### What the agent provides
+
+- Deployment type recommendation (Node-based vs Serverless)
+- Multiple configuration options (A, B, C) with cost trade-offs
+- Instance type selection with justification
+- Migration approach (RedisShake or ElastiCache Online Migration)
+- Cost estimation from live AWS Pricing API
+- Self-validation of its own recommendations
+
+See [agentic-ai/README.md](agentic-ai/README.md) for full documentation.
+
+### Requirements
+
+- Python 3.11+
+- AWS credentials with Bedrock and Pricing API access
+- `pip install strands-agents boto3`

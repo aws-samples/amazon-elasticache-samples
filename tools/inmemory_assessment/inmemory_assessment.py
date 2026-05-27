@@ -87,6 +87,106 @@ BACKGROUND_COMMANDS = {
     "command",        # Command introspection
 }
 
+# ECPU classification for ElastiCache Serverless cost estimation.
+# Fixed commands: 1 ECPU per call (O(1) operations).
+# Non-fixed commands: estimated as MAX(calls, usec/3) ECPUs (variable cost).
+# Internal commands: excluded from ECPU billing estimates.
+# Reference: https://aws.amazon.com/elasticache/pricing/
+FIXED_ECPU_COMMANDS = frozenset([
+    "get", "set", "hget", "hset",
+    "incr", "decr", "incrby", "decrby", "incrbyfloat",
+    "expire", "pexpire", "pexpireat", "expireat", "persist",
+    "exists", "ttl", "pttl", "type", "strlen",
+    "scard", "zcard", "llen", "xlen",
+    "sismember", "hexists", "hlen", "hsetnx",
+    "hincrby", "hincrbyfloat",
+    "getbit", "setbit", "setnx", "setex", "psetex",
+    "zscore", "ping", "auth", "hello",
+    "multi", "exec", "discard",
+])
+
+INTERNAL_ECPU_COMMANDS = frozenset([
+    "client", "config", "info",
+    "cluster", "replconf", "psync", "replicaof",
+    "command", "slowlog", "select", "readonly", "readwrite",
+    "dbsize", "time", "echo", "wait", "watch", "unwatch",
+    "quit", "reset", "asking", "move",
+    "object", "debug", "memory", "latency", "acl",
+    "module", "function", "swapdb",
+])
+
+
+def classify_ecpu_command(cmd_name: str) -> str:
+    """Classify a command for ECPU estimation.
+
+    Returns:
+        'fixed'    - 1 ECPU per call
+        'nonfixed' - MAX(calls, usec/3) ECPUs
+        'internal' - excluded from estimate
+    """
+    cmd = cmd_name.lower().strip()
+    if cmd in INTERNAL_ECPU_COMMANDS:
+        return "internal"
+    if cmd in FIXED_ECPU_COMMANDS:
+        return "fixed"
+    return "nonfixed"
+
+
+def estimate_ecpus_from_commandstats(commandstats_before: dict, commandstats_after: dict, duration_seconds: float) -> dict:
+    """Estimate ECPUs/sec from before/after commandstats snapshots.
+
+    Args:
+        commandstats_before: Dict of cmdstat_<cmd> -> {calls, usec} from baseline
+        commandstats_after: Dict of cmdstat_<cmd> -> {calls, usec} from final
+        duration_seconds: Measurement duration
+
+    Returns:
+        Dict with total_ecpus_per_sec, avg_ecpu_per_op, command_mix percentages
+    """
+    fixed_ecpus = 0
+    nonfixed_ecpus = 0
+    internal_calls = 0
+    total_client_calls = 0
+
+    for cmd_key, after_data in commandstats_after.items():
+        if not cmd_key.startswith("cmdstat_"):
+            continue
+        cmd_name = cmd_key.replace("cmdstat_", "")
+        before_data = commandstats_before.get(cmd_key, {})
+        delta_calls = max(0, after_data.get("calls", 0) - before_data.get("calls", 0))
+        delta_usec = max(0, after_data.get("usec", 0) - before_data.get("usec", 0))
+
+        if delta_calls == 0:
+            continue
+
+        classification = classify_ecpu_command(cmd_name)
+        if classification == "internal":
+            internal_calls += delta_calls
+        elif classification == "fixed":
+            fixed_ecpus += delta_calls
+            total_client_calls += delta_calls
+        else:
+            # Non-fixed: MAX(calls, usec/3)
+            ecpus = max(delta_calls, delta_usec / 3.0)
+            nonfixed_ecpus += ecpus
+            total_client_calls += delta_calls
+
+    total_ecpus = fixed_ecpus + nonfixed_ecpus
+    avg_ecpu_per_op = total_ecpus / total_client_calls if total_client_calls > 0 else 1.0
+    ecpus_per_sec = total_ecpus / duration_seconds if duration_seconds > 0 else 0
+
+    return {
+        "total_ecpus_per_sec": round(ecpus_per_sec, 1),
+        "fixed_ecpus_per_sec": round(fixed_ecpus / duration_seconds, 1) if duration_seconds > 0 else 0,
+        "nonfixed_ecpus_per_sec": round(nonfixed_ecpus / duration_seconds, 1) if duration_seconds > 0 else 0,
+        "avg_ecpu_per_op": round(avg_ecpu_per_op, 2),
+        "total_client_calls": total_client_calls,
+        "internal_calls": internal_calls,
+        "pct_fixed": round(100 * fixed_ecpus / total_ecpus, 1) if total_ecpus > 0 else 0,
+        "pct_nonfixed": round(100 * nonfixed_ecpus / total_ecpus, 1) if total_ecpus > 0 else 0,
+    }
+
+
 def setup_logging(log_level: str = "INFO", quiet: bool = False):
     """Setup logging with Rich handler for colored output"""
     # Validate and convert string level to logging constant
@@ -3728,12 +3828,53 @@ def print_summary(cluster_data, all_node_data, keyspace_summary, quiet=False, cl
     total_bandwidth_gbps = round(((total_client_traffic_rate + replication_traffic) * 8) / 1_000_000_000, 3)
     
     # Calculate ECPUs per second for ElastiCache Serverless assessment
-    # ECPU = 1 command + up to 1024 bytes. Formula: max(1.0, bytes_per_command / 1024)
+    # Uses command-aware estimation: fixed commands = 1 ECPU, non-fixed = MAX(calls, usec/3)
+    # Then applies payload multiplier: max(1.0, avg_bytes / 1024)
     ecpus_per_second = 0
+    ecpu_complexity_factor = 1.0
+    ecpu_estimation_method = "payload_only"
     if total_ops_sec > 0:
-        # Use the avg_bytes_per_client_op calculated from total traffic method
-        ecpus_per_operation = max(1.0, avg_bytes_per_client_op / 1024)
-        ecpus_per_second = total_ops_sec * ecpus_per_operation
+        # Try command-aware estimation using commandstats from all nodes
+        aggregate_before = {}
+        aggregate_after = {}
+        total_duration = 0
+        node_count_with_cmdstats = 0
+        for addr, node_data in all_node_data.items():
+            before_cs = node_data.get("__commandstats_snapshot_before", {})
+            after_cs = node_data.get("__commandstats_snapshot_after", {})
+            delta_info = node_data.get("__delta_info", {})
+            node_duration = delta_info.get("duration_seconds", effective_duration)
+            if after_cs:
+                node_count_with_cmdstats += 1
+                total_duration = max(total_duration, node_duration)
+                for cmd_key, cmd_data in after_cs.items():
+                    if cmd_key.startswith("cmdstat_"):
+                        if cmd_key not in aggregate_after:
+                            aggregate_after[cmd_key] = {"calls": 0, "usec": 0}
+                        aggregate_after[cmd_key]["calls"] += cmd_data.get("calls", 0)
+                        aggregate_after[cmd_key]["usec"] += cmd_data.get("usec", 0)
+                for cmd_key, cmd_data in before_cs.items():
+                    if cmd_key.startswith("cmdstat_"):
+                        if cmd_key not in aggregate_before:
+                            aggregate_before[cmd_key] = {"calls": 0, "usec": 0}
+                        aggregate_before[cmd_key]["calls"] += cmd_data.get("calls", 0)
+                        aggregate_before[cmd_key]["usec"] += cmd_data.get("usec", 0)
+
+        if aggregate_after and total_duration > 0:
+            ecpu_result = estimate_ecpus_from_commandstats(aggregate_before, aggregate_after, total_duration)
+            # Apply payload multiplier on top of command-aware ECPUs
+            payload_multiplier = max(1.0, avg_bytes_per_client_op / 1024)
+            ecpus_per_second = ecpu_result["total_ecpus_per_sec"] * payload_multiplier
+            ecpu_complexity_factor = ecpu_result["avg_ecpu_per_op"]
+            ecpu_estimation_method = "command_aware"
+            logger.debug(f"Command-aware ECPU: {ecpu_result['total_ecpus_per_sec']}/sec × {payload_multiplier:.2f} payload = {ecpus_per_second:.0f}/sec")
+            logger.debug(f"  Complexity factor: {ecpu_complexity_factor:.2f} (1.0 = all simple GET/SET)")
+            logger.debug(f"  Mix: {ecpu_result['pct_fixed']:.0f}% fixed, {ecpu_result['pct_nonfixed']:.0f}% non-fixed")
+        else:
+            # Fallback: payload-only estimation (no commandstats available)
+            ecpus_per_operation = max(1.0, avg_bytes_per_client_op / 1024)
+            ecpus_per_second = total_ops_sec * ecpus_per_operation
+            logger.debug(f"Payload-only ECPU fallback: {total_ops_sec} ops × {ecpus_per_operation:.2f} = {ecpus_per_second:.0f}/sec")
     
     # DEBUG: Log final calculations
     logger.debug("=== FINAL CALCULATIONS ===")
@@ -3977,6 +4118,8 @@ def print_summary(cluster_data, all_node_data, keyspace_summary, quiet=False, cl
     
     # Add ECPU metrics for ElastiCache Serverless assessment
     cluster_data["summary_metric_estimated_ecpus_per_sec"] = round(ecpus_per_second, 0)
+    cluster_data["summary_metric_ecpu_complexity_factor"] = ecpu_complexity_factor
+    cluster_data["summary_metric_ecpu_estimation_method"] = ecpu_estimation_method
     
     # Add per-node operation metrics for distribution analysis
     per_node_metrics = []
@@ -4238,6 +4381,14 @@ async def main(
             baseline_node["used_memory_max"] = used_memory_max
 
             all_node_data[addr] = baseline_node
+            
+            # Store baseline commandstats separately for ECPU delta calculation
+            # all_node_data[addr]["__commandstats_snapshot"] is the baseline (already there)
+            # Store the final snapshot under a different key
+            final_cs = final_metrics.get(addr, {}).get("__commandstats_snapshot", {})
+            if final_cs:
+                all_node_data[addr]["__commandstats_snapshot_after"] = final_cs
+                all_node_data[addr]["__commandstats_snapshot_before"] = baseline_node.get("__commandstats_snapshot", {})
             
             # Extract keyspace information for primaries
             if roles.get(addr) == "primary":
