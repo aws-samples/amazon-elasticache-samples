@@ -28,19 +28,10 @@ The agent evaluates and recommends:
 - Flexible configuration options
 
 ### ElastiCache Online Migration (Conditional)
-Only recommended if ALL prerequisites are met:
-- ✅ Source in same VPC as target ElastiCache cluster
-- ✅ Source is Redis/Valkey OSS 5.0.3 or later
-- ✅ Source has cluster mode disabled (single shard)
-- ✅ Source accessible from ElastiCache subnet
-- ✅ Source allows connections from ElastiCache security group
-- ✅ Target is ElastiCache for Valkey (not Redis)
-- ✅ No AUTH password on source (or password provided)
-- ✅ Source supports SYNC/PSYNC commands
+Recommended only if all prerequisites are met. See the full prerequisites checklist:
+https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Migration-Prepare.html
 
 **RIOT is NOT recommended** as it is no longer maintained.
-
-Reference: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Migration-Prepare.html
 
 ## Architecture
 
