@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram name="ShopNow AI Architecture" id="shopnow-arch">
+    <mxGraphModel dx="1800" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="0" arrows="0" fold="1" page="0" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- LAYER 1: React UI -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <mxCell id="ui-bg" value="React UI" style="swimlane;startSize=28;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;fontColor=#1a3a5c;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="200" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-chat" value="Chat.tsx&#xa;(AI SDK useChat)" style="rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="ui-bg">
+          <mxGeometry x="20" y="50" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-sidebar" value="ConversationSidebar.tsx&#xa;(session list)" style="rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="ui-bg">
+          <mxGeometry x="20" y="120" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-controls" value="Cache Controls&#xa;(mode / hot / cold / threshold)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="ui-bg">
+          <mxGeometry x="20" y="190" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ui-human" value="HumanChatPanel.tsx&#xa;(escalation UI)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="ui-bg">
+          <mxGeometry x="20" y="260" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- LAYER 2: FastAPI Backend -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <mxCell id="api-bg" value="FastAPI  (api.py)" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;fontColor=#1a3a1a;" vertex="1" parent="1">
+          <mxGeometry x="310" y="40" width="240" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="api-inv" value="POST /invocations&#xa;(SSE stream)" style="rounded=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="api-bg">
+          <mxGeometry x="20" y="50" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api-state" value="StateExtractor&#xa;pre_turn_update()&#xa;post_turn_update()" style="rounded=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="api-bg">
+          <mxGeometry x="20" y="120" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="api-fullread" value="Full Cache READ&#xa;(pre-turn state + filters)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="api-bg">
+          <mxGeometry x="20" y="200" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api-fullwrite" value="Full Cache WRITE&#xa;(async, post-stream)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="api-bg">
+          <mxGeometry x="20" y="265" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api-sessions" value="Session Store&#xa;(in-memory agents)" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="api-bg">
+          <mxGeometry x="20" y="335" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- LAYER 3: Strands Agent -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <mxCell id="agent-bg" value="Strands Agent  (agent.py)" style="swimlane;startSize=28;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=13;fontColor=#2d1a3a;" vertex="1" parent="1">
+          <mxGeometry x="620" y="40" width="240" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-aiva" value="ShopNow AI (Claude Sonnet 4.5)&#xa;System prompt + tools" style="rounded=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="agent-bg">
+          <mxGeometry x="20" y="50" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-thinking" value="Extended Thinking&#xa;(budget_tokens=1024)" style="rounded=1;fillColor=#f9f0ff;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="agent-bg">
+          <mxGeometry x="20" y="120" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-tools-label" value="Tools" style="text;fontStyle=1;fontSize=11;fillColor=none;strokeColor=none;" vertex="1" parent="agent-bg">
+          <mxGeometry x="20" y="175" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-t1" value="lookup_knowledge&#xa;(KB sub-agent)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="agent-bg">
+          <mxGeometry x="20" y="200" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-t2" value="lookup_order_operations&#xa;(order sub-agent)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="agent-bg">
+          <mxGeometry x="20" y="250" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-t3" value="Commerce Tools&#xa;(catalog / inventory / cart)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="agent-bg">
+          <mxGeometry x="20" y="300" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-t4" value="Locations Tools&#xa;(store finder / QR)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="agent-bg">
+          <mxGeometry x="20" y="350" width="200" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- LAYER 4: Knowledge Sub-Agent -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <mxCell id="kb-agent-bg" value="Knowledge Sub-Agent" style="swimlane;startSize=28;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=13;fontColor=#3a1a00;" vertex="1" parent="1">
+          <mxGeometry x="930" y="40" width="240" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="kb-agent-model" value="Claude Haiku 4.5&#xa;(lookup_knowledge tool)" style="rounded=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="kb-agent-bg">
+          <mxGeometry x="20" y="50" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="kb-agent-cache" value="KB Cache READ/WRITE&#xa;(subagent:hot / subagent:temp)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="kb-agent-bg">
+          <mxGeometry x="20" y="120" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- LAYER 5: ElastiCache Valkey -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <mxCell id="valkey-bg" value="ElastiCache Valkey  (HNSW Vector Indexes)" style="swimlane;startSize=28;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=13;fontColor=#3a0000;" vertex="1" parent="1">
+          <mxGeometry x="930" y="290" width="240" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="valkey-fh" value="idx:shopnow:full:hot&#xa;(pre-loaded, never flushed)" style="rounded=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;" vertex="1" parent="valkey-bg">
+          <mxGeometry x="20" y="45" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="valkey-ft" value="idx:shopnow:full:temp&#xa;(demo, flushable)" style="rounded=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=10;" vertex="1" parent="valkey-bg">
+          <mxGeometry x="20" y="95" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="valkey-sh" value="idx:shopnow:subagent:hot&#xa;(pre-loaded, never flushed)" style="rounded=1;fillColor=#ffe6e6;strokeColor=#b85450;fontSize=10;" vertex="1" parent="valkey-bg">
+          <mxGeometry x="20" y="150" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="valkey-st" value="idx:shopnow:subagent:temp&#xa;(demo, flushable)" style="rounded=1;fillColor=#ffe6e6;strokeColor=#b85450;fontSize=10;" vertex="1" parent="valkey-bg">
+          <mxGeometry x="20" y="200" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="valkey-note" value="COSINE similarity · FLOAT32 · 1024-dim&#xa;TAG + NUMERIC pre-filters · sentinel values" style="text;fontSize=9;fillColor=none;strokeColor=none;align=center;" vertex="1" parent="valkey-bg">
+          <mxGeometry x="10" y="248" width="220" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- LAYER 6: Amazon Bedrock -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <mxCell id="bedrock-bg" value="Amazon Bedrock" style="swimlane;startSize=28;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=13;fontColor=#3a2a00;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="40" width="240" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="bedrock-claude" value="Claude Sonnet 4.5&#xa;(main agent)" style="rounded=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="bedrock-bg">
+          <mxGeometry x="20" y="50" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="bedrock-haiku" value="Claude Haiku 4.5&#xa;(KB sub-agent + title gen)" style="rounded=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="bedrock-bg">
+          <mxGeometry x="20" y="100" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="bedrock-titan" value="Titan Embed Text v2&#xa;(1024-dim embeddings)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="bedrock-bg">
+          <mxGeometry x="20" y="150" width="200" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- LAYER 7: Bedrock Knowledge Bases -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <mxCell id="kbs-bg" value="Bedrock Knowledge Bases" style="swimlane;startSize=28;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;fontColor=#1a3a5c;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="290" width="240" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="kb1" value="KB1 · Product Catalog" style="rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="kbs-bg">
+          <mxGeometry x="20" y="45" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="kb2" value="KB2 · Store Operations" style="rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="kbs-bg">
+          <mxGeometry x="20" y="85" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="kb3" value="KB3 · Troubleshooting" style="rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="kbs-bg">
+          <mxGeometry x="20" y="125" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="kb4" value="KB4 · Vendor Policies" style="rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="kbs-bg">
+          <mxGeometry x="20" y="165" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="kb5" value="KB5 · Return &amp; Refund Policy" style="rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="kbs-bg">
+          <mxGeometry x="20" y="205" width="200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="kb6" value="KB6 · Customer Service" style="rounded=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="kbs-bg">
+          <mxGeometry x="20" y="245" width="200" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- ARROWS: UI → API -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <mxCell id="e-ui-api" value="POST /invocations&#xa;SSE stream" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#6c8ebf;fontColor=#1a3a5c;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="ui-chat" target="api-inv" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- API → Full Cache READ -->
+        <mxCell id="e-api-cacheread" value="vector search&#xa;+ TAG/NUMERIC filters" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#d6b656;fontColor=#3a2a00;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="api-fullread" target="valkey-fh" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- API → Agent (cache miss path) -->
+        <mxCell id="e-api-agent" value="cache miss →&#xa;invoke agent" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#82b366;fontColor=#1a3a1a;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="api-inv" target="agent-aiva" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- API → Full Cache WRITE (async) -->
+        <mxCell id="e-api-cachewrite" value="async write&#xa;(post-stream)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#d6b656;dashed=1;fontColor=#3a2a00;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" edge="1" source="api-fullwrite" target="valkey-ft" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Agent → KB Sub-Agent -->
+        <mxCell id="e-agent-kbagent" value="lookup_knowledge" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#d79b00;fontColor=#3a1a00;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="agent-t1" target="kb-agent-model" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Agent → Bedrock (main LLM) -->
+        <mxCell id="e-agent-bedrock" value="Claude Sonnet 4.5&#xa;(inference)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#9673a6;fontColor=#2d1a3a;fontSize=10;exitX=1;exitY=0.2;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" edge="1" source="agent-aiva" target="bedrock-claude" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- KB Sub-Agent → KB Cache (check) -->
+        <mxCell id="e-kbagent-valkey" value="subagent cache&#xa;check" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#d79b00;fontColor=#3a1a00;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="kb-agent-cache" target="valkey-sh" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- KB Sub-Agent → Bedrock (Haiku) -->
+        <mxCell id="e-kbagent-haiku" value="Claude Haiku 4.5&#xa;(KB query)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#d79b00;fontColor=#3a1a00;fontSize=10;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="kb-agent-model" target="bedrock-haiku" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Bedrock Haiku → KBs -->
+        <mxCell id="e-haiku-kbs" value="RetrieveAndGenerate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#6c8ebf;fontColor=#1a3a5c;fontSize=10;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="bedrock-haiku" target="kb1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Titan Embeddings (used by cache client) -->
+        <mxCell id="e-valkey-titan" value="generate_embedding()" style="edgeStyle=orthogonalEdgeStyle;rounded=0;strokeColor=#d6b656;dashed=1;fontColor=#3a2a00;fontSize=10;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" source="valkey-note" target="bedrock-titan" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- LEGEND -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <mxCell id="legend-bg" value="Legend" style="swimlane;startSize=24;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="480" width="500" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" value="─── request / response flow" style="text;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="legend-bg">
+          <mxGeometry x="10" y="30" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" value="- - - async / background write" style="text;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="legend-bg">
+          <mxGeometry x="220" y="30" width="220" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" value="🟡 cache path   🟣 agent path   🔵 KB path   🔴 Valkey" style="text;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="legend-bg">
+          <mxGeometry x="10" y="50" width="460" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

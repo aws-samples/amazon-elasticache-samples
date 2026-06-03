@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram name="ShopNow AI - Request Flow" id="shopnow-flow">
+    <mxGraphModel dx="1800" dy="1000" grid="0" gridSize="10" guides="1" tooltips="1" connect="0" arrows="0" fold="1" page="0" pageScale="1" pageWidth="1900" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- SWIMLANE HEADERS (vertical lanes) -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+
+        <!-- Lane: User / React UI -->
+        <mxCell id="lane-ui" value="User / React UI" style="swimlane;startSize=36;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="120" height="1040" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: FastAPI -->
+        <mxCell id="lane-api" value="FastAPI  (api.py)" style="swimlane;startSize=36;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="160" y="20" width="160" height="1040" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: State Extractor -->
+        <mxCell id="lane-state" value="State Extractor" style="swimlane;startSize=36;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="340" y="20" width="160" height="1040" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Semantic Cache -->
+        <mxCell id="lane-cache" value="Semantic Cache  (Valkey)" style="swimlane;startSize=36;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=12;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="520" y="20" width="160" height="1040" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Strands Agent -->
+        <mxCell id="lane-agent" value="Strands Agent  (Aiva)" style="swimlane;startSize=36;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="700" y="20" width="160" height="1040" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Tools / Sub-Agents -->
+        <mxCell id="lane-tools" value="Tools / Sub-Agents" style="swimlane;startSize=36;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="880" y="20" width="160" height="1040" as="geometry" />
+        </mxCell>
+
+        <!-- Lane: Bedrock / KBs -->
+        <mxCell id="lane-bedrock" value="Amazon Bedrock + KBs" style="swimlane;startSize=36;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=12;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="20" width="160" height="1040" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- STEP NODES -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+
+        <!-- 1. User sends message -->
+        <mxCell id="s1" value="1. User sends query" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="30" y="80" width="100" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 2. POST /invocations -->
+        <mxCell id="s2" value="2. POST /invocations&#xa;extract prompt + params" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="170" y="80" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 3. pre_turn_update -->
+        <mxCell id="s3" value="3. pre_turn_update()&#xa;slots · entities · turn_stage" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="350" y="80" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 4. Cache READ -->
+        <mxCell id="s4" value="4. Cache READ&#xa;embed query → FT.SEARCH&#xa;TAG + NUMERIC filters" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="530" y="80" width="140" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- 5a. CACHE HIT -->
+        <mxCell id="s5a" value="5a. CACHE HIT ✓&#xa;stream cached response" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="170" y="180" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 5b. CACHE MISS -->
+        <mxCell id="s5b" value="5b. CACHE MISS →&#xa;invoke Strands Agent" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="710" y="180" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 6. LLM inference -->
+        <mxCell id="s6" value="6. Claude Sonnet 4.5&#xa;(+ extended thinking)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1070" y="180" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 7. Tool call decision -->
+        <mxCell id="s7" value="7. Tool routing&#xa;(agent decides)" style="rhombus;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="715" y="270" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- 8a. lookup_knowledge -->
+        <mxCell id="s8a" value="8a. lookup_knowledge&#xa;(KB sub-agent)" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="890" y="260" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 8b. KB Cache check -->
+        <mxCell id="s8b" value="KB Cache check&#xa;(subagent:hot/temp)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="530" y="260" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 8c. Bedrock KBs -->
+        <mxCell id="s8c" value="Bedrock KBs&#xa;RetrieveAndGenerate&#xa;(6 KBs)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1070" y="260" width="140" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- 8d. Commerce / Order / Locations tools -->
+        <mxCell id="s8d" value="8b. Commerce / Order /&#xa;Locations tools" style="rounded=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="890" y="360" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 9. Agent streams response -->
+        <mxCell id="s9" value="9. Agent streams&#xa;response text + cache signal" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="710" y="460" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 10. Intercept cache signal -->
+        <mxCell id="s10" value="10. Intercept&#xa;{_shopnow_cache}&#xa;cacheable=true/false" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="170" y="460" width="140" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- 11. post_turn_update -->
+        <mxCell id="s11" value="11. post_turn_update()&#xa;domain · task · tools_used&#xa;SKUs · turn_stage · summary" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="350" y="560" width="140" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- 12. Cacheability decision -->
+        <mxCell id="s12" value="12. Cacheable?&#xa;no stateful tools&#xa;+ LLM signal = true" style="rhombus;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="175" y="640" width="130" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- 13. Cache WRITE -->
+        <mxCell id="s13" value="13. Cache WRITE&#xa;embed + store&#xa;state_tags · numerics" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="530" y="660" width="140" height="52" as="geometry" />
+        </mxCell>
+
+        <!-- 14. Titan Embeddings -->
+        <mxCell id="s14" value="Titan Embed Text v2&#xa;(1024-dim)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1070" y="660" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 15. Stream to UI -->
+        <mxCell id="s15" value="15. SSE stream&#xa;to React UI" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="30" y="560" width="100" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- SECTION LABELS -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <mxCell id="lbl-pre" value="PRE-TURN" style="text;fontStyle=1;fontSize=10;fillColor=#f5f5f5;strokeColor=#666666;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="56" width="80" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl-agent" value="AGENT EXECUTION" style="text;fontStyle=1;fontSize=10;fillColor=#e1d5e7;strokeColor=#9673a6;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="170" width="120" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl-post" value="POST-TURN WRITE" style="text;fontStyle=1;fontSize=10;fillColor=#f8cecc;strokeColor=#b85450;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="550" width="120" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- ARROWS -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+
+        <!-- 1 → 2 -->
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" source="s1" target="s2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 2 → 3 -->
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#666666;strokeWidth=2;" edge="1" source="s2" target="s3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 3 → 4 -->
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=2;" edge="1" source="s3" target="s4" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 4 → 5a (hit) -->
+        <mxCell id="e4a" value="HIT" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;fontStyle=1;fontSize=10;" edge="1" source="s4" target="s5a" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="600" y="160" />
+              <mxPoint x="240" y="160" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 4 → 5b (miss) -->
+        <mxCell id="e4b" value="MISS" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontStyle=1;fontSize=10;" edge="1" source="s4" target="s5b" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="600" y="160" />
+              <mxPoint x="780" y="160" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 5b → 6 (LLM) -->
+        <mxCell id="e5b6" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=2;" edge="1" source="s5b" target="s6" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 6 → 7 (tool decision) -->
+        <mxCell id="e67" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;" edge="1" source="s6" target="s7" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1140" y="240" />
+              <mxPoint x="780" y="240" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 7 → 8a (lookup_knowledge) -->
+        <mxCell id="e78a" value="KB query" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d79b00;strokeWidth=2;fontSize=10;" edge="1" source="s7" target="s8a" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 8a → 8b (KB cache check) -->
+        <mxCell id="e8a8b" value="cache check" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=2;fontSize=10;" edge="1" source="s8a" target="s8b" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 8b miss → 8c (Bedrock KBs) -->
+        <mxCell id="e8b8c" value="miss →" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=2;fontSize=10;" edge="1" source="s8b" target="s8c" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="600" y="310" />
+              <mxPoint x="1140" y="310" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 7 → 8d (other tools) -->
+        <mxCell id="e78d" value="commerce/order" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d79b00;strokeWidth=2;fontSize=10;" edge="1" source="s7" target="s8d" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="780" y="380" />
+              <mxPoint x="960" y="380" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 8a/8d → 9 (agent streams) -->
+        <mxCell id="e8a9" value="result" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontSize=10;" edge="1" source="s8a" target="s9" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="960" y="440" />
+              <mxPoint x="780" y="440" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 9 → 10 (intercept) -->
+        <mxCell id="e910" value="stream" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;fontSize=10;" edge="1" source="s9" target="s10" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="780" y="500" />
+              <mxPoint x="240" y="500" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 10 → 15 (stream to UI) -->
+        <mxCell id="e1015" value="SSE" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;" edge="1" source="s10" target="s15" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="170" y="530" />
+              <mxPoint x="80" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 10 → 11 (post_turn_update) -->
+        <mxCell id="e1011" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#666666;strokeWidth=2;" edge="1" source="s10" target="s11" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="240" y="580" />
+              <mxPoint x="420" y="580" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 11 → 12 (cacheability) -->
+        <mxCell id="e1112" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;" edge="1" source="s11" target="s12" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="640" />
+              <mxPoint x="240" y="640" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 12 → 13 (write) -->
+        <mxCell id="e1213" value="yes (async)" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;dashed=1;strokeWidth=2;fontSize=10;" edge="1" source="s12" target="s13" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="240" y="690" />
+              <mxPoint x="600" y="690" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 13 → 14 (embed for write) -->
+        <mxCell id="e1314" value="generate_embedding()" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;dashed=1;strokeWidth=2;fontSize=10;" edge="1" source="s13" target="s14" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="600" y="690" />
+              <mxPoint x="1140" y="690" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- NOTES -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <mxCell id="note1" value="slots: category, color, style,&#xa;size, budget, zip, radius&#xa;entities: order_id, sku&#xa;turn_stage: new / follow_up / collecting_info" style="text;fontSize=9;fillColor=#f5f5f5;strokeColor=#666666;align=left;" vertex="1" parent="1">
+          <mxGeometry x="350" y="140" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="note2" value="state_tags (TAG): slot_color,&#xa;slot_category, cache_scope,&#xa;session_id, domain, task&#xa;numerics: budget_usd, radius_miles" style="text;fontSize=9;fillColor=#f8cecc;strokeColor=#b85450;align=left;" vertex="1" parent="1">
+          <mxGeometry x="530" y="730" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="note3" value="domain · task · last_tools_used&#xa;last_action · SKUs presented&#xa;turn_stage: executing /&#xa;recommendation_presented" style="text;fontSize=9;fillColor=#f5f5f5;strokeColor=#666666;align=left;" vertex="1" parent="1">
+          <mxGeometry x="350" y="625" width="160" height="60" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
