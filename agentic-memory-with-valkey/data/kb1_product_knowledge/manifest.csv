@@ -1,0 +1,95 @@
+doc_id,kb_id,doc_type,title,product_family,region,channel,language,status,confidence_level,customer_visible,last_updated
+pk_001,1,product_description,AeroFlex Runner 2 Product Page,AeroFlex Runner 2,US,web,en-US,approved,official,true,2026-02-15
+pk_002,1,product_description,StrideMax Cushion Pro Product Page,StrideMax Cushion Pro,US,web,en-US,approved,official,true,2026-02-15
+pk_002_qa,1,product_qa,StrideMax Cushion Pro Community Q&A Thread,StrideMax Cushion Pro,US,web,en-US,active,community,true,2026-02-20
+pk_002_rv,1,product_review_summary,StrideMax Cushion Pro Review Summary (US),StrideMax Cushion Pro,US,web,en-US,approved,curated,true,2026-02-18
+pk_003,1,product_review_summary,AeroFlex Runner 2 Review Summary (US),AeroFlex Runner 2,US,web,en-US,approved,curated,true,2026-02-18
+pk_002b,1,product_reviews_raw,StrideMax Cushion Pro Reviews JSONL,StrideMax Cushion Pro,US,web,en-US,active,community,false,2026-02-18
+pk_003b,1,product_reviews_raw,AeroFlex Runner 2 Reviews JSONL,AeroFlex Runner 2,US,web,en-US,active,community,false,2026-02-18
+pk_004,1,product_qa,AeroFlex Runner 2 Community Q&A Thread,AeroFlex Runner 2,US,web,en-US,active,community,true,2026-02-20
+pk_005,1,fit_sizing_guide,Full Catalog Fit & Sizing Guide (Accent Athletics),All Products,US,web,en-US,approved,official,true,2026-02-26
+pk_006,1,substitution_guidance,Full Catalog Substitution Playbook (Support),All Products,US,contact-center,en-US,approved,curated,false,2026-02-26
+pk_007,1,fit_sizing_guide,AeroFlex Runner 2 Legacy Fit Note (Deprecated),AeroFlex Runner 2,US,web,en-US,deprecated,official,false,2025-05-11
+pk_010,1,product_description,TrailCore Grip 5 Product Page,TrailCore Grip 5,US,web,en-US,approved,official,true,2026-02-15
+pk_010_qa,1,product_qa,TrailCore Grip 5 Community Q&A Thread,TrailCore Grip 5,US,web,en-US,active,community,true,2026-02-20
+pk_010_rv,1,product_review_summary,TrailCore Grip 5 Review Summary (US),TrailCore Grip 5,US,web,en-US,approved,curated,true,2026-02-18
+pk_010b,1,product_reviews_raw,TrailCore Grip 5 Reviews JSONL,TrailCore Grip 5,US,web,en-US,active,community,false,2026-02-18
+pk_011,1,product_description,SprintEdge Racer Product Page,SprintEdge Racer,US,web,en-US,approved,official,true,2026-02-15
+pk_011_qa,1,product_qa,SprintEdge Racer Community Q&A Thread,SprintEdge Racer,US,web,en-US,active,community,true,2026-02-20
+pk_011_rv,1,product_review_summary,SprintEdge Racer Review Summary (US),SprintEdge Racer,US,web,en-US,approved,curated,true,2026-02-18
+pk_011b,1,product_reviews_raw,SprintEdge Racer Reviews JSONL,SprintEdge Racer,US,web,en-US,active,community,false,2026-02-18
+pk_012,1,product_description,CloudWalk Recovery Slide Product Page,CloudWalk Recovery Slide,US,web,en-US,approved,official,true,2026-02-15
+pk_012_qa,1,product_qa,CloudWalk Recovery Slide Community Q&A Thread,CloudWalk Recovery Slide,US,web,en-US,active,community,true,2026-02-20
+pk_012_rv,1,product_review_summary,CloudWalk Recovery Slide Review Summary (US),CloudWalk Recovery Slide,US,web,en-US,approved,curated,true,2026-02-18
+pk_012b,1,product_reviews_raw,CloudWalk Recovery Slide Reviews JSONL,CloudWalk Recovery Slide,US,web,en-US,active,community,false,2026-02-18
+pk_013,1,product_description,FlexForm Training Shoe Product Page,FlexForm Training Shoe,US,web,en-US,approved,official,true,2026-02-15
+pk_013_qa,1,product_qa,FlexForm Training Shoe Community Q&A Thread,FlexForm Training Shoe,US,web,en-US,active,community,true,2026-02-20
+pk_013_rv,1,product_review_summary,FlexForm Training Shoe Review Summary (US),FlexForm Training Shoe,US,web,en-US,approved,curated,true,2026-02-18
+pk_013b,1,product_reviews_raw,FlexForm Training Shoe Reviews JSONL,FlexForm Training Shoe,US,web,en-US,active,community,false,2026-02-18
+pk_014,1,product_description,AeroFlex Runner 2 Wide Product Page,AeroFlex Runner 2 Wide,US,web,en-US,approved,official,true,2026-02-15
+pk_014_rv,1,product_review_summary,AeroFlex Runner 2 Wide Review Summary (US),AeroFlex Runner 2 Wide,US,web,en-US,approved,curated,true,2026-02-18
+pk_014b,1,product_reviews_raw,AeroFlex Runner 2 Wide Reviews JSONL,AeroFlex Runner 2 Wide,US,web,en-US,active,community,false,2026-02-18
+pk_015,1,product_description,DryStride Performance Tee Product Page,DryStride Performance Tee,US,web,en-US,approved,official,true,2026-02-15
+pk_015_qa,1,product_qa,DryStride Performance Tee Community Q&A Thread,DryStride Performance Tee,US,web,en-US,active,community,true,2026-02-20
+pk_015_rv,1,product_review_summary,DryStride Performance Tee Review Summary (US),DryStride Performance Tee,US,web,en-US,approved,curated,true,2026-02-18
+pk_015b,1,product_reviews_raw,DryStride Performance Tee Reviews JSONL,DryStride Performance Tee,US,web,en-US,active,community,false,2026-02-18
+pk_016,1,product_description,ThermoShield Running Jacket Product Page,ThermoShield Running Jacket,US,web,en-US,approved,official,true,2026-02-15
+pk_016_qa,1,product_qa,ThermoShield Running Jacket Community Q&A Thread,ThermoShield Running Jacket,US,web,en-US,active,community,true,2026-02-20
+pk_016_rv,1,product_review_summary,ThermoShield Running Jacket Review Summary (US),ThermoShield Running Jacket,US,web,en-US,approved,curated,true,2026-02-18
+pk_016b,1,product_reviews_raw,ThermoShield Running Jacket Reviews JSONL,ThermoShield Running Jacket,US,web,en-US,active,community,false,2026-02-18
+pk_017,1,product_description,FlexStride Running Short 7in Product Page,FlexStride Running Short,US,web,en-US,approved,official,true,2026-02-15
+pk_017_rv,1,product_review_summary,FlexStride Running Short Review Summary (US),FlexStride Running Short,US,web,en-US,approved,curated,true,2026-02-18
+pk_017b,1,product_reviews_raw,FlexStride Running Short Reviews JSONL,FlexStride Running Short,US,web,en-US,active,community,false,2026-02-18
+pk_018,1,product_description,EnduroFit Compression Tight Product Page,EnduroFit Compression Tight,US,web,en-US,approved,official,true,2026-02-15
+pk_018_qa,1,product_qa,EnduroFit Compression Tight Community Q&A Thread,EnduroFit Compression Tight,US,web,en-US,active,community,true,2026-02-20
+pk_018_rv,1,product_review_summary,EnduroFit Compression Tight Review Summary (US),EnduroFit Compression Tight,US,web,en-US,approved,curated,true,2026-02-18
+pk_018b,1,product_reviews_raw,EnduroFit Compression Tight Reviews JSONL,EnduroFit Compression Tight,US,web,en-US,active,community,false,2026-02-18
+pk_019,1,product_description,AllSeason Training Hoodie Product Page,AllSeason Training Hoodie,US,web,en-US,approved,official,true,2026-02-15
+pk_019_rv,1,product_review_summary,AllSeason Training Hoodie Review Summary (US),AllSeason Training Hoodie,US,web,en-US,approved,curated,true,2026-02-18
+pk_019b,1,product_reviews_raw,AllSeason Training Hoodie Reviews JSONL,AllSeason Training Hoodie,US,web,en-US,active,community,false,2026-02-18
+pk_020,1,product_description,HydroCarry Running Vest Product Page,HydroCarry Running Vest,US,web,en-US,approved,official,true,2026-02-15
+pk_020_qa,1,product_qa,HydroCarry Running Vest Community Q&A Thread,HydroCarry Running Vest,US,web,en-US,active,community,true,2026-02-20
+pk_020_rv,1,product_review_summary,HydroCarry Running Vest Review Summary (US),HydroCarry Running Vest,US,web,en-US,approved,curated,true,2026-02-18
+pk_020b,1,product_reviews_raw,HydroCarry Running Vest Reviews JSONL,HydroCarry Running Vest,US,web,en-US,active,community,false,2026-02-18
+pk_021,1,product_description,GripLite Running Gloves Product Page,GripLite Running Gloves,US,web,en-US,approved,official,true,2026-02-15
+pk_021_rv,1,product_review_summary,GripLite Running Gloves Review Summary (US),GripLite Running Gloves,US,web,en-US,approved,curated,true,2026-02-18
+pk_021b,1,product_reviews_raw,GripLite Running Gloves Reviews JSONL,GripLite Running Gloves,US,web,en-US,active,community,false,2026-02-18
+pk_022,1,product_description,NightRun Reflective Beanie Product Page,NightRun Reflective Beanie,US,web,en-US,approved,official,true,2026-02-15
+pk_022_rv,1,product_review_summary,NightRun Reflective Beanie Review Summary (US),NightRun Reflective Beanie,US,web,en-US,approved,curated,true,2026-02-18
+pk_022b,1,product_reviews_raw,NightRun Reflective Beanie Reviews JSONL,NightRun Reflective Beanie,US,web,en-US,active,community,false,2026-02-18
+pk_023,1,product_description,ProGrip Performance Socks 3-Pack Product Page,ProGrip Performance Socks,US,web,en-US,approved,official,true,2026-02-15
+pk_023_rv,1,product_review_summary,ProGrip Performance Socks Review Summary (US),ProGrip Performance Socks,US,web,en-US,approved,curated,true,2026-02-18
+pk_023b,1,product_reviews_raw,ProGrip Performance Socks Reviews JSONL,ProGrip Performance Socks,US,web,en-US,active,community,false,2026-02-18
+pk_024,1,product_description,SwiftPace Running Watch Product Page,SwiftPace Running Watch,US,web,en-US,approved,official,true,2026-02-15
+pk_024_qa,1,product_qa,SwiftPace Running Watch Community Q&A Thread,SwiftPace Running Watch,US,web,en-US,active,community,true,2026-02-20
+pk_024_rv,1,product_review_summary,SwiftPace Running Watch Review Summary (US),SwiftPace Running Watch,US,web,en-US,approved,curated,true,2026-02-18
+pk_024b,1,product_reviews_raw,SwiftPace Running Watch Reviews JSONL,SwiftPace Running Watch,US,web,en-US,active,community,false,2026-02-18
+pk_025,1,product_description,AeroFlex Walker Product Page,AeroFlex Walker,US,web,en-US,approved,official,true,2026-02-15
+pk_025_qa,1,product_qa,AeroFlex Walker Community Q&A Thread,AeroFlex Walker,US,web,en-US,active,community,true,2026-02-20
+pk_025_rv,1,product_review_summary,AeroFlex Walker Review Summary (US),AeroFlex Walker,US,web,en-US,approved,curated,true,2026-02-18
+pk_025b,1,product_reviews_raw,AeroFlex Walker Reviews JSONL,AeroFlex Walker,US,web,en-US,active,community,false,2026-02-18
+pk_026,1,product_description,CoreFlex Yoga Mat Product Page,CoreFlex Yoga Mat,US,web,en-US,approved,official,true,2026-02-15
+pk_026_rv,1,product_review_summary,CoreFlex Yoga Mat Review Summary (US),CoreFlex Yoga Mat,US,web,en-US,approved,curated,true,2026-02-18
+pk_026b,1,product_reviews_raw,CoreFlex Yoga Mat Reviews JSONL,CoreFlex Yoga Mat,US,web,en-US,active,community,false,2026-02-18
+pk_027,1,product_description,PowerBand Resistance Set Product Page,PowerBand Resistance Set,US,web,en-US,approved,official,true,2026-02-15
+pk_027_rv,1,product_review_summary,PowerBand Resistance Set Review Summary (US),PowerBand Resistance Set,US,web,en-US,approved,curated,true,2026-02-18
+pk_027b,1,product_reviews_raw,PowerBand Resistance Set Reviews JSONL,PowerBand Resistance Set,US,web,en-US,active,community,false,2026-02-18
+pk_028,1,product_description,TrailCore Grip 5 GTX Product Page,TrailCore Grip 5 GTX,US,web,en-US,approved,official,true,2026-02-15
+pk_028_qa,1,product_qa,TrailCore Grip 5 GTX Community Q&A Thread,TrailCore Grip 5 GTX,US,web,en-US,active,community,true,2026-02-20
+pk_028_rv,1,product_review_summary,TrailCore Grip 5 GTX Review Summary (US),TrailCore Grip 5 GTX,US,web,en-US,approved,curated,true,2026-02-18
+pk_028b,1,product_reviews_raw,TrailCore Grip 5 GTX Reviews JSONL,TrailCore Grip 5 GTX,US,web,en-US,active,community,false,2026-02-18
+pk_029,1,product_description,TempoRun Interval Trainer Product Page,TempoRun Interval Trainer,US,web,en-US,approved,official,true,2026-02-15
+pk_029_qa,1,product_qa,TempoRun Interval Trainer Community Q&A Thread,TempoRun Interval Trainer,US,web,en-US,active,community,true,2026-02-20
+pk_029_rv,1,product_review_summary,TempoRun Interval Trainer Review Summary (US),TempoRun Interval Trainer,US,web,en-US,approved,curated,true,2026-02-18
+pk_029b,1,product_reviews_raw,TempoRun Interval Trainer Reviews JSONL,TempoRun Interval Trainer,US,web,en-US,active,community,false,2026-02-18
+pk_030,1,product_description,GearPack Running Backpack 15L Product Page,GearPack Running Backpack,US,web,en-US,approved,official,true,2026-02-15
+pk_030_qa,1,product_qa,GearPack Running Backpack Community Q&A Thread,GearPack Running Backpack,US,web,en-US,active,community,true,2026-02-20
+pk_030_rv,1,product_review_summary,GearPack Running Backpack Review Summary (US),GearPack Running Backpack,US,web,en-US,approved,curated,true,2026-02-18
+pk_030b,1,product_reviews_raw,GearPack Running Backpack Reviews JSONL,GearPack Running Backpack,US,web,en-US,active,community,false,2026-02-18
+pk_031,1,product_description,SunShield Running Cap Product Page,SunShield Running Cap,US,web,en-US,approved,official,true,2026-02-15
+pk_031_rv,1,product_review_summary,SunShield Running Cap Review Summary (US),SunShield Running Cap,US,web,en-US,approved,curated,true,2026-02-18
+pk_031b,1,product_reviews_raw,SunShield Running Cap Reviews JSONL,SunShield Running Cap,US,web,en-US,active,community,false,2026-02-18
+pk_032,1,product_description,TrailCore Grip 4 Product Page (Deprecated),TrailCore Grip 4,US,web,en-US,deprecated,official,false,2025-08-01
+pk_033,1,product_description,Accent Pro Product Page,Accent Pro,US,web,en-US,approved,official,true,2026-02-26
+pk_033_rv,1,product_review_summary,Accent Pro Review Summary (US),Accent Pro,US,web,en-US,approved,curated,true,2026-02-26
+pk_033b,1,product_reviews_raw,Accent Pro Reviews JSONL,Accent Pro,US,web,en-US,active,community,false,2026-02-26

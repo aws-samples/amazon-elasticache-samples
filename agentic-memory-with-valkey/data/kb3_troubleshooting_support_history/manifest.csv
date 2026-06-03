@@ -1,0 +1,40 @@
+doc_id,kb_id,doc_type,title,product_family,region,channel,language,status,confidence_level,customer_visible,effective_start,effective_end,last_updated,severity
+ts_001,3,setup_guide,PulseFit Band 4 Initial Setup and Pairing Guide,PulseFit Band 4,US,web/app/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-08,low
+ts_002,3,troubleshooting_article,PulseFit Band Sync Troubleshooting (iOS/Android),PulseFit Band 4 / PulseFit Band 4 Pro,US,web/app/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-11,medium
+ts_003,3,known_issue_bulletin,Known Issue: Sync Delays After Firmware 4.2.1,PulseFit Band 4 / PulseFit Band 4 Pro,US,contact-center,en-US,active,official,false,2026-02-18,2026-03-15,2026-02-18,high
+ts_004,3,workaround_note,Temporary Workaround for Firmware 4.2.1 Sync Delay,PulseFit Band 4 / PulseFit Band 4 Pro,US,contact-center,en-US,active,curated,false,2026-02-18,2026-03-15,2026-02-18,high
+ts_005,3,case_resolution_curated,Case Pattern: Pairing Fails on iPhone After App Permission Denial,PulseFit Band 4,US,contact-center,en-US,approved,curated,false,2026-01-10,2026-12-31,2026-02-14,medium
+ts_006,3,support_transcript_redacted,Transcript: Repeated Sync Failure Resolved by Re-auth,PulseFit Band 4 Pro,US,contact-center,en-US,approved,raw,false,2026-01-01,2026-12-31,2026-02-09,medium
+ts_007,3,known_issue_bulletin,Known Issue Resolved: Firmware 4.1.x Bluetooth Reconnect Loop,PulseFit Band 4,US,contact-center,en-US,resolved,official,false,2025-11-01,2026-01-20,2026-01-20,medium
+ts_008,3,workaround_note,Legacy Bluetooth Reconnect Workaround (Deprecated),PulseFit Band 4,US,contact-center,en-US,deprecated,curated,false,2025-11-01,2026-01-20,2026-01-21,medium
+ts_009,3,troubleshooting_article,PowerBase Charging Dock Charging Interruption Troubleshooting,PowerBase Charging Dock / PulseFit Band Series,US,web/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-05,low
+ts_010,3,case_resolution_curated,Case Pattern: Charging Failure Caused by Protective Film on Contacts,PowerBase Charging Dock,US,contact-center,en-US,approved,curated,false,2026-01-01,2026-12-31,2026-02-16,low
+ts_011,3,support_transcript_redacted,Transcript: Outdated Advice Using Deprecated Reinstall Flow,PulseFit Band 4,US,contact-center,en-US,approved,raw,false,2026-01-01,2026-12-31,2026-02-09,medium
+ts_012,3,setup_guide,AeroTrack Pro Earbuds Initial Setup Guide,AeroTrack Pro,US,web/app/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-15,low
+ts_013,3,troubleshooting_article,AeroTrack Pro ANC Troubleshooting,AeroTrack Pro,US,web/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-15,medium
+ts_014,3,setup_guide,StrideScale Smart Body Composition Scale Setup Guide,StrideScale,US,web/app/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-15,low
+ts_015,3,troubleshooting_article,StrideScale Wi-Fi Sync Failure Troubleshooting,StrideScale,US,web/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-15,medium
+ts_016,3,setup_guide,SleepSync Tracker Setup and Troubleshooting Guide,SleepSync,US,web/app/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-15,low
+ts_017,3,troubleshooting_article,SwiftPace Running Watch GPS Troubleshooting,SwiftPace Running Watch,US,web/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-15,medium
+ts_018,3,troubleshooting_article,SwiftPace Running Watch Heart Rate Sensor Troubleshooting,SwiftPace Running Watch,US,web/contact-center,en-US,approved,official,true,2026-01-01,2026-12-31,2026-02-15,medium
+ts_019,3,known_issue_bulletin,Known Issue: AeroTrack Pro Left Earbud Battery Drain (Firmware v2.4.0),AeroTrack Pro,US,contact-center,en-US,active,official,false,2026-02-20,2026-03-15,2026-02-20,high
+ts_020,3,known_issue_bulletin,Known Issue: StrideScale Body Fat Readings Spike After App Update v5.7.0,StrideScale,US,contact-center,en-US,active,official,false,2026-02-10,2026-03-31,2026-02-10,medium
+ts_021,3,known_issue_bulletin,Known Issue: SleepSync False Apnea Alert Notifications,SleepSync,US,contact-center,en-US,active,official,false,2026-02-15,2026-03-15,2026-02-15,high
+ts_022,3,known_issue_bulletin,Known Issue: SwiftPace Watch Crash During Firmware v3.2.0 Update,SwiftPace Running Watch,US,contact-center,en-US,active,official,false,2026-02-22,2026-03-15,2026-02-22,critical
+ts_023,3,known_issue_bulletin,Known Issue Resolved: AeroTrack Pro Charging Case Not Charging via USB-C,AeroTrack Pro,US,contact-center,en-US,resolved,official,false,2024-10-01,2026-01-15,2026-01-15,medium
+ts_024,3,workaround_note,Legacy AeroTrack Pro Charging Case Replacement Program FAQ (Deprecated),AeroTrack Pro,US,contact-center,en-US,deprecated,curated,false,2024-10-01,2026-01-15,2026-01-15,medium
+ts_025,3,workaround_note,Legacy SwiftPace GPS Calibration Procedure (Deprecated),SwiftPace Running Watch,US,contact-center,en-US,deprecated,curated,false,2025-01-01,2025-10-01,2025-10-01,low
+ts_026,3,case_resolution_curated,Case Pattern: AeroTrack Pro One Earbud Won't Charge — Debris in Case Contact,AeroTrack Pro,US,contact-center,en-US,approved,curated,false,2026-01-01,2026-12-31,2026-02-20,low
+ts_027,3,case_resolution_curated,Case Pattern: StrideScale Shows Different Weight Than Doctor's Scale,StrideScale,US,contact-center,en-US,approved,curated,false,2026-01-01,2026-12-31,2026-02-20,low
+ts_028,3,case_resolution_curated,Case Pattern: SwiftPace Watch Band Causes Skin Irritation,SwiftPace Running Watch,US,contact-center,en-US,approved,curated,false,2026-01-01,2026-12-31,2026-02-20,low
+ts_029,3,case_resolution_curated,Case Pattern: SleepSync Tracks Pet Instead of Human,SleepSync,US,contact-center,en-US,approved,curated,false,2026-01-01,2026-12-31,2026-02-20,low
+ts_030,3,case_resolution_curated,Case Pattern: PulseFit Band 4 Display Unresponsive After Swimming,PulseFit Band 4,US,contact-center,en-US,approved,curated,false,2026-01-01,2026-12-31,2026-02-20,medium
+ts_031,3,case_resolution_curated,Case Pattern: Customer Wants to Use SwiftPace Watch with Two Phones,SwiftPace Running Watch,US,contact-center,en-US,approved,curated,false,2026-01-01,2026-12-31,2026-02-20,low
+ts_032,3,support_transcript_redacted,Transcript: AeroTrack Battery Drain — Agent Correctly Identifies Known Issue,AeroTrack Pro,US,contact-center,en-US,approved,raw,false,2026-02-24,2026-12-31,2026-02-24,high
+ts_033,3,support_transcript_redacted,Transcript: SleepSync Apnea Alert — Agent Uses Unapproved Messaging,SleepSync,US,contact-center,en-US,approved,raw,false,2026-02-21,2026-12-31,2026-02-21,high
+ts_034,3,support_transcript_redacted,Transcript: SwiftPace Bricked During Update — Agent Recovers Successfully,SwiftPace Running Watch,US,contact-center,en-US,approved,raw,false,2026-02-23,2026-12-31,2026-02-23,critical
+ts_035,3,support_transcript_redacted,Transcript: StrideScale Weight Discrepancy — Agent Gives Incorrect Carpet Advice,StrideScale,US,contact-center,en-US,approved,raw,false,2026-02-18,2026-12-31,2026-02-18,low
+ts_036,3,support_transcript_redacted,Transcript: PulseFit Band 3 Upgrade Path — Agent Handles Correctly,PulseFit Band 3 (discontinued),US,contact-center,en-US,approved,raw,false,2026-02-12,2026-12-31,2026-02-12,low
+ts_037,3,support_transcript_redacted,Transcript: AeroTrack Promised Free Replacement Using Deprecated Program,AeroTrack Pro,US,contact-center,en-US,approved,raw,false,2026-02-19,2026-12-31,2026-02-19,medium
+ts_038,3,support_transcript_redacted,Transcript: SwiftPace GPS — Agent Recommends Deprecated Figure-8 Calibration,SwiftPace Running Watch,US,contact-center,en-US,approved,raw,false,2026-02-20,2026-12-31,2026-02-20,medium
+ts_039,3,support_transcript_redacted,Transcript: Multi-Product Full Ecosystem Setup — Model Interaction,All Products,US,contact-center,en-US,approved,raw,false,2026-02-16,2026-12-31,2026-02-16,low

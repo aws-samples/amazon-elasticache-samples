@@ -1,0 +1,89 @@
+#root {
+  width: 100%;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+.app-container {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main-chat {
+  flex: 1;
+  transition: all 0.3s ease;
+  overflow: hidden;
+  position: relative;
+}
+
+.main-chat.with-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-wrapper {
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+.chat-wrapper.active {
+  display: block;
+}
+
+.conversation-sidebar {
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+}
+
+.side-panel {
+  border-left: 1px solid var(--border);
+}
+
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 1200px) {
+  .main-chat.with-panel {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .side-panel {
+    width: 350px;
+    flex: 0 0 350px;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+
+  .main-chat {
+    height: 100%;
+  }
+
+  .main-chat.with-panel {
+    height: 50%;
+    flex: 0 0 50%;
+  }
+
+  .side-panel {
+    width: 100%;
+    height: 50%;
+    flex: 0 0 50%;
+  }
+}

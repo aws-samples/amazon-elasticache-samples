@@ -1,0 +1,30 @@
+doc_id,kb_id,doc_type,title,region,channel,language,status,confidence_level,customer_visible,effective_start,effective_end,last_updated,severity
+cs_001,6,customer_service_sop,SOP: Contact Handling and Triage Workflow (US),US,chat/email/phone,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-10,low
+cs_002,6,customer_service_sop,SOP: Refund Escalation and Exception Approval Workflow,US,chat/email/phone,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-12,medium
+cs_003,6,macro_template,Macro Library: Delivery Delay and Tracking Responses (US),US,chat/email,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-11,low
+cs_004,6,macro_template,Macro Library: Returns Marketplace and Policy Window Responses (US),US,chat/email,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-13,low
+cs_005,6,brand_voice_guideline,Brand Voice and Communication Guidelines (Customer Support),US,all,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-09,low
+cs_006,6,internal_announcement,Announcement: Updated Marketplace Ownership Check Before Return Guidance,US,contact-center,en-US,active,official,false,2026-02-16,2026-12-31,2026-02-16,medium
+cs_007,6,incident_bulletin,Incident Bulletin: Intermittent Checkout Payment Failures (US Web/App),US,web/app/contact-center,en-US,active,official,false,2026-02-23,2026-02-24,2026-02-23,high
+cs_008,6,incident_bulletin,Incident Bulletin: CRM Case Timeline Delay (Agent Console),US,contact-center,en-US,active,official,false,2026-02-22,2026-02-23,2026-02-22,medium
+cs_009,6,internal_announcement,Change Log: Macro Versioning Standard and Naming Convention,US,contact-center,en-US,approved,official,false,2026-02-01,2026-12-31,2026-02-05,low
+cs_010,6,macro_template,Legacy Macro Pack (Deprecated Wording Examples),US,chat/email,en-US,deprecated,curated,false,2025-09-01,2026-01-31,2026-01-31,low
+cs_011,6,incident_postmortem,Postmortem Summary: Checkout Payment Failure Incident (Sample),US,contact-center,en-US,approved,official,false,2026-02-24,2026-12-31,2026-02-24,medium
+cs_012,6,customer_service_sop,SOP: Electronics Troubleshooting Triage and Handoff Workflow,US,chat/email/phone,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-24,medium
+cs_013,6,customer_service_sop,SOP: Marketplace Seller Order Issue Routing Workflow,US,chat/email/phone,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-24,medium
+cs_014,6,customer_service_sop,SOP: Store Pickup Issue Resolution Workflow,US,chat/email/phone,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-24,low
+cs_015,6,customer_service_sop,SOP: Warranty Claim vs Return Decision Guide,US,chat/email/phone,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-24,medium
+cs_016,6,macro_template,Macro Library: Electronics Known Issue Responses,US,chat/email,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-24,high
+cs_017,6,macro_template,Macro Library: Marketplace Seller and Counterfeit Responses,US,chat/email,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-20,high
+cs_018,6,macro_template,Macro Library: Store Operations and Pickup Responses,US,chat/email,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-24,low
+cs_019,6,macro_template,Macro Library: Warranty and Product Defect Responses,US,chat/email,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-22,medium
+cs_020,6,macro_template,Macro Library: Sizing and Fit Responses,US,chat/email,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-20,low
+cs_021,6,incident_bulletin,Incident Bulletin: SwiftPace Bricking — Customer Impact,US,contact-center,en-US,active,official,false,2026-02-22,2026-04-30,2026-02-26,critical
+cs_022,6,incident_bulletin,Incident Bulletin: SleepSync False Apnea Alerts — Customer Impact,US,contact-center,en-US,active,official,false,2026-02-15,2026-03-31,2026-02-25,high
+cs_023,6,incident_bulletin,Incident Bulletin: PeakForm Counterfeit Suspension — Customer Outreach,US,contact-center,en-US,active,official,false,2026-02-15,2026-05-15,2026-02-24,high
+cs_024,6,internal_announcement,Announcement: Active Known Issues and Policy Exceptions Summary (Feb 2026),US,contact-center,en-US,active,official,false,2026-02-24,2026-03-31,2026-02-24,medium
+cs_025,6,internal_announcement,Announcement: PeakForm Seller Suspension Agent Briefing,US,contact-center,en-US,active,official,false,2026-02-16,2026-12-31,2026-02-16,high
+cs_026,6,internal_announcement,Announcement: Goodwill Credit Limits Updated Feb 2026,US,contact-center,en-US,active,official,false,2026-02-01,2026-12-31,2026-02-01,medium
+cs_027,6,brand_voice_guideline,Brand Voice: Handling Sensitive Issues (Health Safety Counterfeit),US,all,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-24,high
+cs_028,6,macro_template,Legacy Macro: Contact the Seller Blanket Response (Deprecated),US,chat/email,en-US,deprecated,curated,false,2025-06-01,2026-01-15,2026-01-15,low
+cs_029,6,incident_postmortem,Postmortem: PeakForm Counterfeit Detection Delay,US,contact-center,en-US,approved,official,false,2026-02-24,2026-12-31,2026-02-24,high
