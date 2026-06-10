@@ -33,18 +33,46 @@ source venv/bin/activate
 pip install .
 ```
 
-## 3. Execution
+### Install AI Migration Advisor dependencies
 
-Simply run the inmemory_assessment tool now that it has been installed
-with `pip`:
+Required if using the wrapper script or AI agent:
 
 ```sh
-inmemory_assessment --help
+pip install strands-agents boto3
 ```
 
-### Usage
+Also requires AWS credentials with Bedrock and Pricing API access.
 
-Output from running `inmemory_assessment --help`:
+## 3. Execution
+
+### Recommended: Assess + AI Recommendations (one command)
+
+The wrapper script runs the assessment and then generates an AI-powered ElastiCache for Valkey deployment recommendation:
+
+```bash
+# Assess + recommend in one step
+./run_migration_advisor.sh --host <redis-host> --port 6379 --region us-west-2
+
+# With authentication
+./run_migration_advisor.sh --host <redis-host> --port 6379 --user myuser --password mypass --tls --region us-west-2
+
+# Use an existing assessment JSON (skip assessment step)
+./run_migration_advisor.sh --file output/output_20251007_231314.json --region us-east-1
+```
+
+This produces an HTML report with deployment options, cost estimates, and migration steps. The assessment runs for **5 minutes** by default to capture representative workload metrics. Use `--duration` to adjust (e.g., `--duration 60` for 1 minute during testing).
+
+See [agentic-ai/README.md](agentic-ai/README.md) for details.
+
+### Alternative: Assessment only
+
+If you only need the workload assessment (without AI recommendations):
+
+```sh
+inmemory_assessment --host <redis-host> --port 6379 --duration 120
+```
+
+Run `inmemory_assessment --help` for all options:
 
 ```
  Usage: inmemory_assessment [OPTIONS]
@@ -143,34 +171,3 @@ For mixed workloads on the same nodes, we get reasonable approximations but not 
 
 This is because there is no way to assign the total outbound and inbound network traffic to read-or-write related commands.
 
-
-## 5. AI-Powered Migration Advisor (Optional)
-
-After running the assessment, you can feed the JSON output to an AI agent that generates detailed ElastiCache for Valkey deployment recommendations.
-
-### One-command workflow
-
-```bash
-# Assess + recommend in one step
-./run_migration_advisor.sh --host <redis-host> --port 6379 --region us-west-2
-
-# Or use an existing assessment JSON
-./run_migration_advisor.sh --file output/output_20251007_231314.json --region us-east-1
-```
-
-### What the agent provides
-
-- Deployment type recommendation (Node-based vs Serverless)
-- Multiple configuration options (A, B, C) with cost trade-offs
-- Instance type selection with justification
-- Migration approach (RedisShake or ElastiCache Online Migration)
-- Cost estimation from live AWS Pricing API
-- Self-validation of its own recommendations
-
-See [agentic-ai/README.md](agentic-ai/README.md) for full documentation.
-
-### Requirements
-
-- Python 3.11+
-- AWS credentials with Bedrock and Pricing API access
-- `pip install strands-agents boto3`

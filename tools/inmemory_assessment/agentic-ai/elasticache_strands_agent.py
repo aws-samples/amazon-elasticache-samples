@@ -65,8 +65,12 @@ def parse_migration_assessment(file_path: str) -> dict:
         'eviction_policy': cluster.get('eviction_policy_0')
     }
     
-    # Parse source engine and version from engines_0 (e.g., "Redis 6.2.6")
+    # Parse source engine and version
+    # engines_0 is the Redis compatibility version, engines_1 may be the actual Valkey version
     engine_str = cluster.get('engines_0', '')
+    engine_str_1 = cluster.get('engines_1', '')
+    if 'valkey' in engine_str_1.lower():
+        engine_str = engine_str_1
     parts = engine_str.split(' ', 1)
     result['source_engine'] = parts[0] if parts else 'Unknown'
     result['source_version'] = parts[1] if len(parts) > 1 else 'Unknown'
@@ -530,18 +534,16 @@ IMPORTANT GUIDELINES:
 2. For migration tools, ONLY recommend:
    - RedisShake (for most migrations)
    - ElastiCache Online Migration (ONLY if cluster_mode is false AND user verifies prerequisites at: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Migration-Prepare.html)
-   - DO NOT recommend RIOT as it is no longer maintained
-3. This is for ElastiCache for Valkey - focus on Valkey recommendations without mentioning Redis negatively
+   - RIOT is no longer maintained and should not be recommended
+3. Target engine is ElastiCache for Valkey for all recommendations
 
-TONE & MESSAGING:
-- When discussing serverless: Be neutral and present it as a valid option alongside node-based
-- Present BOTH deployment types with real pricing so the customer can make an informed decision
-- Focus on Valkey benefits, not Redis drawbacks
-- Avoid saying "Do not use Redis" - just recommend Valkey
+DEPLOYMENT GUIDANCE:
+- Present both serverless and node-based deployment types with real pricing
+- Let the cost and workload characteristics drive the recommendation
+- Include trade-offs so the customer can make an informed decision
 
 CLIENT RECOMMENDATIONS:
-- Always recommend Valkey GLIDE as the primary client library
-- Mention it supports multiple languages and is optimized for Valkey
+- Recommend Valkey GLIDE as the client library (multi-language support, optimized for Valkey)
 
 SIZING GUIDELINES (from AWS documentation):
 - Memory is the PRIMARY sharding factor

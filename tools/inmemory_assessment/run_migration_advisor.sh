@@ -17,7 +17,7 @@ FILE=""
 USER=""
 PASSWORD=""
 TLS=""
-DURATION="20"
+DURATION="300"
 OUTPUT=""
 
 usage() {
@@ -31,7 +31,7 @@ usage() {
     echo "  --user USER        AUTH username"
     echo "  --password PASS    AUTH password"
     echo "  --tls              Enable TLS"
-    echo "  --duration SECS    Assessment measurement duration (default: 20)"
+    echo "  --duration SECS    Assessment measurement duration (default: 300s / 5 min)"
     echo "  --file FILE        Skip assessment, use existing JSON file"
     echo "  --region REGION    AWS region for pricing/Bedrock (default: us-west-2)"
     echo "  --output FILE      Output HTML file (default: auto-generated)"
