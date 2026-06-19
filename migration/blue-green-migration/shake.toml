@@ -1,0 +1,26 @@
+[sync_reader]
+cluster = __SRC_CLUSTER__
+address = "__SRC_ADDRESS__"
+username = "__SRC_USERNAME__"
+password = "__SRC_PASSWORD__"
+tls = __SRC_TLS__
+
+[redis_writer]
+cluster = __DST_CLUSTER__
+address = "__DST_ADDRESS__"
+username = "__DST_USERNAME__"
+password = "__DST_PASSWORD__"
+tls = __DST_TLS__
+
+[advanced]
+dir = "/opt/redisshake/data"
+ncpu = 0
+pprof_port = 0
+status_port = 16001
+log_file = "/dev/null"
+log_level = "info"
+log_interval = 5
+rdb_restore_command_behavior = "rewrite"
+pipeline_count_limit = 1024
+target_redis_max_qps = 300000
+empty_db_before_sync = false
