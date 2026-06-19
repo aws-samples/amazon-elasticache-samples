@@ -1,0 +1,8 @@
+[
+  { "ParameterKey": "StackName",         "ParameterValue": "redisshake-infra" },
+  { "ParameterKey": "ProjectName",       "ParameterValue": "redisshake" },
+  { "ParameterKey": "VpcId",             "ParameterValue": "vpc-06b78d068d4104a5a" },
+  { "ParameterKey": "SubnetIds",         "ParameterValue": "subnet-0815a7b7e4f0cf457" },
+  { "ParameterKey": "RouteTableIds",     "ParameterValue": "rtb-00cc44754fc15eb91" },
+  { "ParameterKey": "AssignPublicIp",    "ParameterValue": "DISABLED" }
+]

@@ -1,0 +1,20 @@
+[
+  { "ParameterKey": "StackName",         "ParameterValue": "redisshake-blue-to-green" },
+  { "ParameterKey": "InfraStackName",    "ParameterValue": "redisshake" },
+  { "ParameterKey": "TaskName",          "ParameterValue": "blue-to-green" },
+  { "ParameterKey": "ContainerImage",    "ParameterValue": "265077468293.dkr.ecr.us-east-1.amazonaws.com/redisshake:latest" },
+  { "ParameterKey": "TaskCpu",           "ParameterValue": "512" },
+  { "ParameterKey": "TaskMemory",        "ParameterValue": "1024" },
+  { "ParameterKey": "DesiredCount",      "ParameterValue": "1" },
+  { "ParameterKey": "ShakeSrcAddress",   "ParameterValue": "master.z-30001-blue.iaospb.use1.cache.amazonaws.com:6379" },
+  { "ParameterKey": "ShakeSrcPassword",  "ParameterValue": "" },
+  { "ParameterKey": "ShakeSrcUsername",  "ParameterValue": "" },
+  { "ParameterKey": "ShakeSrcTls",       "ParameterValue": "true" },
+  { "ParameterKey": "ShakeSrcCluster",   "ParameterValue": "false" },
+  { "ParameterKey": "ShakeDstAddress",   "ParameterValue": "z-30001-green-valkey-0001-001.z-30001-green-valkey.iaospb.use1.cache.amazonaws.com:6379" },
+  { "ParameterKey": "ShakeDstPassword",  "ParameterValue": "" },
+  { "ParameterKey": "ShakeDstUsername",  "ParameterValue": "" },
+  { "ParameterKey": "ShakeDstTls",       "ParameterValue": "true" },
+  { "ParameterKey": "ShakeDstCluster",   "ParameterValue": "true" },
+  { "ParameterKey": "ShakeConfigBase64", "ParameterValue": "" }
+]

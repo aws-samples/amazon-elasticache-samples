@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: RedisShake on ECS Fargate - Single migration task (source → destination)
+
+Parameters:
+  InfraStackName:
+    Type: String
+    Default: redisshake
+    Description: Name of the infra stack to import shared resources from
+
+  TaskName:
+    Type: String
+    Description: Unique name for this migration task (used in service/task-def naming)
+
+  ContainerImage:
+    Type: String
+    Description: Full container image URI (e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/redisshake:latest)
+
+  TaskCpu:
+    Type: String
+    Default: "512"
+    AllowedValues: ["256", "512", "1024", "2048", "4096"]
+    Description: Fargate task CPU units
+
+  TaskMemory:
+    Type: String
+    Default: "1024"
+    AllowedValues: ["512", "1024", "2048", "4096", "8192", "16384"]
+    Description: Fargate task memory in MiB
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+    Description: Number of ECS tasks to run
+
+  # --- RedisShake source config ---
+  ShakeSrcAddress:
+    Type: String
+    Description: "Source Redis address (host:port)"
+
+  ShakeSrcPassword:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Source Redis password
+
+  ShakeSrcUsername:
+    Type: String
+    Default: ""
+    Description: Source Redis username (ACL)
+
+  ShakeSrcTls:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Enable TLS for source Redis
+
+  ShakeSrcCluster:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Source Redis is a cluster
+
+  # --- RedisShake destination config ---
+  ShakeDstAddress:
+    Type: String
+    Description: "Destination Redis address (host:port)"
+
+  ShakeDstPassword:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Destination Redis password
+
+  ShakeDstUsername:
+    Type: String
+    Default: ""
+    Description: Destination Redis username (ACL)
+
+  ShakeDstTls:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Enable TLS for destination Redis
+
+  ShakeDstCluster:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Destination Redis is a cluster
+
+  # --- Optional full config override ---
+  ShakeConfigBase64:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Base64-encoded shake.toml config. Overrides individual source/dest vars when set.
+
+Resources:
+
+  # ──────────────────────────────────────────────
+  # ECS Task Definition
+  # ──────────────────────────────────────────────
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${InfraStackName}-${TaskName}"
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !ImportValue
+        Fn::Sub: "${InfraStackName}-ExecutionRoleArn"
+      TaskRoleArn: !ImportValue
+        Fn::Sub: "${InfraStackName}-TaskRoleArn"
+      ContainerDefinitions:
+        - Name: !Sub "${InfraStackName}-${TaskName}"
+          Image: !Ref ContainerImage
+          Essential: true
+          Environment:
+            - Name: SHAKE_SRC_ADDRESS
+              Value: !Ref ShakeSrcAddress
+            - Name: SHAKE_SRC_PASSWORD
+              Value: !Ref ShakeSrcPassword
+            - Name: SHAKE_SRC_USERNAME
+              Value: !Ref ShakeSrcUsername
+            - Name: SHAKE_SRC_TLS
+              Value: !Ref ShakeSrcTls
+            - Name: SHAKE_SRC_CLUSTER
+              Value: !Ref ShakeSrcCluster
+            - Name: SHAKE_DST_ADDRESS
+              Value: !Ref ShakeDstAddress
+            - Name: SHAKE_DST_PASSWORD
+              Value: !Ref ShakeDstPassword
+            - Name: SHAKE_DST_USERNAME
+              Value: !Ref ShakeDstUsername
+            - Name: SHAKE_DST_TLS
+              Value: !Ref ShakeDstTls
+            - Name: SHAKE_DST_CLUSTER
+              Value: !Ref ShakeDstCluster
+            - Name: SHAKE_CONFIG_BASE64
+              Value: !Ref ShakeConfigBase64
+          PortMappings:
+            - ContainerPort: 16001
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !ImportValue
+                Fn::Sub: "${InfraStackName}-LogGroupName"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: !Ref TaskName
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - "wget -qO- http://localhost:16001/ || exit 1"
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+
+  # ──────────────────────────────────────────────
+  # ECS Service
+  # ──────────────────────────────────────────────
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "${InfraStackName}-${TaskName}"
+      Cluster: !ImportValue
+        Fn::Sub: "${InfraStackName}-ClusterArn"
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Split
+            - ","
+            - !ImportValue
+                Fn::Sub: "${InfraStackName}-SubnetIds"
+          SecurityGroups:
+            - !ImportValue
+                Fn::Sub: "${InfraStackName}-SecurityGroupId"
+          AssignPublicIp: !ImportValue
+            Fn::Sub: "${InfraStackName}-AssignPublicIp"
+
+Outputs:
+  ServiceName:
+    Description: ECS Service name
+    Value: !GetAtt EcsService.Name
+
+  TaskDefinitionArn:
+    Description: Task Definition ARN
+    Value: !Ref TaskDefinition
