@@ -1,0 +1,31 @@
+doc_id,kb_id,doc_type,title,seller_id,region,channel,language,status,confidence_level,customer_visible,effective_start,effective_end,last_updated,risk_level
+vs_001,4,seller_partner_master,Seller Partner Master: StrideZone Direct (SZD-US-101),SZD-US-101,US,marketplace/contact-center,en-US,active,official,false,2026-01-01,2026-12-31,2026-02-12,medium
+vs_002,4,seller_policy_process,StrideZone Direct Returns and Claims Process (US),SZD-US-101,US,marketplace/contact-center,en-US,active,official,false,2026-01-15,2026-12-31,2026-02-13,medium
+vs_003,4,vendor_quality_issue_history,StrideZone Direct Quality Pattern: Zipper Pull Packaging Omissions,SZD-US-101,US,contact-center,en-US,active,curated,false,2026-01-20,2026-04-30,2026-02-18,high
+vs_004,4,seller_partner_master,Seller Partner Master: FlexWear Collective (FWC-US-204),FWC-US-204,US,marketplace/contact-center,en-US,active,official,false,2026-01-01,2026-12-31,2026-02-10,low
+vs_005,4,seller_policy_process,FlexWear Collective Marketplace Fulfillment Ownership Guide,FWC-US-204,US,marketplace/contact-center,en-US,active,official,false,2026-02-01,2026-12-31,2026-02-16,medium
+vs_006,4,vendor_quality_issue_history,FlexWear Collective Packaging Damage Trend (Yoga Blocks),FWC-US-204,US,contact-center,en-US,active,curated,false,2026-01-10,2026-03-31,2026-02-17,medium
+vs_007,4,seller_partner_master,Seller Partner Master: ActiveTech Market (ATM-US-330),ATM-US-330,US,marketplace/contact-center,en-US,active,official,false,2026-01-01,2026-12-31,2026-02-11,high
+vs_008,4,seller_policy_process,ActiveTech Opened Electronics Accessory Return Interpretation (US),ATM-US-330,US,marketplace/contact-center,en-US,active,official,false,2026-02-05,2026-12-31,2026-02-19,high
+vs_009,4,seller_escalation_process,Marketplace Seller Escalation Routing Playbook (US),ALL,US,contact-center,en-US,active,official,false,2026-01-01,2026-12-31,2026-02-09,medium
+vs_010,4,seller_policy_process,Legacy ActiveTech Return Rule Note (Deprecated),ATM-US-330,US,contact-center,en-US,deprecated,curated,false,2025-10-01,2026-01-31,2026-01-31,high
+vs_011,4,vendor_quality_issue_history,ActiveTech Safety Complaint Pattern: Portable Charger Overheating Reports,ATM-US-330,US,contact-center,en-US,active,curated,false,2026-02-01,2026-12-31,2026-02-19,high
+vs_012,4,seller_partner_master,Seller Partner Master: RunReady Authorized (RRA-US-415),RRA-US-415,US,marketplace/contact-center,en-US,active,official,false,2024-06-01,2026-12-31,2026-02-20,low
+vs_013,4,seller_partner_master,Seller Partner Master: FitTech Solutions (FTS-US-502),FTS-US-502,US,marketplace/contact-center,en-US,active,official,false,2025-01-15,2026-12-31,2026-02-20,medium
+vs_014,4,seller_partner_master,Seller Partner Master: GearVault Outlet (GVO-US-618),GVO-US-618,US,marketplace/contact-center,en-US,active,official,false,2025-04-01,2026-12-31,2026-02-20,medium
+vs_015,4,seller_partner_master,Seller Partner Master: PeakForm Athletics — SUSPENDED (PFA-US-720),PFA-US-720,US,marketplace/contact-center,en-US,suspended,official,false,2025-08-01,2026-02-15,2026-02-15,critical
+vs_016,4,seller_partner_master,Seller Partner Master: TrailBound Outfitters (TBO-US-833),TBO-US-833,US,marketplace/contact-center,en-US,active,official,false,2024-09-15,2026-12-31,2026-02-20,low
+vs_017,4,seller_policy_process,RunReady Authorized Returns & Sizing Exchange Process,RRA-US-415,US,marketplace/contact-center,en-US,active,official,false,2026-01-01,2026-12-31,2026-02-20,low
+vs_018,4,seller_policy_process,FitTech Solutions Electronics Return & Warranty Routing Guide,FTS-US-502,US,marketplace/contact-center,en-US,active,official,false,2026-01-01,2026-12-31,2026-02-20,medium
+vs_019,4,seller_policy_process,GearVault Outlet Renewed Product Support Boundaries,GVO-US-618,US,marketplace/contact-center,en-US,active,official,false,2026-01-01,2026-12-31,2026-02-20,medium
+vs_020,4,seller_policy_process,PeakForm Athletics Counterfeit Product Handling Playbook,PFA-US-720,US,contact-center,en-US,active,official,false,2026-02-15,2026-12-31,2026-02-15,critical
+vs_021,4,seller_policy_process,TrailBound Outfitters Returns & Seasonal Inventory Process,TBO-US-833,US,marketplace/contact-center,en-US,active,official,false,2026-01-01,2026-12-31,2026-02-20,low
+vs_022,4,seller_policy_process,Marketplace Authorized Seller Product Authenticity Verification Guide,ALL,US,contact-center,en-US,active,official,false,2026-01-01,2026-12-31,2026-02-20,high
+vs_023,4,vendor_quality_issue_history,RunReady: AeroFlex Runner 2 Sizing Complaint Surge,RRA-US-415,US,contact-center,en-US,active,curated,false,2026-01-05,2026-03-31,2026-02-20,medium
+vs_025,4,vendor_quality_issue_history,FitTech: SwiftPace Watch Shipped Without Charging Cable,FTS-US-502,US,contact-center,en-US,active,curated,false,2026-02-08,2026-03-15,2026-02-20,medium
+vs_026,4,vendor_quality_issue_history,FitTech: Third-Party Screen Protector Causing SwiftPace Touch Issues,FTS-US-502,US,contact-center,en-US,active,curated,false,2026-01-15,2026-03-31,2026-02-20,medium
+vs_027,4,vendor_quality_issue_history,GearVault: Renewed PulseFit Band 4 Units Missing Factory Reset,GVO-US-618,US,contact-center,en-US,active,curated,false,2026-01-20,2026-03-15,2026-02-20,high
+vs_028,4,vendor_quality_issue_history,TrailBound: TrailCore Grip 5 GTX Waterproofing Complaints,TBO-US-833,US,contact-center,en-US,active,curated,false,2026-02-01,2026-04-30,2026-02-20,high
+vs_029,4,vendor_quality_issue_history,PeakForm: Counterfeit SwiftPace Watch Safety Incident,PFA-US-720,US,contact-center,en-US,active,curated,false,2026-02-10,2026-12-31,2026-02-20,critical
+vs_030,4,seller_policy_process,Legacy RunReady MAP Violation Policy (Deprecated),RRA-US-415,US,contact-center,en-US,deprecated,curated,false,2025-01-01,2025-12-01,2025-12-01,low
+vs_031,4,seller_policy_process,Legacy GearVault Warranty Extension Promotion (Deprecated),GVO-US-618,US,contact-center,en-US,deprecated,curated,false,2025-11-15,2026-01-31,2026-01-31,medium

@@ -1,0 +1,18 @@
+ # Semantic Cache Deployment Requirements
+
+# Core AWS SDK
+boto3>=1.34.0
+botocore>=1.34.0
+
+# Web UI (Flask)
+flask>=2.3.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Built-in modules used (no installation needed):
+# - json
+# - subprocess  
+# - time
+# - os
+# - math

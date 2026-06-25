@@ -1,0 +1,17 @@
+.wrapper { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.chartArea { flex: 1; min-width: 300px; }
+
+.stats { display: flex; flex-direction: column; gap: 12px; min-width: 180px; }
+
+.stat {
+  border-radius: 10px;
+  padding: 14px 18px;
+  border-left: 4px solid transparent;
+}
+.statDirect  { background: #f0f2ff; border-color: #3b48cc; }
+.statCached  { background: #fdf0ff; border-color: #c925d1; }
+.statImprovement { background: #f0fff4; border-color: #22c55e; }
+
+.statLabel { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #666; margin-bottom: 4px; }
+.statValue { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
+.statSub   { font-size: 0.8rem; color: #888; margin-top: 2px; }

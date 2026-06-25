@@ -1,0 +1,32 @@
+{
+  "api_gateway_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "https://0q0elfm5d6.execute-api.us-east-2.amazonaws.com/dev/search"
+  },
+  "data_source_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "xxxxxx"  --ds-id
+  },
+  "knowledge_base_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "xxxxxxx" --kb-id 
+  },
+  "opensearch_collection_endpoint": {
+    "sensitive": false,
+    "type": "string",
+    "value": "https://xxxxxxxx.us-east-2.aoss.amazonaws.com"
+  },
+  "s3_bucket": {
+    "sensitive": false,
+    "type": "string",
+    "value": "semantic-cache-kb-kuyuyoh0" ----s3-bucket
+  },
+  "valkey_endpoint": {
+    "sensitive": false,
+    "type": "string",
+    "value": "semantic-cache-valkey.xxxxxxx.xx.0001.use2.cache.amazonaws.com"
+  }
+}

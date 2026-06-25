@@ -1,0 +1,210 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: RedisShake on ECS Fargate - Shared infrastructure (cluster, networking, IAM)
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: redisshake
+    Description: Name used for resource naming
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where ECS tasks will run
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs for ECS tasks (private subnets recommended)
+
+  AssignPublicIp:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: Assign public IP to the task (ENABLED if using public subnets)
+
+  # --- Networking for private subnets ---
+  RouteTableIds:
+    Type: CommaDelimitedList
+    Description: Route table IDs associated with the private subnets (required for S3 gateway endpoint)
+
+Resources:
+
+  # ──────────────────────────────────────────────
+  # CloudWatch Log Group
+  # ──────────────────────────────────────────────
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ProjectName}"
+      RetentionInDays: 30
+
+  # ──────────────────────────────────────────────
+  # IAM - Task Execution Role
+  # ──────────────────────────────────────────────
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ──────────────────────────────────────────────
+  # IAM - Task Role (for the running container)
+  # ──────────────────────────────────────────────
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  # ──────────────────────────────────────────────
+  # Security Group
+  # ──────────────────────────────────────────────
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RedisShake ECS tasks
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound (needed to reach source/target Redis)
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-ecs"
+
+  # ──────────────────────────────────────────────
+  # Security Group for VPC Endpoints
+  # ──────────────────────────────────────────────
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTPS from ECS tasks to VPC endpoints
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !GetAtt EcsSecurityGroup.GroupId
+          Description: HTTPS from ECS tasks
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-vpce"
+
+  # ──────────────────────────────────────────────
+  # VPC Endpoints (required for Fargate in private subnets)
+  # ──────────────────────────────────────────────
+
+  # ECR API - needed for docker login / GetAuthorizationToken
+  EcrApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.api"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !GetAtt VpcEndpointSecurityGroup.GroupId
+
+  # ECR Docker - needed for image layer pulls
+  EcrDkrEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.dkr"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !GetAtt VpcEndpointSecurityGroup.GroupId
+
+  # S3 Gateway - ECR stores image layers in S3
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcEndpointType: Gateway
+      RouteTableIds: !Ref RouteTableIds
+
+  # CloudWatch Logs - needed for awslogs log driver
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.logs"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !GetAtt VpcEndpointSecurityGroup.GroupId
+
+  # ──────────────────────────────────────────────
+  # ECS Cluster
+  # ──────────────────────────────────────────────
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+Outputs:
+  ClusterName:
+    Description: ECS Cluster name
+    Value: !Ref EcsCluster
+    Export:
+      Name: !Sub "${ProjectName}-ClusterName"
+
+  ClusterArn:
+    Description: ECS Cluster ARN
+    Value: !GetAtt EcsCluster.Arn
+    Export:
+      Name: !Sub "${ProjectName}-ClusterArn"
+
+  ExecutionRoleArn:
+    Description: Task Execution Role ARN
+    Value: !GetAtt ExecutionRole.Arn
+    Export:
+      Name: !Sub "${ProjectName}-ExecutionRoleArn"
+
+  TaskRoleArn:
+    Description: Task Role ARN
+    Value: !GetAtt TaskRole.Arn
+    Export:
+      Name: !Sub "${ProjectName}-TaskRoleArn"
+
+  SecurityGroupId:
+    Description: Security Group ID for the ECS tasks
+    Value: !GetAtt EcsSecurityGroup.GroupId
+    Export:
+      Name: !Sub "${ProjectName}-SecurityGroupId"
+
+  LogGroupName:
+    Description: CloudWatch Log Group
+    Value: !Ref LogGroup
+    Export:
+      Name: !Sub "${ProjectName}-LogGroupName"
+
+  SubnetIds:
+    Description: Subnet IDs passed through for task stacks
+    Value: !Join [",", !Ref SubnetIds]
+    Export:
+      Name: !Sub "${ProjectName}-SubnetIds"
+
+  AssignPublicIp:
+    Description: Public IP assignment setting
+    Value: !Ref AssignPublicIp
+    Export:
+      Name: !Sub "${ProjectName}-AssignPublicIp"

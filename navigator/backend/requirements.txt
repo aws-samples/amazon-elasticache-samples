@@ -1,0 +1,14 @@
+#fastapi==0.104.1
+fastapi==0.116.1
+uvicorn==0.24.0
+redis==6.4.0
+#python-multipart==0.0.6
+python-multipart==0.0.20
+psutil==5.9.6
+#pydantic==2.5.0
+pydantic==2.11.7
+python-dotenv==1.0.0
+PyYAML==6.0.1
+boto3
+strands-agents==1.8.0
+influxdb-client==1.45.0

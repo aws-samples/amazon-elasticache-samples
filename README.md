@@ -1,6 +1,6 @@
 ## Amazon ElastiCache Samples
 
-Samples and documentation for using the [Amazon ElastiCache](https://aws.amazon.com/elasticache/) with [Redis](https://aws.amazon.com/elasticache/redis/) OSS compatibility and [Memcached](https://aws.amazon.com/elasticache/memcached/).
+Code Samples, tools and documentation for using with [Amazon ElastiCache](https://aws.amazon.com/elasticache/) for Valkey, Memcached and Redis OSS.
 
 ---
 
@@ -39,9 +39,6 @@ Deploy infrastructe as code
 - [Amazon ElastiCache with Redis OSS compatibility Cluster Mode Disabled](devops/aws-cdk/typescript/elasticache-redis-cmd/README.md)
 
 ---
-## Tools 
-Tools and documentation for using the [Amazon ElastiCache](https://aws.amazon.com/elasticache/)
-[Serverless cost calculator] (tools/serverless-cost-calculator/README.md)
 
 ## Security
 

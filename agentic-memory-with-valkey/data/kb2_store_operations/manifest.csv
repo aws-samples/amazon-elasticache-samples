@@ -1,0 +1,46 @@
+doc_id,kb_id,doc_type,title,region,store_id,channel,language,status,confidence_level,customer_visible,effective_start,effective_end,last_updated
+so_001,2,store_ops_playbook,Store Pickup & Curbside Operations Playbook (US),US,ALL,contact-center,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-10
+so_002,2,store_ops_playbook,In-Store Returns Exception Handling Playbook (US),US,ALL,contact-center,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-12
+so_003,2,regional_store_note,Seattle Downtown Flagship Curbside Capacity Note,US-WA,SEA-001,store/contact-center,en-US,active,curated,false,2026-02-20,2026-03-15,2026-02-20
+so_004,2,regional_store_note,Bellevue Square Mall Access and Pickup Instructions,US-WA,BEL-014,web/store/contact-center,en-US,active,official,true,2026-01-15,2026-12-31,2026-02-01
+so_005,2,temporary_store_advisory,Portland Pearl District Weather Service Advisory,US-OR,PDX-008,store/contact-center,en-US,active,curated,false,2026-02-22,2026-02-25,2026-02-22
+so_006,2,regional_store_note,Denver Cherry Creek Seasonal Curbside Staffing Note,US-CO,DEN-021,store/contact-center,en-US,active,curated,false,2026-02-01,2026-04-01,2026-02-05
+so_007,2,regional_store_note,Legacy Seattle Downtown Pickup Window Note (Deprecated),US-WA,SEA-001,contact-center,en-US,deprecated,curated,false,2025-09-01,2025-12-31,2025-12-31
+so_008,2,store_ops_playbook,Holiday Surge Staffing Playbook (US),US,ALL,contact-center,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-15
+so_009,2,store_ops_playbook,Inventory Hold & Transfer Playbook (US),US,ALL,contact-center,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-15
+so_010,2,store_ops_playbook,Store Safety & Emergency Closure Playbook (US),US,ALL,contact-center,en-US,approved,official,false,2026-01-01,2026-12-31,2026-02-15
+so_011,2,regional_store_note,Manhattan SoHo Flagship Store Note,US-NY,NYC-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_012,2,regional_store_note,Brooklyn Williamsburg Store Note,US-NY,NYC-007,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_013,2,regional_store_note,Los Angeles Santa Monica Store Note,US-CA,LAX-003,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_014,2,regional_store_note,Los Angeles Beverly Center Store Note,US-CA,LAX-011,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_015,2,regional_store_note,Chicago Michigan Ave Flagship Store Note,US-IL,CHI-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_016,2,regional_store_note,Chicago Lincoln Park Store Note,US-IL,CHI-009,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_017,2,regional_store_note,Houston Galleria Store Note,US-TX,HOU-002,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_018,2,regional_store_note,Houston Heights Store Note,US-TX,HOU-006,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_019,2,regional_store_note,Phoenix Scottsdale Quarter Store Note,US-AZ,PHX-004,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_020,2,regional_store_note,Dallas NorthPark Center Store Note,US-TX,DFW-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_021,2,regional_store_note,Miami Brickell City Centre Store Note,US-FL,MIA-002,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_022,2,regional_store_note,Atlanta Ponce City Market Store Note,US-GA,ATL-003,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_023,2,regional_store_note,Boston Newbury Street Store Note,US-MA,BOS-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_024,2,regional_store_note,San Francisco Union Square Store Note,US-CA,SFO-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_025,2,regional_store_note,Washington DC Georgetown Store Note,US-DC,DCA-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_026,2,regional_store_note,Minneapolis Mall of America Store Note,US-MN,MSP-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_027,2,regional_store_note,Nashville Gulch Store Note,US-TN,BNA-002,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_028,2,regional_store_note,Austin Domain Store Note,US-TX,AUS-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_029,2,regional_store_note,Philadelphia Rittenhouse Store Note,US-PA,PHL-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_030,2,regional_store_note,San Diego UTC Store Note,US-CA,SAN-003,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_031,2,temporary_store_advisory,NYC SoHo Water Main Break Advisory,US-NY,NYC-001,store/contact-center,en-US,active,curated,false,2026-02-24,2026-02-28,2026-02-24
+so_032,2,temporary_store_advisory,Chicago Michigan Ave Elevator Outage Advisory,US-IL,CHI-001,store/contact-center,en-US,active,curated,false,2026-02-25,2026-03-01,2026-02-25
+so_033,2,temporary_store_advisory,Houston Galleria POS System Upgrade Advisory,US-TX,HOU-002,store/contact-center,en-US,active,curated,false,2026-02-26,2026-02-27,2026-02-26
+so_034,2,temporary_store_advisory,Atlanta Ponce City Market BeltLine Construction Advisory,US-GA,ATL-003,store/contact-center,en-US,active,curated,false,2026-02-15,2026-04-30,2026-02-15
+so_035,2,temporary_store_advisory,Miami Brickell Tropical Storm Watch Advisory,US-FL,MIA-002,store/contact-center,en-US,active,curated,false,2026-02-25,2026-02-28,2026-02-25
+so_036,2,temporary_store_advisory,San Francisco Union Square Retail Theft Surge Advisory,US-CA,SFO-001,store/contact-center,en-US,active,curated,false,2026-02-20,2026-03-20,2026-02-20
+so_037,2,temporary_store_advisory,Denver Cherry Creek Pipe Burst Closure Advisory,US-CO,DEN-021,store/contact-center,en-US,active,curated,false,2026-02-23,2026-03-02,2026-02-23
+so_038,2,temporary_store_advisory,Phoenix Scottsdale Quarter HVAC Failure Advisory,US-AZ,PHX-004,store/contact-center,en-US,active,curated,false,2026-02-26,2026-02-28,2026-02-26
+so_039,2,regional_store_note,Honolulu Ala Moana Store Note,US-HI,HNL-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_040,2,regional_store_note,Las Vegas Fashion Show Mall Store Note,US-NV,LAS-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_041,2,regional_store_note,Charlotte SouthPark Mall Store Note,US-NC,CLT-002,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_042,2,regional_store_note,Detroit Somerset Collection Store Note,US-MI,DTW-001,store/contact-center,en-US,active,official,true,2026-01-01,2026-12-31,2026-02-15
+so_043,2,regional_store_note,Legacy Chicago Michigan Ave Holiday Hours Note (Deprecated),US-IL,CHI-001,contact-center,en-US,deprecated,curated,false,2025-11-01,2026-01-05,2026-01-05
+so_044,2,regional_store_note,Legacy Houston Galleria Curbside Pilot Note (Deprecated),US-TX,HOU-002,contact-center,en-US,deprecated,curated,false,2025-05-01,2025-08-15,2025-08-15
+so_045,2,regional_store_note,Legacy Portland Pearl District COVID Capacity Limits (Deprecated),US-OR,PDX-008,contact-center,en-US,deprecated,curated,false,2020-06-01,2024-03-01,2024-03-01

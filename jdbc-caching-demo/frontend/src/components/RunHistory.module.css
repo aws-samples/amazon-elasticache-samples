@@ -1,0 +1,58 @@
+.wrapper { display: flex; flex-direction: column; gap: 12px; }
+
+.legend {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 0.82rem;
+  padding: 0 4px;
+}
+.legendDirect { color: #3b48cc; font-weight: 600; }
+.legendCached { color: #c925d1; font-weight: 600; }
+.legendStack { color: #888; font-size: 0.78rem; }
+
+.runList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.runItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: #f8f9fa;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: all 0.15s;
+}
+.runItem:hover { background: #f0f2f5; }
+.runItemActive { border-color: #1a1a2e !important; background: white !important; }
+
+.runDirect { border-color: #d0d4ff; }
+.runDirect.runItemActive { border-color: #3b48cc !important; }
+.runCached { border-color: #f0d0ff; }
+.runCached.runItemActive { border-color: #c925d1 !important; }
+
+.runNum     { font-weight: 700; color: #555; }
+.runMode    { font-weight: 600; }
+.runLatency { font-weight: 700; font-size: 0.9rem; }
+.runRows    { color: #888; }
+
+.runDirect .runMode    { color: #3b48cc; }
+.runCached .runMode    { color: #c925d1; }
+.runDirect .runLatency { color: #3b48cc; }
+.runCached .runLatency { color: #c925d1; }
+
+.tooltip {
+  background: #1a1a2e;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+.tooltipTitle { font-weight: 600; margin-bottom: 2px; }
+.legendHint   { color: #aaa; margin-left: auto; }

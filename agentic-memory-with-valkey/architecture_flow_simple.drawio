@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" version="24.0.0">
+  <diagram name="ShopNow AI - Simplified Flow" id="shopnow-flow-simple">
+    <mxGraphModel dx="1600" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="0" arrows="0" fold="1" page="0" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- SWIMLANES -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+
+        <mxCell id="lane-user" value="User" style="swimlane;startSize=36;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="120" height="840" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lane-app" value="ShopNow App" style="swimlane;startSize=36;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="160" y="20" width="180" height="840" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lane-cache" value="Semantic Cache  (Valkey)" style="swimlane;startSize=36;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=13;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="360" y="20" width="180" height="840" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lane-agent" value="Aiva  (Strands Agent)" style="swimlane;startSize=36;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=13;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="560" y="20" width="180" height="840" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lane-bedrock" value="Amazon Bedrock" style="swimlane;startSize=36;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=13;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="760" y="20" width="180" height="840" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lane-kbs" value="Knowledge Bases" style="swimlane;startSize=36;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="960" y="20" width="180" height="840" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- NODES -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+
+        <!-- 1. User query -->
+        <mxCell id="s1" value="1. Send query" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="90" width="100" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 2. Extract state -->
+        <mxCell id="s2" value="2. Extract state&#xa;slots · entities · turn_stage" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="175" y="90" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 3. Cache lookup -->
+        <mxCell id="s3" value="3. Vector search&#xa;+ state filters" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="375" y="90" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 4a. HIT -->
+        <mxCell id="s4a" value="HIT ✓&#xa;return cached response" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="175" y="200" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 4b. MISS → agent -->
+        <mxCell id="s4b" value="MISS →&#xa;invoke agent" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="575" y="200" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 5. LLM thinks -->
+        <mxCell id="s5" value="5. Claude Sonnet 4.5&#xa;reasons + routes tools" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="775" y="200" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 6. lookup_knowledge -->
+        <mxCell id="s6" value="6. lookup_knowledge&#xa;(KB sub-agent)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="575" y="310" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 7. Bedrock KBs -->
+        <mxCell id="s7" value="7. RetrieveAndGenerate&#xa;across 6 KBs" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="975" y="310" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 8. Other tools -->
+        <mxCell id="s8" value="8. Commerce / Order /&#xa;Locations tools" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="575" y="420" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 9. Agent response -->
+        <mxCell id="s9" value="9. Stream response&#xa;+ cache signal" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="575" y="530" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 10. Update state -->
+        <mxCell id="s10" value="10. Update state&#xa;domain · task · SKUs · summary" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="175" y="530" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 11. Cache write -->
+        <mxCell id="s11" value="11. Cache WRITE&#xa;embed + store (async)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="375" y="640" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 12. Titan embed -->
+        <mxCell id="s12" value="Titan Embed Text v2&#xa;1024-dim" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="775" y="640" width="150" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- 13. Response to user -->
+        <mxCell id="s13" value="13. Response" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="530" width="100" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!-- ARROWS -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+
+        <!-- 1 → 2 -->
+        <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" source="s1" target="s2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 2 → 3 -->
+        <mxCell id="e23" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=2;" edge="1" source="s2" target="s3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 3 → 4a HIT -->
+        <mxCell id="e3hit" value="HIT" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;fontStyle=1;fontSize=10;" edge="1" source="s3" target="s4a" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="450" y="175" />
+              <mxPoint x="250" y="175" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 3 → 4b MISS -->
+        <mxCell id="e3miss" value="MISS" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontStyle=1;fontSize=10;" edge="1" source="s3" target="s4b" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="450" y="175" />
+              <mxPoint x="650" y="175" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 4b → 5 LLM -->
+        <mxCell id="e4b5" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=2;" edge="1" source="s4b" target="s5" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 5 → 6 tool call -->
+        <mxCell id="e56" value="tool call" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontSize=10;" edge="1" source="s5" target="s6" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="850" y="280" />
+              <mxPoint x="650" y="280" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 6 → 7 KBs -->
+        <mxCell id="e67" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" source="s6" target="s7" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="650" y="332" />
+              <mxPoint x="1050" y="332" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 5 → 8 other tools -->
+        <mxCell id="e58" value="tool call" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontSize=10;" edge="1" source="s5" target="s8" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="850" y="390" />
+              <mxPoint x="650" y="390" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 6/8 → 9 result -->
+        <mxCell id="e69" value="result" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=2;fontSize=10;" edge="1" source="s8" target="s9" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 9 → 10 post-turn -->
+        <mxCell id="e910" value="post-turn" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;fontSize=10;" edge="1" source="s9" target="s10" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="650" y="570" />
+              <mxPoint x="250" y="570" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 10 → 13 response to user -->
+        <mxCell id="e1013" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" source="s10" target="s13" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="175" y="570" />
+              <mxPoint x="80" y="570" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 4a → 13 (hit path to user) -->
+        <mxCell id="e4a13" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;" edge="1" source="s4a" target="s13" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="175" y="560" />
+              <mxPoint x="80" y="560" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 10 → 11 cache write -->
+        <mxCell id="e1011" value="if cacheable" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;dashed=1;strokeWidth=2;fontSize=10;" edge="1" source="s10" target="s11" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="250" y="660" />
+              <mxPoint x="450" y="660" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 11 → 12 embed -->
+        <mxCell id="e1112" value="embed" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;dashed=1;strokeWidth=2;fontSize=10;" edge="1" source="s11" target="s12" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="450" y="662" />
+              <mxPoint x="850" y="662" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

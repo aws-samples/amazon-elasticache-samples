@@ -1,0 +1,32 @@
+plugins {
+    id 'org.springframework.boot' version '3.4.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'java'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+java.sourceCompatibility = JavaVersion.VERSION_17
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+    implementation 'org.postgresql:postgresql:42.7.3'
+
+    // AWS Advanced JDBC Wrapper - Maven Central
+    implementation 'software.amazon.jdbc:aws-advanced-jdbc-wrapper:3.3.0'
+
+    // Required runtime deps for Remote Query Cache Plugin
+    implementation 'org.apache.commons:commons-pool2:2.11.1'
+    implementation 'io.valkey:valkey-glide:2.3.0'
+
+    implementation 'io.github.cdimascio:dotenv-java:3.0.0'
+}
+
+bootJar {
+    archiveFileName = 'sample-app.jar'
+}

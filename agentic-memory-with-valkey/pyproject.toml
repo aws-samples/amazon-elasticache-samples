@@ -1,0 +1,84 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentic-shopping-demo"
+dynamic = ["version"]
+description = 'Agentic AI Shopping Assistant Demo with semantic caching'
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+keywords = []
+authors = []
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: Implementation :: CPython",
+]
+dependencies = [
+  "strands-agents>=1.14.0",
+  "strands-agents-tools",
+  "boto3",
+  "mypy-boto3-bedrock-agent-runtime",
+  "chainlit",
+  "qrcode[pil]",
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic-ai",
+  "valkey-glide-sync>=2.1.1",
+  "valkey-glide>=2.0.0,<2.2.0",
+  "requests",
+  "requests-aws4auth",
+  "spacy>=3.7,<4.0",
+  "mem0ai>=1.0.0",
+  "valkey>=6.0.0",
+  "strands-valkey-session-manager",
+]
+
+[tool.hatch.version]
+path = "src/agentic_shopping_demo/__about__.py"
+
+[tool.hatch.envs.default]
+dependencies = [
+  "pyright>=1.1.0",
+]
+
+[tool.hatch.envs.default.scripts]
+start = "bash -c 'uvicorn agentic_shopping_demo.api:app --reload --port 8000 --reload-exclude react-ui 2>&1 | tee /tmp/shopnow_api.log & (cd react-ui && npm install --silent && npm run dev)'"
+release = [
+  "hatch build",
+  "pyright src/agentic_shopping_demo",
+  "hatch run test:pytest tests/",
+]
+cli = "python src/agentic_shopping_demo/cli.py"
+ui = "PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 chainlit run src/agentic_shopping_demo/chainlit_app.py"
+api = "uvicorn agentic_shopping_demo.api:app --reload --port 8000"
+
+[tool.hatch.envs.test]
+dependencies = [
+  "pytest>=7.0.0",
+  "pytest-cov",
+]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+
+[tool.coverage.run]
+source_pkgs = ["agentic_shopping_demo", "tests"]
+branch = true
+parallel = true
+omit = [
+  "src/agentic_shopping_demo/__about__.py",
+]
+
+[tool.coverage.paths]
+agentic_shopping_demo = ["src/agentic_shopping_demo", "*/agentic-shopping-demo/src/agentic_shopping_demo"]
+tests = ["tests", "*/agentic-shopping-demo/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]

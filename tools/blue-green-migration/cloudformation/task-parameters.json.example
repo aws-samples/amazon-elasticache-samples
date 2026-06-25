@@ -1,0 +1,20 @@
+[
+  { "ParameterKey": "StackName",         "ParameterValue": "redisshake-migration-1" },
+  { "ParameterKey": "InfraStackName",    "ParameterValue": "redisshake" },
+  { "ParameterKey": "TaskName",          "ParameterValue": "migration-1" },
+  { "ParameterKey": "ContainerImage",    "ParameterValue": "123456789012.dkr.ecr.us-east-1.amazonaws.com/redisshake:latest" },
+  { "ParameterKey": "TaskCpu",           "ParameterValue": "512" },
+  { "ParameterKey": "TaskMemory",        "ParameterValue": "1024" },
+  { "ParameterKey": "DesiredCount",      "ParameterValue": "1" },
+  { "ParameterKey": "ShakeSrcAddress",   "ParameterValue": "source-redis.example.com:6379" },
+  { "ParameterKey": "ShakeSrcPassword",  "ParameterValue": "" },
+  { "ParameterKey": "ShakeSrcUsername",  "ParameterValue": "" },
+  { "ParameterKey": "ShakeSrcTls",       "ParameterValue": "false" },
+  { "ParameterKey": "ShakeSrcCluster",   "ParameterValue": "false" },
+  { "ParameterKey": "ShakeDstAddress",   "ParameterValue": "dest-redis.example.com:6379" },
+  { "ParameterKey": "ShakeDstPassword",  "ParameterValue": "" },
+  { "ParameterKey": "ShakeDstUsername",  "ParameterValue": "" },
+  { "ParameterKey": "ShakeDstTls",       "ParameterValue": "false" },
+  { "ParameterKey": "ShakeDstCluster",   "ParameterValue": "false" },
+  { "ParameterKey": "ShakeConfigBase64", "ParameterValue": "" }
+]

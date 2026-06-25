@@ -1,0 +1,7 @@
+| Requirement | Description | MLP |
+|------------|-------------|-----|
+| AWS Service Integration | The tool needs to seamlessly integrate with AWS services to discover and connect to ElastiCache and MemoryDB instances. This includes securely accessing instance endpoints and potentially using AWS APIs for configuration or monitoring. | Ability to connect to a single ElastiCache or MemoryDB cluster via its endpoint and display basic cluster information (e.g., name, engine type, status). |
+| Data Browsing & Inspection | Allow users to visualize and inspect data stored in the connected ElastiCache or MemoryDB instances. This includes browsing keys, viewing values (potentially with basic data type recognition like string, hash, list, set), and filtering results. | A basic key-value browser with the ability to view string values. |
+| Basic CLI/Command Execution | Provide a way to execute basic Redis/Valkey commands directly against the connected instance. This can help with quick data manipulation and debugging. | A simple command-line interface for executing a few common commands like GET, SET, DEL. |
+| Connection Management | Allow users to save and manage connection configurations for multiple ElastiCache or MemoryDB instances, including credentials. | Ability to save and load connection details for multiple clusters. |
+| Basic Monitoring | Display essential metrics like memory usage, current connections, and potentially replication lag for the connected instance. | Real-time display of key metrics like memory utilization and connections. |

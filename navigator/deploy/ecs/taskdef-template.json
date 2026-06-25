@@ -1,0 +1,73 @@
+{
+  "family": "${ECS_TASK_FAMILY}",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ECS_EXECUTION_ROLE}",
+  "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ECS_TASK_ROLE}",
+  "containerDefinitions": [
+    {
+      "name": "backend",
+      "image": "${BACKEND_IMAGE_URI}",
+      "portMappings": [
+        { "containerPort": 8000, "hostPort": 8000, "protocol": "tcp" }
+      ],
+      "essential": true,
+      "environment": [
+        {"name":"SERVER_PORT","value":"8000"},
+        {"name":"REGION","value":"${REGION}"},
+        {"name":"USE_STRANDS","value":"${USE_STRANDS:-True}"},
+        {"name":"AGENT_ID","value":"${AGENT_ID:-}"},
+        {"name":"ALIAS_ID","value":"${ALIAS_ID:-}"},
+        {"name":"SESSION_ID","value":"${SESSION_ID:-MY_SESSION_ID}"},
+        {"name":"METRICS_COLLECTION_INTERVAL_SECONDS","value":"${METRICS_COLLECTION_INTERVAL_SECONDS:-15}"},
+        {"name":"INFLUXDB_ENDPOINT","value":"${INFLUXDB_ENDPOINT}"},
+        {"name":"INFLUXDB_PORT","value":"${INFLUXDB_PORT:-8086}"},
+        {"name":"INFLUXDB_ORG","value":"${INFLUXDB_ORG}"},
+        {"name":"INFLUXDB_BUCKET","value":"${INFLUXDB_BUCKET:-valkey-navigator}"},
+        {"name":"INFLUXDB_TOKEN","value":"${INFLUXDB_TOKEN}"},
+        {"name":"INFLUXDB_SCHEME","value":"${INFLUXDB_SCHEME:-https}"}
+      ],
+      "secrets": [
+        {"name":"AWS_KEY", "valueFrom":"${AWS_KEY_SSM_PARAM_ARN:-}"},
+        {"name":"SECRET_ACCESS_KEY", "valueFrom":"${AWS_SECRET_ACCESS_KEY_SSM_PARAM_ARN:-}"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/${ECS_TASK_FAMILY}",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "backend"
+        }
+      }
+    },
+    {
+      "name": "frontend",
+      "image": "${FRONTEND_IMAGE_URI}",
+      "portMappings": [
+        { "containerPort": 5173, "hostPort": 5173, "protocol": "tcp" }
+      ],
+      "essential": true,
+      "environment": [
+        {"name":"INFLUXDB_ENDPOINT","value":"${INFLUXDB_ENDPOINT}"},
+        {"name":"INFLUXDB_PORT","value":"${INFLUXDB_PORT:-8086}"},
+        {"name":"INFLUXDB_SCHEME","value":"${INFLUXDB_SCHEME:-https}"},
+        {"name":"VITE_API_ENDPOINT","value":"${VITE_API_ENDPOINT:-localhost}"},
+        {"name":"VITE_API_PORT","value":"${VITE_API_PORT:-8000}"},
+        {"name":"VITE_API_SSL","value":"${VITE_API_SSL:-false}"}
+      ],
+      "dependsOn": [
+        {"containerName":"backend","condition":"START"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/${ECS_TASK_FAMILY}",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "frontend"
+        }
+      }
+    }
+  ]
+}
