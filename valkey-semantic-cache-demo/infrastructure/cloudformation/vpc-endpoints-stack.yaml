@@ -1,0 +1,229 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "VPC Endpoints for Bedrock AgentCore to access AWS services in VPC mode"
+
+Parameters:
+  VpcId:
+    Type: String
+    Default: "vpc-0f9b5afd31283e9d1"
+    Description: "VPC ID (must match the VPC used by AgentCore and ElastiCache)"
+
+  SubnetIds:
+    Type: CommaDelimitedList
+    Default: "subnet-0e80dd54d46959a91,subnet-0257db422851c0d6b,subnet-0da73b5aadcb5e744"
+    Description: "Subnet IDs for interface endpoints (should match AgentCore subnets)"
+
+  RouteTableIds:
+    Type: CommaDelimitedList
+    Default: "rtb-073ce8bdb27b6acaa"
+    Description: "Route table IDs for S3 gateway endpoint (comma-separated)"
+
+  AgentCoreSecurityGroupId:
+    Type: String
+    Default: "sg-077091f3ac5a55b60"
+    Description: "Security group ID used by AgentCore (from .bedrock-agentcore.yaml)"
+
+  AwsRegion:
+    Type: String
+    Default: "us-east-2"
+    Description: "AWS region"
+
+Resources:
+  #############################################
+  # Security Group for VPC Endpoints
+  #############################################
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "semantic-cache-vpc-endpoints-sg"
+      GroupDescription: "Security group for VPC endpoints - allows HTTPS from VPC"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow HTTPS from the AgentCore security group
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref AgentCoreSecurityGroupId
+          Description: "Allow HTTPS from AgentCore containers"
+        # Also allow from entire VPC CIDR for flexibility
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "172.31.0.0/16"
+          Description: "Allow HTTPS from VPC CIDR"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic"
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-vpc-endpoints-sg"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # CloudWatch Logs Endpoint (Interface)
+  #############################################
+  CloudWatchLogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AwsRegion}.logs"
+      VpcEndpointType: Interface
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-logs-endpoint"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # CloudWatch Monitoring Endpoint (Interface)
+  # For put_metric_data API calls
+  #############################################
+  CloudWatchMonitoringEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AwsRegion}.monitoring"
+      VpcEndpointType: Interface
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-monitoring-endpoint"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # Bedrock Runtime Endpoint (Interface)
+  # For Titan Embeddings and model invocations
+  #############################################
+  BedrockRuntimeEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AwsRegion}.bedrock-runtime"
+      VpcEndpointType: Interface
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-bedrock-runtime-endpoint"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # ECR API Endpoint (Interface)
+  # For ECR API calls (describe, list, etc.)
+  #############################################
+  ECRApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AwsRegion}.ecr.api"
+      VpcEndpointType: Interface
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-ecr-api-endpoint"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # ECR DKR Endpoint (Interface)
+  # For Docker registry operations (pull images)
+  #############################################
+  ECRDkrEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AwsRegion}.ecr.dkr"
+      VpcEndpointType: Interface
+      SubnetIds: !Ref SubnetIds
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-ecr-dkr-endpoint"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  #############################################
+  # S3 Endpoint (Gateway)
+  # For ECR layer downloads (stored in S3)
+  #############################################
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub "com.amazonaws.${AwsRegion}.s3"
+      VpcEndpointType: Gateway
+      RouteTableIds: !Ref RouteTableIds
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-s3-endpoint"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+Outputs:
+  VPCEndpointSecurityGroupId:
+    Description: "Security group ID for VPC endpoints"
+    Value: !Ref VPCEndpointSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-EndpointSecurityGroupId"
+
+  CloudWatchLogsEndpointId:
+    Description: "CloudWatch Logs VPC endpoint ID"
+    Value: !Ref CloudWatchLogsEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-LogsEndpointId"
+
+  CloudWatchMonitoringEndpointId:
+    Description: "CloudWatch Monitoring VPC endpoint ID"
+    Value: !Ref CloudWatchMonitoringEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-MonitoringEndpointId"
+
+  BedrockRuntimeEndpointId:
+    Description: "Bedrock Runtime VPC endpoint ID"
+    Value: !Ref BedrockRuntimeEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-BedrockRuntimeEndpointId"
+
+  ECRApiEndpointId:
+    Description: "ECR API VPC endpoint ID"
+    Value: !Ref ECRApiEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-ECRApiEndpointId"
+
+  ECRDkrEndpointId:
+    Description: "ECR DKR VPC endpoint ID"
+    Value: !Ref ECRDkrEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-ECRDkrEndpointId"
+
+  S3EndpointId:
+    Description: "S3 Gateway VPC endpoint ID"
+    Value: !Ref S3Endpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-S3EndpointId"
+
+  StackName:
+    Description: "Name of this CloudFormation stack"
+    Value: !Ref AWS::StackName
+
+  EstimatedMonthlyCost:
+    Description: "Estimated monthly cost for interface endpoints"
+    Value: "~$30/month (4 interface endpoints × $7.50/month each, S3 gateway is free)"

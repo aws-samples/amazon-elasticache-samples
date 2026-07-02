@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Cache management Lambda for semantic caching demo (VPC-enabled)'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: "semantic-cache-demo"
+    Description: "Project name prefix for resources"
+
+  ElastiCacheEndpoint:
+    Type: String
+    Description: "ElastiCache (Valkey) endpoint hostname"
+
+  VpcSubnetIds:
+    Type: CommaDelimitedList
+    Default: "subnet-0e80dd54d46959a91,subnet-0257db422851c0d6b,subnet-0da73b5aadcb5e744"
+    Description: "Subnet IDs for Lambda VPC configuration"
+
+  VpcSecurityGroupId:
+    Type: String
+    Description: "Security group ID allowing access to ElastiCache"
+
+Resources:
+  CacheManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-cache-management"
+      CodeUri: ../../lambda/cache_management/
+      Handler: handler.handler
+      Runtime: python3.12
+      Architectures:
+        - arm64
+      Timeout: 60
+      MemorySize: 256
+      VpcConfig:
+        SubnetIds: !Ref VpcSubnetIds
+        SecurityGroupIds:
+          - !Ref VpcSecurityGroupId
+      Environment:
+        Variables:
+          ELASTICACHE_ENDPOINT: !Ref ElastiCacheEndpoint
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            # CloudWatch Logs
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource:
+                - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-cache-management:*"
+            # VPC ENI management
+            - Effect: Allow
+              Action:
+                - ec2:CreateNetworkInterface
+                - ec2:DescribeNetworkInterfaces
+                - ec2:DeleteNetworkInterface
+                - ec2:AssignPrivateIpAddresses
+                - ec2:UnassignPrivateIpAddresses
+              Resource: "*"
+
+Outputs:
+  CacheManagementFunctionArn:
+    Description: "ARN of the cache management Lambda function"
+    Value: !GetAtt CacheManagementFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionArn"
+
+  CacheManagementFunctionName:
+    Description: "Name of the cache management Lambda function"
+    Value: !Ref CacheManagementFunction
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionName"
