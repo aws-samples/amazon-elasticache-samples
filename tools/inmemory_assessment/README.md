@@ -2,13 +2,46 @@
 
 ## 1. Purpose
 
-This tool connects to a Valkey or Redis OSS cluster and gathers two sets of metrics from each node. Once at the beginning of the execution, and again after a user-defined waiting period. It then calculates deltas and averages, prints a human-readable summary report, and writes CSV and JSON files for deeper analysis.
+This tool scans a running Valkey or Redis OSS deployment and produces a starting point and best
+practices for moving it to Amazon ElastiCache for Valkey, along with an estimated cost.
 
-**Works with**: Open-source Valkey clusters, open-source Redis OSS clusters. 
+It works in two stages:
 
-**Experimental support** ElastiCache node-based clusters.
+**Assessment.** Connects to each node and collects `INFO` (memory, stats, commandstats,
+replication, keyspace, clients) twice — once at the start and once after a user-defined
+measurement window. From the difference between the two snapshots it derives operations per
+second, network bandwidth, memory usage, average payload size, and the set of commands the
+workload actually ran. It prints a summary and writes CSV and JSON reports. This stage is
+read-only: no data is written or modified.
 
-**Does not work with**: Commercial versions from Redis, Ltd. This tool is not affiliated with Redis, Ltd.
+**AI recommendation.** Feeds that assessment to an agent running on Amazon Bedrock, which
+combines it with live AWS pricing and instance data to produce an HTML report covering
+deployment type (serverless or node-based), cluster configuration options, engine version and
+command compatibility, security, high availability, resilience testing, monitoring, migration
+approach, and cost optimization.
+
+Cost figures are **estimates**, not quotes. They come from public on-demand rates and from the
+workload observed during the measurement window, and they exclude data transfer, backups, and
+other associated charges. Treat them as a planning starting point and validate against the AWS
+Pricing Calculator.
+
+The two stages can be run together with `run_migration_advisor.sh`, or independently — the
+assessment alone if you only need the workload metrics.
+
+**Works with**: Self-managed Valkey and Redis OSS, wherever they run — on AWS, on-premises, or any
+other hosting provider — as long as you can reach the individual nodes directly.
+
+**Experimental support**: ElastiCache node-based clusters.
+
+**Does not work with** deployments that put a proxy between the client and the cache. The proxy
+hides the backend nodes, so `INFO` returns proxy-level rather than per-node data and the tool
+cannot collect the node metrics it needs. If you connect through a proxy layer and do not have
+direct access to the individual nodes, this tool will not produce a usable assessment.
+
+**Requires** (for the AI recommendation stage): AWS credentials with access to Amazon Bedrock
+and the Pricing API, and model access enabled in your chosen region.
+
+This tool is not affiliated with Redis, Ltd.
 
 ### Caveats
 
@@ -27,21 +60,54 @@ cd amazon-elasticache-samples/tools/inmemory_assessment
 
 ### Create a Python environment and install the application
 
+The wrapper script auto-detects a virtual environment at `.venv/` in this
+directory. Creating it there means both the assessment and the AI agent run
+from a single interpreter:
+
+```sh
+python3.11 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+./.venv/bin/pip install -r agent/requirements.txt
+```
+
+Alternatively, install the package to get the `inmemory_assessment` command on your `PATH`. Note
+this installs the **assessment stage only** — `setup.py` does not include the agent's
+dependencies, so if you also want the AI recommendation stage you must install
+`agent/requirements.txt` into the same environment:
+
 ```sh
 python -m venv venv
 source venv/bin/activate
 pip install .
+pip install -r agent/requirements.txt   # only if you want the AI recommendation stage
 ```
 
 ### Install AI Migration Advisor dependencies
 
-Required if using the wrapper script or AI agent:
+Required if using the wrapper script or AI agent. Already covered by the
+`agent/requirements.txt` step above; to install manually:
 
 ```sh
 pip install strands-agents boto3
 ```
 
 Also requires AWS credentials with Bedrock and Pricing API access.
+
+### Interpreter selection
+
+`run_migration_advisor.sh` resolves the Python interpreter in this order:
+
+1. `PYTHON_BIN` environment variable, if set
+2. `.venv/bin/python` in this directory, if present
+3. `python3` on `PATH`
+
+Both the assessment and the agent must run under an interpreter that has
+*both* dependency sets installed (`redis`/`typer`/`rich` **and**
+`strands-agents`/`boto3`). To override:
+
+```sh
+PYTHON_BIN=/path/to/python ./run_migration_advisor.sh --host <host> --port 6379
+```
 
 ## 3. Execution
 
@@ -57,16 +123,30 @@ The wrapper script runs the assessment and then generates an AI-powered ElastiCa
 ./run_migration_advisor.sh --host <redis-host> --port 6379 --user myuser --password mypass --tls --region us-west-2
 
 # Use an existing assessment JSON (skip assessment step)
-./run_migration_advisor.sh --file output/output_20251007_231314.json --region us-east-1
+./run_migration_advisor.sh --file /tmp/assessment-20251007-231314.json --region us-east-1
+
+# Choose the Bedrock model and name the output file
+./run_migration_advisor.sh --host <redis-host> --model global.anthropic.claude-sonnet-5 --output my-report.html
 ```
 
-This produces an HTML report with deployment options, cost estimates, and migration steps. The assessment runs for **5 minutes** by default to capture representative workload metrics. Use `--duration` to adjust (e.g., `--duration 60` for 1 minute during testing).
+Run `./run_migration_advisor.sh --help` for all options: `--host`, `--port`, `--user`,
+`--password`, `--tls`, `--duration`, `--file`, `--region`, `--output`, `--model`.
 
-See [agentic-ai/README.md](agentic-ai/README.md) for details.
+This produces an HTML report with deployment options, estimated costs, and migration steps.
+
+The wrapper's assessment step writes its JSON to `/tmp/assessment-<timestamp>.json` and prints the
+path — use that path with `--file` if you want to re-run only the recommendation stage.
+
+**Duration defaults differ between the two entry points:** the wrapper defaults to **300 seconds
+(5 minutes)** to capture representative workload metrics, while the standalone assessment command
+defaults to **120 seconds**. Use `--duration` to override either (e.g. `--duration 60` while
+testing).
+
+See [agent/README.md](agent/README.md) for details.
 
 ### Alternative: Assessment only
 
-If you only need the workload assessment (without AI recommendations):
+If you only need the workload assessment (to send someone who has access to Bedrock to generate AI recommendations):
 
 ```sh
 inmemory_assessment --host <redis-host> --port 6379 --duration 120

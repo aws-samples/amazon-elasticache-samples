@@ -9,3 +9,6 @@ __pycache__/
 venv/
 *.csv
 *.json
+!examples/output.json
+*.html
+generate_load.sh
