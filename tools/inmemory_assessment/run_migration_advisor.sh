@@ -9,7 +9,18 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AGENT_DIR="${SCRIPT_DIR}/agentic-ai"
+AGENT_DIR="${SCRIPT_DIR}/agent"
+
+# Interpreter resolution: prefer the project venv (which has BOTH the assessment
+# deps -- redis/typer/rich -- and the agent deps -- strands/boto3). Fall back to
+# an env-provided PYTHON_BIN, then to python3 on PATH.
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+    :  # honor caller-provided interpreter
+elif [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+    PYTHON_BIN="${SCRIPT_DIR}/.venv/bin/python"
+else
+    PYTHON_BIN="python3"
+fi
 REGION="us-west-2"
 HOST=""
 PORT="6379"
@@ -19,6 +30,7 @@ PASSWORD=""
 TLS=""
 DURATION="300"
 OUTPUT=""
+MODEL="global.anthropic.claude-sonnet-5"
 
 usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -35,6 +47,7 @@ usage() {
     echo "  --file FILE        Skip assessment, use existing JSON file"
     echo "  --region REGION    AWS region for pricing/Bedrock (default: us-west-2)"
     echo "  --output FILE      Output HTML file (default: auto-generated)"
+    echo "  --model MODEL      Bedrock model ID (default: global.anthropic.claude-sonnet-5)"
     echo "  -h, --help         Show this help"
     exit 0
 }
@@ -50,6 +63,7 @@ while [[ $# -gt 0 ]]; do
         --file) FILE="$2"; shift 2 ;;
         --region) REGION="$2"; shift 2 ;;
         --output) OUTPUT="$2"; shift 2 ;;
+        --model) MODEL="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1"; usage ;;
     esac
@@ -71,7 +85,7 @@ if [[ -n "$HOST" ]]; then
 
     ASSESSMENT_OUTPUT="/tmp/assessment-$(date +%Y%m%d-%H%M%S).json"
     
-    ASSESS_CMD="python3 ${SCRIPT_DIR}/inmemory_assessment.py --host ${HOST} --port ${PORT} --duration ${DURATION} --output ${ASSESSMENT_OUTPUT}"
+    ASSESS_CMD="${PYTHON_BIN} ${SCRIPT_DIR}/inmemory_assessment.py --host ${HOST} --port ${PORT} --duration ${DURATION} --output ${ASSESSMENT_OUTPUT}"
     [[ -n "$USER" ]] && ASSESS_CMD+=" --user ${USER}"
     [[ -n "$PASSWORD" ]] && ASSESS_CMD+=" --password ${PASSWORD}"
     [[ -n "$TLS" ]] && ASSESS_CMD+=" ${TLS}"
@@ -93,9 +107,10 @@ fi
 echo "=== Step 2: Running Migration Advisor Agent ==="
 echo "  Input: ${FILE}"
 echo "  Region: ${REGION}"
+echo "  Model: ${MODEL}"
 echo ""
 
-AGENT_CMD="python3 ${AGENT_DIR}/elasticache_strands_agent.py --file ${FILE} --region ${REGION}"
+AGENT_CMD="${PYTHON_BIN} ${AGENT_DIR}/elasticache_strands_agent.py --file ${FILE} --region ${REGION} --model ${MODEL}"
 [[ -n "$OUTPUT" ]] && AGENT_CMD+=" --output ${OUTPUT}"
 
 eval "$AGENT_CMD"

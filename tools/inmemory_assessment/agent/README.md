@@ -36,7 +36,7 @@ https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Migration-Prepare.html
 ## Architecture
 
 **Framework:** Strands Agents SDK (https://github.com/awslabs/strands)
-**Model:** AWS Bedrock Claude Sonnet 4.6
+**Model:** AWS Bedrock Claude Sonnet 5
 **Tools:** Six specialized tools
 
 ## Tools
@@ -100,7 +100,7 @@ pip install strands-agents boto3
 ## Usage
 
 ```bash
-# Default (uses example file, us-west-2, Claude Sonnet 4.6)
+# Default (uses example file, us-west-2, Claude Sonnet 5)
 python3.11 elasticache_strands_agent.py
 
 # Custom file
