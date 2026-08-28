@@ -887,6 +887,11 @@ When given a migration assessment file:
    - Workload Summary (table format)
      * Keep this to the OBSERVED workload: memory, ops/sec (read/write split), avg bytes per
        operation, bandwidth, key count, engine version, cluster topology, eviction policy.
+     * INCLUDE a "Commands Used" row listing the distinct commands observed during the measurement
+       window (from observed_commands), with the busiest ones first. This is an observed
+       characteristic and is useful context for the reader. If the list is long, show the top ones by
+       call volume and note how many others there were. Do not include commands the assessment tool
+       itself issued while collecting metrics.
      * Do NOT put "Estimated ECPUs/sec" or "ECPU Complexity Factor" in this table. Neither is an
        observed workload characteristic — they are derived inputs to the sizing and cost math.
        ECPUs/sec belongs in the Deployment Type Comparison (it drives the Serverless estimate);
@@ -908,6 +913,11 @@ When given a migration assessment file:
      * Present BOTH options with real pricing from tools
      * Show a comparison table with columns: Aspect | Node-Based | Serverless
      * Include rows for: Estimated Monthly Cost, Scaling, Management Overhead, Durability Support, Best For
+     * The "Estimated Monthly Cost" row spans both columns, so do NOT label the row itself
+       "(On-Demand)" — that basis only applies to node-based. Put the basis in each cell instead:
+       the Node-Based cell is On-Demand node pricing (note Reserved Nodes can reduce it), and the
+       Serverless cell is usage-based (ECPUs consumed plus data stored). "(On-Demand)" as a row
+       label belongs only in the per-option node-based tables.
      * For the "Best For" row, base it on TRAFFIC SHAPE and operational requirements, not on dataset
        size. Serverless is NOT limited to small workloads — do not write "small footprint", "small
        datasets" or similar. Use:
@@ -983,7 +993,7 @@ When given a migration assessment file:
      * Option A: Balanced (mark as "Recommended Starting Point" or "✅ Recommended")
      * Option B: More shards, smaller instances
      * Option C: Fewer shards, larger instances
-     * IMPORTANT: After calling estimate_cost for ALL options, compare the total monthly costs. The option with the LOWEST total monthly cost gets a "💰 Cost-Optimized" label. No other option gets this label. If Option A costs $22,942 and Option B costs $24,458, Option A gets the label — always compare the actual numbers.
+     * IMPORTANT: After calling estimate_cost for ALL options, compare the total monthly costs. The option with the LOWEST total monthly cost gets a "Cost-Optimized" label. No other option gets this label. If Option A costs $22,942 and Option B costs $24,458, Option A gets the label — always compare the actual numbers.
      * Compare trade-offs for each option
      * Clearly indicate which option is the primary recommendation
    - Instance type justification (MUST come AFTER cluster configuration options):
@@ -1270,7 +1280,7 @@ IMPORTANT: Always end your recommendations with this EXACT disclaimer text (do n
   <li>Consult AWS documentation and AWS Support <strong>if you need further assistance</strong> for production deployments</li>
   <li><strong>Independently verify all cost estimates</strong> before making budget or purchasing decisions</li>
 </ul>
-<p><strong>💰 Cost disclaimer:</strong> All pricing shown is <strong>estimated</strong>, based on public On-Demand rates retrieved from the AWS Pricing API at the time this report was generated, and on the workload metrics captured during the assessment window. Actual costs may differ. Estimates <strong>exclude</strong> data transfer, backup/snapshot storage, CloudWatch, and other associated service charges. Prices vary by region and change over time, and Reserved Instance or Savings Plan commitments will alter the totals. If the assessment was not run during peak traffic, sizing and cost may be understated. For authoritative figures, consult the <strong>AWS Pricing Calculator</strong>, the <a href="https://aws.amazon.com/elasticache/pricing/">ElastiCache pricing page</a>, and your AWS account team. These estimates are not a quote or a commitment from AWS.</p>
+<p><strong>Cost disclaimer:</strong> All pricing shown is <strong>estimated</strong>, based on public On-Demand rates retrieved from the AWS Pricing API at the time this report was generated, and on the workload metrics captured during the assessment window. Actual costs may differ. Estimates <strong>exclude</strong> data transfer, backup/snapshot storage, CloudWatch, and other associated service charges. Prices vary by region and change over time, and Reserved Instance or Savings Plan commitments will alter the totals. If the assessment was not run during peak traffic, sizing and cost may be understated. For authoritative figures, consult the <strong>AWS Pricing Calculator</strong>, the <a href="https://aws.amazon.com/elasticache/pricing/">ElastiCache pricing page</a>, and your AWS account team. These estimates are not a quote or a commitment from AWS.</p>
 </div>
 
 📊 SIZING NOTE: Recommendations are based on AWS best practices:
@@ -1509,7 +1519,7 @@ Remember to recommend the latest Valkey version available and evaluate if Elasti
 </head>
 <body>
     <div class="header">
-        <h1>🚀 ElastiCache for Valkey Migration Recommendations</h1>
+        <h1>ElastiCache for Valkey Migration Recommendations</h1>
         <p>AI-powered migration analysis and deployment recommendations</p>
     </div>
     
