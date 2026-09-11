@@ -52,7 +52,14 @@ def parse_migration_assessment(file_path: str) -> dict:
         return {'error': 'No "cluster" key found in assessment'}
     
     result = {
-        'memory_gb': cluster.get('summary_metric_memory_gb'),
+        # Size on the HIGHER of the two memory snapshots taken during the measurement
+        # window, so a dataset that grew during the window is not under-sized. Falls back
+        # to the baseline figure for assessments produced before max was reported.
+        'memory_gb': cluster.get('summary_metric_memory_max_gb',
+                                 cluster.get('summary_metric_memory_gb')),
+        'memory_gb_at_window_start': cluster.get('summary_metric_memory_gb'),
+        'memory_min_gb': cluster.get('summary_metric_memory_min_gb'),
+        'memory_max_gb': cluster.get('summary_metric_memory_max_gb'),
         'total_ops_sec': cluster.get('summary_metric_total_ops_sec'),
         'write_ops_sec': cluster.get('summary_metric_total_write_ops_sec'),
         'read_ops_sec': cluster.get('summary_metric_total_read_ops_sec'),
@@ -64,7 +71,10 @@ def parse_migration_assessment(file_path: str) -> dict:
         'cluster_mode': cluster.get('cluster_mode'),
         'primaries': cluster.get('primaries'),
         'replicas': cluster.get('replicas'),
-        'eviction_policy': cluster.get('eviction_policy_0')
+        'eviction_policy': cluster.get('eviction_policy_0'),
+        # Total keys across all primaries. Lives in the top-level "keyspace" block rather
+        # than under "cluster", which is why it was previously reported as unavailable.
+        'total_keys': data.get('keyspace', {}).get('cluster_total'),
     }
     
     # Parse source engine and version
@@ -81,6 +91,15 @@ def parse_migration_assessment(file_path: str) -> dict:
     missing = [k for k in ['memory_gb', 'total_ops_sec'] if result[k] is None]
     if missing:
         result['warning'] = f'Missing critical fields: {", ".join(missing)}'
+
+    # Measurement window length, needed so the report can state that the window-scoped
+    # ops/sec figures are averages over that period. Only present per-node in the deltas.
+    measurement_duration = None
+    for delta in data.get('deltas', {}).values():
+        if isinstance(delta, dict) and delta.get('duration_seconds'):
+            measurement_duration = delta['duration_seconds']
+            break
+    result['measurement_window_seconds'] = measurement_duration
 
     # --- Observed command inventory -------------------------------------------------
     # The assessment records per-command call counts from INFO commandstats as
@@ -112,6 +131,82 @@ def parse_migration_assessment(file_path: str) -> dict:
             if calls <= 0:
                 continue
             observed[cmd] = observed.get(cmd, 0) + calls
+
+    # Per-command counts for the MEASUREMENT WINDOW ONLY, computed as
+    # after-snapshot minus before-snapshot. The cumulative counts above answer
+    # "what does this application use" (compatibility); these answer "what was it
+    # doing during the window" (throughput), and the two differ by orders of magnitude.
+    def _snapshot(prefix):
+        out = {}
+        for node_data in data.get('nodes', {}).values():
+            if not isinstance(node_data, dict):
+                continue
+            for key, value in node_data.items():
+                if not key.startswith(prefix) or not key.endswith('_calls'):
+                    continue
+                if key.endswith('_failed_calls') or key.endswith('_rejected_calls'):
+                    continue
+                cmd = key[len(prefix):-len('_calls')]
+                if not cmd:
+                    continue
+                try:
+                    out[cmd] = out.get(cmd, 0) + int(value)
+                except (TypeError, ValueError):
+                    continue
+        return out
+
+    before_snap = _snapshot('__commandstats_snapshot_before_cmdstat_')
+    after_snap = _snapshot('__commandstats_snapshot_after_cmdstat_')
+    window_calls = {}
+    if after_snap:
+        for cmd, after_n in after_snap.items():
+            delta = after_n - before_snap.get(cmd, 0)
+            if delta > 0:
+                window_calls[cmd] = delta
+    result['window_command_calls'] = dict(
+        sorted(window_calls.items(), key=lambda kv: kv[1], reverse=True)
+    )
+    result['window_command_count'] = len(window_calls)
+
+    # Split both inventories into data commands and monitoring/admin commands.
+    #
+    # IMPORTANT: commandstats records the command NAME, not who issued it. Commands like
+    # INFO, PING and CONFIG GET are issued both by the customer's own monitoring and (in
+    # much smaller numbers) by this assessment tool. There is no way to attribute them, so
+    # we do NOT filter them out and do NOT claim they came from the assessment tool. They
+    # are grouped separately so genuine application traffic — including pub/sub — is not
+    # buried among them.
+    MONITORING_COMMANDS = frozenset([
+        'info', 'ping', 'auth', 'hello', 'echo', 'select', 'quit', 'reset',
+        'config', 'client', 'cluster', 'command', 'slowlog', 'latency', 'memory',
+        'object', 'debug', 'acl', 'module', 'dbsize', 'lastsave', 'time',
+        'replconf', 'psync', 'monitor', 'lolwut',
+    ])
+
+    def _is_monitoring(cmd):
+        return cmd.split('|', 1)[0].lower() in MONITORING_COMMANDS
+
+    def _split(counts):
+        data_cmds, mon_cmds = {}, {}
+        for c, n in counts.items():
+            (mon_cmds if _is_monitoring(c) else data_cmds)[c] = n
+        return (dict(sorted(data_cmds.items(), key=lambda kv: kv[1], reverse=True)),
+                dict(sorted(mon_cmds.items(), key=lambda kv: kv[1], reverse=True)))
+
+    cum_data, cum_mon = _split(observed)
+    win_data, win_mon = _split(window_calls)
+    result['cumulative_data_commands'] = cum_data
+    result['cumulative_monitoring_commands'] = cum_mon
+    result['window_data_commands'] = win_data
+    result['window_monitoring_commands'] = win_mon
+    result['command_grouping_note'] = (
+        'Commands are split into data commands (application traffic) and monitoring/admin '
+        'commands (INFO, PING, CONFIG, CLIENT, CLUSTER, SLOWLOG and similar). The monitoring '
+        'group reflects the customer\'s own monitoring plus a small number of calls issued by '
+        'this assessment tool while collecting metrics — commandstats records the command name '
+        'only, so the two cannot be separated. Do not describe the monitoring group as being '
+        'from the assessment tool; the large majority of it is theirs.'
+    )
 
     # Commands ElastiCache restricts on ALL cache types (node-based and serverless),
     # because they require privileges a managed service does not expose.
@@ -505,9 +600,18 @@ def calculate_shard_recommendation(memory_gb: float, ops_sec: float, bandwidth_g
     
     recommendations = []
     for instance in instance_options:
-        # Calculate shards needed based on raw memory (model will decide on overhead)
-        shards_needed = max(1, int(memory_gb / instance['memory_gb']) + 
-                           (1 if memory_gb % instance['memory_gb'] > 0 else 0))
+        # Size against USABLE memory, not total node memory.
+        #
+        # AWS recommends reserving 25% of maxmemory (reserved-memory-percent) so the
+        # background write process has room:
+        # https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/BestPractices.BGSAVE.html
+        # Applying it here means the reservation is part of instance SELECTION rather than
+        # only being flagged afterwards by validate_recommendation. Do not also apply a
+        # separate write-ratio memory multiplier on top of this — that double-counts the
+        # same headroom and pushes the recommendation a size larger than needed.
+        usable_memory_gb = instance['memory_gb'] * 0.75
+        shards_needed = max(1, int(memory_gb / usable_memory_gb) +
+                           (1 if memory_gb % usable_memory_gb > 0 else 0))
         
         # Calculate capacity per shard
         ops_per_shard = ops_sec / shards_needed
@@ -528,6 +632,12 @@ def calculate_shard_recommendation(memory_gb: float, ops_sec: float, bandwidth_g
             'generation': instance.get('generation', 0),
             'shards': shards_needed,
             'memory_per_shard_gb': memory_gb / shards_needed,
+            'node_memory_gb': instance['memory_gb'],
+            'usable_memory_per_node_gb': round(usable_memory_gb, 2),
+            'usable_memory_total_gb': round(usable_memory_gb * shards_needed, 2),
+            'memory_utilization_of_usable_pct': round(
+                memory_gb / (usable_memory_gb * shards_needed) * 100, 1
+            ) if usable_memory_gb else 0,
             'ops_per_shard': ops_per_shard,
             'bandwidth_per_shard_gbps': bandwidth_per_shard,
             'estimated_rps_capacity': estimated_rps_capacity,
@@ -540,9 +650,20 @@ def calculate_shard_recommendation(memory_gb: float, ops_sec: float, bandwidth_g
     # Find viable options
     viable_options = [r for r in recommendations if r['can_handle_ops'] and r['can_handle_bandwidth']]
     
-    # Prefer 2xlarge to 4xlarge range for good balance
-    preferred = next((r for r in viable_options if r['instance_size'] in ['2xlarge', '4xlarge']), 
-                     viable_options[0] if viable_options else recommendations[0])
+    # Prefer the SMALLEST viable option — the one with the fewest total nodes, then the
+    # smallest node. The data fitting in usable memory (after the 25% background-write
+    # reservation) is the test; high utilization of that usable memory is reported as
+    # headroom information rather than being treated as disqualifying.
+    _size_order = ['xlarge', '2xlarge', '4xlarge', '8xlarge', '12xlarge', '16xlarge']
+
+    def _rank(opt):
+        try:
+            size_idx = _size_order.index(opt['instance_size'])
+        except ValueError:
+            size_idx = len(_size_order)
+        return (opt['total_nodes'], size_idx)
+
+    preferred = min(viable_options, key=_rank) if viable_options else recommendations[0]
     
     return {
         'recommended_instance_type': preferred.get('instance_type', f"cache.r7g.{preferred['instance_size']}"),
@@ -559,7 +680,13 @@ def calculate_shard_recommendation(memory_gb: float, ops_sec: float, bandwidth_g
         'ecpu_complexity_factor': ecpu_complexity_factor,
         'effective_ops_per_vcpu': effective_ops_per_vcpu,
         'all_options': recommendations,
-        'note': 'Recommendation balances horizontal scaling (more shards) with vertical scaling (larger instances). Memory sizing does NOT include BGSAVE overhead - model should assess based on write pattern: <10% writes = minimal overhead (1.1-1.2x), 10-50% = moderate (1.3x), >60% with frequent rewrites = write-heavy (1.5-2x).'
+        'note': (
+            'Recommendation balances horizontal scaling (more shards) with vertical scaling '
+            '(larger instances). Memory sizing ALREADY reserves 25% of each node for the '
+            'background write process, per AWS guidance, so shard counts are computed against '
+            'usable memory (node memory x 0.75). Do NOT apply an additional write-ratio memory '
+            'multiplier on top of this — that double-counts the same headroom.'
+        )
     }
 
 @tool
@@ -570,14 +697,21 @@ def validate_recommendation(memory_needed_gb: float, instance_memory_gb: float, 
     """
     issues = []
 
-    # Memory check
+    # Memory check. The only hard test is whether the data fits in USABLE memory, i.e. node
+    # memory after reserving 25% for the background write process (AWS guidance). Utilization
+    # of that usable memory is reported as advisory information, NOT as a disqualifying
+    # threshold — a read-heavy workload sitting at high utilization is a growth-headroom
+    # question for the customer to weigh, not a reason to force a larger instance.
     total_memory = instance_memory_gb * num_shards
-    if total_memory < memory_needed_gb:
-        issues.append(f"CRITICAL: Total memory {total_memory:.1f} GB < {memory_needed_gb:.1f} GB needed")
+    usable_memory = total_memory * 0.75
+    if usable_memory < memory_needed_gb:
+        issues.append(
+            f"CRITICAL: usable memory {usable_memory:.1f} GB (of {total_memory:.1f} GB total, "
+            f"after the 25% background-write reservation) < {memory_needed_gb:.1f} GB needed"
+        )
 
-    utilization = (memory_needed_gb / total_memory * 100) if total_memory > 0 else 100
-    if utilization > 75:
-        issues.append(f"Memory utilization {utilization:.0f}% exceeds 75% safe threshold")
+    utilization = (memory_needed_gb / usable_memory * 100) if usable_memory > 0 else 100
+    headroom_gb = usable_memory - memory_needed_gb
 
     # Ops check
     total_rps = estimated_rps_capacity * num_shards
@@ -596,6 +730,8 @@ def validate_recommendation(memory_needed_gb: float, instance_memory_gb: float, 
     return {
         'valid': len(issues) == 0,
         'total_memory_gb': total_memory,
+        'usable_memory_gb': round(usable_memory, 2),
+        'memory_headroom_gb': round(headroom_gb, 2),
         'memory_utilization_pct': round(utilization, 1),
         'total_rps_capacity': total_rps,
         'total_nodes': total_nodes,
@@ -831,12 +967,11 @@ CLIENT RECOMMENDATIONS:
 
 SIZING GUIDELINES (from AWS documentation):
 - Memory is the PRIMARY sharding factor
-- BGSAVE overhead depends on write pattern:
-  * <10% writes (read-heavy): 1.1-1.2x memory overhead
-  * 10-50% writes (balanced): 1.3x memory overhead
-  * >60% writes with frequent key rewrites (write-heavy): 1.5-2x memory overhead
-  * Append-only workloads (new keys): minimal overhead
-  * Worst case: All data rewritten during BGSAVE = 2x memory needed
+- Memory headroom: 25% of each node is reserved for the background write process, per AWS
+  guidance (reserved-memory-percent). calculate_shard_recommendation ALREADY applies this —
+  it sizes shards against usable memory (node memory × 0.75) and returns
+  usable_memory_per_node_gb and memory_utilization_of_usable_pct. Do NOT apply an additional
+  write-ratio memory multiplier on top of it. There is no 1.1x/1.3x/2x band to apply.
 - Ops/sec capacity depends on:
   * Instance vCPUs (~100K RPS per core for simple GET/SET)
   * Command complexity - use O(1) vs O(N) notation (e.g., GET is O(1), HGETALL is O(N))
@@ -887,18 +1022,67 @@ When given a migration assessment file:
    - Workload Summary (table format)
      * Keep this to the OBSERVED workload: memory, ops/sec (read/write split), avg bytes per
        operation, bandwidth, key count, engine version, cluster topology, eviction policy.
-     * INCLUDE a "Commands Used" row listing the distinct commands observed during the measurement
-       window (from observed_commands), with the busiest ones first. This is an observed
-       characteristic and is useful context for the reader. If the list is long, show the top ones by
-       call volume and note how many others there were. Do not include commands the assessment tool
-       itself issued while collecting metrics.
+     * INCLUDE TWO SEPARATE ROWS for commands, because the two answer different questions and
+       have different time scopes. Do not merge them.
+       ROW 1 — "Commands Used (cumulative, since server start)": list
+         cumulative_data_commands first with their counts, busiest first. Then, after those,
+         append a clearly separated monitoring group from cumulative_monitoring_commands,
+         prefixed with "Monitoring/admin:". These counts are CUMULATIVE since the server last
+         started — NOT scoped to the measurement window. Label it that way. This row exists for
+         compatibility analysis: a command used rarely still has to be supported after migration.
+       ROW 2 — "Commands During Measurement Window": same structure using window_data_commands
+         then window_monitoring_commands, plus the resulting ops/sec (total_ops_sec with the
+         read/write split) and the window length from measurement_window_seconds. This is what
+         all sizing and cost math uses. These are the actual deltas over the window, so they
+         show what the workload was doing during the capture rather than since server start.
+       WHY THE SPLIT: monitoring commands (INFO, PING, CONFIG, CLIENT, CLUSTER, SLOWLOG) would
+         otherwise crowd out genuine application traffic — pub/sub in particular. Grouping them
+         separately keeps application commands readable.
+       DO NOT say the monitoring group came from the assessment tool. commandstats records only
+         the command name, so the customer's own monitoring and this tool's handful of probe
+         calls are indistinguishable, and the large majority is theirs. Describe it as
+         monitoring/admin traffic and note it includes a small number of calls from this
+         assessment.
+       Adding both rows makes clear why a cumulative figure in the hundreds of millions sits
+       next to an ops/sec figure in the tens — they are different scopes, not a contradiction.
+       NUMBER FORMATTING AND MARKUP for both command rows. Use this exact style:
+         <span class="cmd">GET</span> <span class="cmdcount">(97.3M)</span>, <span class="cmd">RPUSH</span> <span class="cmdcount">(23.4M)</span>, ...
+       That is: command name wrapped in <span class="cmd"> (renders red), count in
+       parentheses wrapped in <span class="cmdcount"> (renders black), items separated by
+       commas. Abbreviate counts — 97.3M not 97,302,614, 949K not 949,224, one decimal place,
+       M for millions and K for thousands. Show counts under 1,000 in full.
+       After the top commands, summarise the rest as: plus N other commands at lower volume
+       (LIST, THEM, HERE) — with those names also wrapped in <span class="cmd">.
+       Show roughly the top 8-10 by volume individually and roll the remainder into that
+       summary, so the row stays scannable.
+       CALL OUT capability usage rather than burying it in the list:
+       - If JSON.*, BF.* or FT.* commands appear, state that the workload uses JSON documents,
+         Bloom filters, or search/vector respectively, and connect it to the 9.x target
+         recommendation.
+       - If SUBSCRIBE/UNSUBSCRIBE/PSUBSCRIBE or PUBLISH/SPUBLISH appear, state that the
+         workload uses pub/sub. Do not list these alongside monitoring commands (INFO, PING,
+         AUTH, CLIENT SETNAME, SLOWLOG) as if they were background noise — they are
+         application traffic.
+       - If hash field expiration commands appear (HEXPIRE, HTTL, HGETEX, HSETEX and
+         relatives), note that these require Valkey 9.0 or later on the target.
      * Do NOT put "Estimated ECPUs/sec" or "ECPU Complexity Factor" in this table. Neither is an
        observed workload characteristic — they are derived inputs to the sizing and cost math.
        ECPUs/sec belongs in the Deployment Type Comparison (it drives the Serverless estimate);
        the complexity factor belongs in the Sizing Note (it adjusts the ops/vCPU capacity figure).
    - Sizing Note (MUST appear immediately after Workload Summary, BEFORE cluster options — use <div class="note">). MUST include ALL of these:
-     * Write ratio calculation and BGSAVE overhead band applied
-     * Total memory calculation: raw × multiplier = total needed
+     * MEMORY MATH — show it explicitly so the recommendation is traceable. 25% of each node is
+       reserved for the background write process (AWS guidance), so sizing is against usable
+       memory. Write it out for the recommended option, e.g.:
+       "19.51 GB of data. cache.r8g.xlarge: 29.68 GB per node → 22.26 GB usable after the 25%
+       reservation → 19.51 GB fits, 2.75 GB headroom (87.6% utilised)."
+       The ONLY memory test is whether the data fits in usable memory. Recommend the SMALLEST
+       instance that fits — do not size up just because utilization is high.
+       IMPORTANT — do NOT justify sizing up by citing BGSAVE, snapshot or replication buffering.
+       The 25% reservation IS that buffer; it has already been subtracted. Saying an option has
+       "too little room for BGSAVE spikes" after reserving 25% for exactly that is double-counting
+       and is wrong. Remaining headroom is capacity for DATA GROWTH, nothing else.
+       IN EVERY OPTION TABLE include a "Memory Headroom" row: usable memory, how much is left
+       after the data, and the utilization percentage.
      * Ops/sec capacity note: ~100K RPS per vCPU for simple O(1) commands (GET, SET, HGET); complex O(N) commands (HGETALL, LRANGE, SORT) are significantly more expensive
      * State the ECPU Complexity Factor here and what it did to the capacity figure. It is the average
        cost of a command in the observed workload relative to a simple GET/SET, so the effective
@@ -912,7 +1096,20 @@ When given a migration assessment file:
    - Deployment Type Comparison (Node-based vs Serverless):
      * Present BOTH options with real pricing from tools
      * Show a comparison table with columns: Aspect | Node-Based | Serverless
-     * Include rows for: Estimated Monthly Cost, Scaling, Management Overhead, Durability Support, Best For
+     * Include rows for: Estimated Monthly Cost, Scaling, Management Overhead, Memory Headroom, Durability Support, Best For
+     * MEMORY HEADROOM row — for Node-Based, give usable memory after the 25% background-write
+       reservation, how much is left after the data, and the utilization percentage. For
+       Serverless, state that capacity scales automatically so there is no fixed headroom to plan.
+       If node-based utilization is high (roughly above 75%), add one sentence of context in that
+       same cell rather than treating it as a failure:
+       - Workload NOT write-heavy (write ratio below ~50%): say so and that the size still stands,
+         e.g. "22.26 GB usable, 2.75 GB free (87.6% used). Your workload is read-heavy (25%
+         writes), so this is a reasonable starting point — move up a size if you expect the dataset
+         to grow beyond about 22 GB."
+       - Workload IS write-heavy or rewrites much of the keyspace: say the 25% reservation may not
+         be sufficient for that pattern and name the next size up as the safer start.
+       Do NOT cite BGSAVE, snapshot or replication buffering as the reason for wanting more room —
+       the 25% reservation already covers those. Remaining headroom is for data growth.
      * The "Estimated Monthly Cost" row spans both columns, so do NOT label the row itself
        "(On-Demand)" — that basis only applies to node-based. Put the basis in each cell instead:
        the Node-Based cell is On-Demand node pricing (note Reserved Nodes can reduce it), and the
@@ -947,6 +1144,13 @@ When given a migration assessment file:
        configurations are provided below as a reference alternative." If Node-based wins, say the following
        section details the recommended configuration options.
      * If serverless is significantly more expensive, explain the cost driver (usually storage at scale)
+     * MEMORY HEADROOM NOTE — include this once, here. The 25% of each node reserved for the
+       background write process is what covers snapshot and replication overhead, and sizing
+       already accounts for it. If your workload is write-heavy and rewrites a large share of
+       the keyspace, that reservation may not be enough — but size up when monitoring shows
+       insufficient room rather than pre-emptively. Point them at FreeableMemory and
+       SaveInProgress in CloudWatch as the signal to watch. Link the AWS guidance:
+       https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/BestPractices.BGSAVE.html
      * Add: "For serverless pre-scaling options, see: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Scaling.html#Pre-Scaling"
      * IMPORTANT — Add a <div class="note"> after the comparison table with this caveat:
        "⚠️ Cost estimates are based on the workload assessment snapshot, which reflects usage at the time the assessment was run. <strong>For best results, ensure the migration assessment was run during peak traffic hours</strong> so that sizing and cost estimates reflect your peak workload. For Serverless: when there is no traffic, ECPU charges drop to zero — you only pay for storage. This means Serverless can be significantly cheaper for bursty or intermittent workloads. For Node-based: costs are fixed regardless of traffic — you pay for provisioned nodes 24/7."
@@ -970,7 +1174,7 @@ When given a migration assessment file:
        - If the two are CLOSE IN COST: say so, and frame the node-based options as a genuine side-by-side
          alternative you may reasonably choose on operational preference.
      * ALWAYS recommend Cluster Mode Enabled (CME) — even for single-shard deployments. CME allows future horizontal scaling (adding shards) without downtime or re-creation. If the source has cluster mode disabled, note that the target should still use CME and advise the customer to verify their application does not use cross-slot multi-key commands without hash tags (e.g., bare MGET across unrelated keys). Note: CMD should only be used if the application is legacy and cannot move to CME at this point.
-     * Show the math: raw memory × overhead multiplier = total needed
+     * Show the math: data size ÷ usable memory per node (node memory × 0.75 after the 25% background-write reservation) = shards needed
      * SHARD COUNT PARITY — do NOT annotate the Shards row in any option table. Never write "(odd)",
        "(even)" or "no parity concern" next to a shard count; that is internal reasoning and is noise.
        If ALL options have an odd shard count, say nothing at all about parity.
@@ -1201,7 +1405,7 @@ When given a migration assessment file:
 Be specific with numbers and explain your reasoning.
 
 FORMATTING REQUIREMENTS:
-- Show detailed calculations: "450.75 GB × 1.3 = 586 GB total needed"
+- Show detailed calculations: "450.75 GB of data ÷ 39.62 GB usable per node (52.82 GB × 0.75) = 11.4 → 12 shards"
 - Present multiple configuration options (A, B, C) with pros/cons
 - Include comprehensive instance type justification section
 - Explain why alternatives don't fit
@@ -1213,8 +1417,8 @@ FORMATTING REQUIREMENTS:
 IMPORTANT MATH CONSTRAINTS:
 - When calculating shards: Use MINIMUM shards needed + 10-15% headroom maximum
 - Do NOT over-provision beyond 20% headroom
-- Example: If 586 GB needed and instance has 52 GB → 586/52 = 11.1 shards → use 12 shards (not 18!)
-- Show the math explicitly: "586 GB ÷ 52.82 GB = 11.1 → 12 shards"
+- Example: 450.75 GB of data, instance has 52.82 GB → 39.62 GB usable → 450.75/39.62 = 11.4 → 12 shards (not 18!)
+- Show the math explicitly: "450.75 GB ÷ 39.62 GB usable = 11.4 → 12 shards"
 - Validate that total capacity meets requirement with reasonable headroom (10-20%)
 
 IMPORTANT: Format your response as clean HTML content (body content only, not full document) with:
@@ -1283,11 +1487,10 @@ IMPORTANT: Always end your recommendations with this EXACT disclaimer text (do n
 <p><strong>Cost disclaimer:</strong> All pricing shown is <strong>estimated</strong>, based on public On-Demand rates retrieved from the AWS Pricing API at the time this report was generated, and on the workload metrics captured during the assessment window. Actual costs may differ. Estimates <strong>exclude</strong> data transfer, backup/snapshot storage, CloudWatch, and other associated service charges. Prices vary by region and change over time, and Reserved Instance or Savings Plan commitments will alter the totals. If the assessment was not run during peak traffic, sizing and cost may be understated. For authoritative figures, consult the <strong>AWS Pricing Calculator</strong>, the <a href="https://aws.amazon.com/elasticache/pricing/">ElastiCache pricing page</a>, and your AWS account team. These estimates are not a quote or a commitment from AWS.</p>
 </div>
 
-📊 SIZING NOTE: Recommendations are based on AWS best practices:
-- Memory-based sharding with BGSAVE overhead applied based on write pattern (<10% writes: 1.1-1.2×, 10-50%: 1.3×, >60%: 1.5-2×)
+SIZING NOTE: Recommendations are based on AWS best practices:
+- Memory-based sharding, sized against usable memory after reserving 25% of each node for the background write process
 - Ops/sec capacity: ~100K RPS per vCPU for simple O(1) commands (GET, SET, HGET); complex O(N) commands (HGETALL, LRANGE, SORT) are significantly more expensive
 - Network bandwidth limits vary by instance type (check instance specs)
-- Write ratio assessed to determine appropriate memory overhead multiplier
 After deployment, monitor CloudWatch metrics and adjust based on actual usage patterns.<br><strong>⚠️ These are starting-point recommendations — always validate with real production traffic.</strong>"
 """
 
@@ -1482,6 +1685,16 @@ Remember to recommend the latest Valkey version available and evaluate if Elasti
             color: #e83e8c;
         }}
         .content strong {{
+            color: #333;
+        }}
+        /* Command inventory rows: command names in red, call counts in black, so the
+           command list is scannable without the numbers competing for attention. */
+        .cmd {{
+            color: #d6336c;
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }}
+        .cmdcount {{
             color: #333;
         }}
         .content p {{

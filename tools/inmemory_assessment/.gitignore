@@ -12,3 +12,5 @@ venv/
 !examples/output.json
 *.html
 generate_load.sh
+customers
+AUDIT.md
