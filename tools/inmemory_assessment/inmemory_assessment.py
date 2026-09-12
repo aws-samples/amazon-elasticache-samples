@@ -52,7 +52,16 @@ READ_COMMANDS = {
     "xinfo", "xinfo|consumers", "xinfo|groups", "xinfo|stream", "xlen", "xpending", "xrange",
     "xread", "xrevrange", "zcard", "zcount", "zdiff", "zinter", "zintercard", "zlexcount",
     "zmscore", "zrandmember", "zrange", "zrangebylex", "zrangebyscore", "zrank", "zrevrange",
-    "zrevrangebylex", "zrevrangebyscore", "zrevrank", "zscan", "zscore", "zunion"
+    "zrevrangebylex", "zrevrangebyscore", "zrevrank", "zscan", "zscore", "zunion",
+    # Hash field expiration readers (Valkey 9.0+)
+    "httl", "hpttl", "hexpiretime", "hpexpiretime",
+    # Cluster-wide key iteration (Valkey 9.1+)
+    "clusterscan",
+    # Pub/Sub subscription management. These carry the PUBSUB command flag rather than
+    # READONLY/WRITE, but they do not modify the keyspace, so they are counted as reads.
+    # PUBLISH/SPUBLISH are already classified as writes.
+    "subscribe", "unsubscribe", "psubscribe", "punsubscribe",
+    "ssubscribe", "sunsubscribe"
 }
 
 WRITE_COMMANDS = {
@@ -70,7 +79,13 @@ WRITE_COMMANDS = {
     "getex", "zincrby", "incrby", "hset", "geosearchstore", "zmpop", "lrem", "bitop", "brpop",
     "bzmpop", "xautoclaim", "georadius", "georadiusbymember", "hgetdel", "hpersist", "migrate",
     "publish", "quit", "restore-asking", "zdiffstore", "hdel", "lpop", "mset", "save", "srem",
-    "spublish", "xdelex", "xgroup"
+    "spublish", "xdelex", "xgroup",
+    # Hash field expiration writers (Valkey 9.0+; HGETDEL is 9.1+ and already listed above)
+    "hexpire", "hexpireat", "hpexpire", "hpexpireat", "hgetex", "hsetex",
+    # Newer string commands (Valkey 9.0/9.1+)
+    "delifeq", "msetex",
+    # Cluster slot management
+    "cluster|flushslot"
 }
 
 # Background/maintenance commands to exclude from application workload metrics
@@ -114,6 +129,44 @@ INTERNAL_ECPU_COMMANDS = frozenset([
     "object", "debug", "memory", "latency", "acl",
     "module", "function", "swapdb",
 ])
+
+
+# Module / search command namespaces supported by ElastiCache for Valkey (9.x).
+# Classified by prefix so commands added later are still counted without editing a list.
+# Reference: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/SupportedCommands.html
+#            https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/json-list-commands.html
+#            https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/BloomFilters.html
+MODULE_WRITE_COMMANDS = frozenset([
+    # JSON mutations
+    "json.set", "json.del", "json.forget", "json.clear", "json.merge", "json.mset",
+    "json.numincrby", "json.nummultby", "json.strappend", "json.toggle",
+    "json.arrappend", "json.arrinsert", "json.arrpop", "json.arrtrim",
+    # Bloom filter mutations
+    "bf.add", "bf.madd", "bf.insert", "bf.reserve", "bf.loadchunk",
+    # Search index mutations
+    "ft.create", "ft.dropindex", "ft.alter",
+])
+
+
+def classify_module_command(cmd_name: str) -> str:
+    """Classify a JSON / Bloom filter / search (FT) command as read or write.
+
+    Args:
+        cmd_name: Command name as it appears in INFO commandstats, e.g. "json.set".
+
+    Returns:
+        'write'  - mutates data or an index
+        'read'   - queries data or an index
+        'none'   - not a recognised module command
+    """
+    cmd = cmd_name.lower().strip().replace("|", ".")
+    if not cmd.startswith(("json.", "bf.", "ft.")):
+        return "none"
+    if cmd in MODULE_WRITE_COMMANDS:
+        return "write"
+    # Everything else in these namespaces reads: JSON.GET/MGET/TYPE/ARRLEN,
+    # BF.EXISTS/MEXISTS/INFO/CARD/SCANDUMP, FT.SEARCH/AGGREGATE/INFO/_LIST.
+    return "read"
 
 
 def classify_ecpu_command(cmd_name: str) -> str:
@@ -2204,21 +2257,51 @@ def calculate_delta(before_metrics, after_metrics, duration, node_addr):
     before_cmdstats = b.get("__commandstats_snapshot", {})
     after_cmdstats = a.get("__commandstats_snapshot", {})
     
-    # Calculate read/write operations from commandstats
+    # Calculate read/write operations from commandstats.
+    # NOTE: this mirrors the classification in summarize_read_write(). Keep the two in
+    # sync — this is the loop whose results actually reach the reported summary metrics.
     read_operations = 0
     write_operations = 0
-    
+    module_operations = 0
+    unclassified_operations = {}
+
     for cmd_key, cmd_data in after_cmdstats.items():
         if cmd_key.startswith("cmdstat_"):
-            cmd_name = cmd_key.replace("cmdstat_", "")
+            # Lowercase: core commands are reported lowercase but module commands keep
+            # their uppercase form (verified on ElastiCache for Valkey 9.0 — e.g.
+            # "cmdstat_FT._LIST" and "cmdstat_BF.ADD" alongside "cmdstat_hset").
+            cmd_name = cmd_key.replace("cmdstat_", "").lower()
             before_calls = before_cmdstats.get(cmd_key, {}).get("calls", 0)
             after_calls = cmd_data.get("calls", 0)
             delta_calls = max(0, after_calls - before_calls)
-                
-            if cmd_name in READ_COMMANDS:
+
+            if delta_calls == 0:
+                continue
+
+            if cmd_name in BACKGROUND_COMMANDS:
+                continue
+            elif cmd_name in READ_COMMANDS:
                 read_operations += delta_calls
             elif cmd_name in WRITE_COMMANDS:
                 write_operations += delta_calls
+            else:
+                # JSON / Bloom filter / search commands, matched by namespace prefix.
+                module_type = classify_module_command(cmd_name)
+                if module_type == "read":
+                    read_operations += delta_calls
+                    module_operations += delta_calls
+                elif module_type == "write":
+                    write_operations += delta_calls
+                    module_operations += delta_calls
+                else:
+                    unclassified_operations[cmd_name] = delta_calls
+
+    if unclassified_operations:
+        logger.warning(
+            f"{fmt_node(node_addr)} {sum(unclassified_operations.values()):,} calls across "
+            f"{len(unclassified_operations)} command(s) are NOT counted in read/write "
+            f"operations: {', '.join(sorted(unclassified_operations))}"
+        )
     
     # Calculate ECPU estimates
     # ElastiCache Serverless ECPU calculations based on AWS documentation
@@ -2250,6 +2333,8 @@ def calculate_delta(before_metrics, after_metrics, duration, node_addr):
         "network_in_rate_per_sec": net_in_rate,
         "read_operations": read_operations,
         "write_operations": write_operations,
+        "module_operations": module_operations,
+        "unclassified_operations": unclassified_operations,
         "read_ops_rate_per_sec": read_ops_rate,
         "write_ops_rate_per_sec": write_ops_rate,
         "memory_used_bytes": memory_used,
@@ -2633,9 +2718,15 @@ def summarize_read_write(commandstats, exclude_background=True):
     read_cmd_counts = {}
     write_cmd_counts = {}
     background_cmd_counts = {}
+    module_cmd_counts = {}
+    unclassified_cmd_counts = {}
     
     for cmd, stats in commandstats.items():
-        cmd_name = cmd.replace("cmdstat_", "")
+        # Normalise case. Valkey/ElastiCache reports core commands in lowercase but
+        # module commands in their original uppercase form (verified on ElastiCache for
+        # Valkey 9.0: "cmdstat_FT._LIST", "cmdstat_BF.ADD" alongside "cmdstat_hset").
+        # Matching case-sensitively would drop whichever form the sets do not contain.
+        cmd_name = cmd.replace("cmdstat_", "").lower()
         
         # For network traffic calculations, use total attempts (successful + rejected)
         # since rejected operations still consume bandwidth
@@ -2658,6 +2749,31 @@ def summarize_read_write(commandstats, exclude_background=True):
         elif cmd_name in WRITE_COMMANDS:
             total_writes += total_attempts
             write_cmd_counts[cmd_name] = total_attempts
+        else:
+            # Module / search command namespaces, matched by prefix so newly added
+            # commands are still classified without updating a list.
+            module_type = classify_module_command(cmd_name)
+            if module_type == "read":
+                total_reads += total_attempts
+                read_cmd_counts[cmd_name] = total_attempts
+                module_cmd_counts[cmd_name] = total_attempts
+            elif module_type == "write":
+                total_writes += total_attempts
+                write_cmd_counts[cmd_name] = total_attempts
+                module_cmd_counts[cmd_name] = total_attempts
+            else:
+                # Anything still unrecognised. Previously these were silently dropped
+                # from the operation counts; now they are surfaced so the omission is
+                # visible rather than producing an under-reported ops/sec figure.
+                unclassified_cmd_counts[cmd_name] = total_attempts
+
+    if unclassified_cmd_counts:
+        total_unclassified = sum(unclassified_cmd_counts.values())
+        logger.warning(
+            f"{total_unclassified:,} calls across {len(unclassified_cmd_counts)} command(s) "
+            f"could not be classified as read or write and are NOT included in the operation "
+            f"counts: {', '.join(sorted(unclassified_cmd_counts))}"
+        )
 
     return {
         "total_read_ops": total_reads,
@@ -2666,6 +2782,10 @@ def summarize_read_write(commandstats, exclude_background=True):
         "write_ops_breakdown": write_cmd_counts,
         "background_ops_breakdown": background_cmd_counts,
         "total_background_ops": sum(background_cmd_counts.values()),
+        "module_ops_breakdown": module_cmd_counts,
+        "total_module_ops": sum(module_cmd_counts.values()),
+        "unclassified_ops_breakdown": unclassified_cmd_counts,
+        "total_unclassified_ops": sum(unclassified_cmd_counts.values()),
     }
 
 
