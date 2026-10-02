@@ -8,6 +8,33 @@
 * Ensure docker is installed, will be used for creating the task container
 * Source ElastiCache clusters need to have PSYNC enabled. All the deployment below will work even without this setting change, but the sync task itself will not start until PSYNC is enabled.
 
+## Architecture
+
+Each migration is ECS Fargate task running RedisShake, which
+connects to the source as a replica (via PSYNC), decodes what it receives,
+and writes to the target.
+
+```
+                    ┌─────────────────────────────────────┐
+                    │   ECS Fargate (shared infra stack)  │
+                    │                                     │
+  ┌──────────┐      │  ┌───────────────────────────────┐  │     ┌───────────┐
+  │  SOURCE  │───────>│  RedisShake task (sync mode)  │───────>    TARGET   │
+  │  (blue)  │PSYNC                                             |  (green)  |
+  └──────────┘      │  └───────────────────────────────┘  │     └───────────┘
+                    │              │                      │
+                    └──────────────┼──────────────────────┘
+                                   |
+                                   v
+                         CloudWatch /ecs/redisshake
+                         (stream per task name)
+```
+
+One task per source/target pair. All tasks share the infra stack (ECS
+cluster, IAM roles, security group, VPC endpoints, log group) and run
+independently with their own CPU/memory and log stream.
+
+---
 
 ## Deploy Infrastructure
 
@@ -193,3 +220,180 @@ Then paste the output into the task parameters file:
 ```
 
 This is useful for settings like `target_redis_max_qps`, `rdb_restore_command_behavior`, filter rules, or any other advanced RedisShake option not exposed as a parameter.
+
+---
+---
+
+## Load generation and seeding (optional - testing the tool with synthentic data)
+
+The [`glide-test-tools/`](glide-test-tools/) directory contains two Python
+scripts for generating test data and sustained load against a cluster,
+useful for validating a migration even before running against your non-prod/prod clusters:
+
+- **`seed_data.py`** — seeds a target with a chosen volume of strings,
+  hashes, and sets, spread across all 16384 slots
+- **`glide_load_generator.py`** — drives continuous write/read load across every
+  slot, with per-shard statistics
+
+Both auto-detect cluster-mode enabled vs disabled, handle RESP2/RESP3
+automatically (so they work against Redis 5.0.6 through current Valkey), and
+support optional AUTH.
+
+> **⚠️ Caution: sandbox and test tools only.** They write real data and
+> have no dry-run or undo. See
+> [`glide-test-tools/README.md`](glide-test-tools/README.md) for details.
+
+## Cutover and failback
+
+Replication is uni-directional.  
+
+1. Stop application writes to the source
+2. Confirm `diff=[0]` on **every shard** (the log rotates through
+   `src-0`...`src-N` one line at a time — check all of them, not just
+   whichever printed last)
+3. Repoint the application to the target
+
+Nothing is lost, because no write occurs after step 1 that the target has
+not already received. The cost is a brief write pause at step 1.
+
+Because each stage is an independent task, this can also be chained across
+more than two clusters (sometimes called **blue-green-red**) — for example
+migrating blue to green, then green to red — by deploying additional
+task stacks with their own parameters files for rollback strategy.
+
+---
+
+## Known limitations
+
+These are properties of RedisShake and of Redis/Valkey replication, not of
+this deployment package.
+
+### No checkpoint or resumable transfer
+
+— *"RedisShake 4.x does NOT support resumable transfer... requiring a full
+resync from the beginning after restart."*
+
+Practical consequence: keep the task stable for the duration of the initial
+sync.
+
+### Lua scripts are not migrated
+
+`SCRIPT LOAD` is not a replicated write command, so cached scripts do not
+travel through the incremental sync. They can only arrive via the RDB
+snapshot, and this is asymmetric by direction:
+
+- Redis 5.0.6 to Redis/Valkey 9.0 (e.g. blue to green, where green is
+  **Amazon ElastiCache for Valkey**): the script is present in the RDB and
+  loaded on the target's primaries.
+- Valkey 9.0 to Redis 5.0.6 (e.g. green back to a Redis target): the script
+  is not present. Valkey does not persist scripts into its own RDB.
+
+Load scripts explicitly on the target before cutover rather than relying on
+RDB transfer. The following loads a script onto every node of a cluster
+target directly, independent of RDB snapshot timing or source engine. See
+[Using Lua scripts with Amazon ElastiCache](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/BestPractices.Clients.Redis.LuaScripts.html)
+for `SCRIPT LOAD` and `EVAL`/`EVALSHA` usage.
+
+```bash
+valkey-cli --tls --cluster call <any-target-node>:6379 \
+  SCRIPT LOAD "$(cat your-script.lua)"
+```
+
+Verify with `SCRIPT EXISTS <sha>` on each node. An application calling
+`EVALSHA` without a `NOSCRIPT` fallback will fail against a target that
+does not have the script cached.
+
+### PSYNC is unavailable through a proxy
+
+PSYNC is a single-dataset protocol: it hijacks the connection and streams
+one shard's data with one replication ID and offset. A proxy fronting
+multiple shards has no coherent way to serve it.
+
+Node-based ElastiCache exposes per-shard node endpoints, so PSYNC works
+(once enabled). ElastiCache Serverless presents a single synthetic endpoint
+— `CLUSTER NODES` reports one node owning all 16384 slots — and returns
+`ERR unknown command 'psync'`. There is no equivalent of the `aws_psync`
+workaround, because the command is absent rather than renamed.
+
+
+---
+
+## Best practices
+
+### Before starting
+
+**Enable PSYNC on every source cluster.** PSYNC is disabled by default on
+ElastiCache and must be enabled per cluster via an AWS Support request. Have
+the replication group ARNs ready. In a chained migration, remember that
+intermediate clusters are sources too. Verify with the `psync '?' -1` check
+above before deploying tasks — a `+FULLRESYNC` response confirms it.
+
+**Add the security group inbound rule.** The infra stack's ECS security
+group allows all outbound, but the ElastiCache security group must also
+allow inbound on 6379 from it. Without this, tasks time out connecting and
+restart in a loop. See the Security Group Configuration section above.
+
+**Pre-load Lua scripts on the target** if the application uses them. See
+Known limitations.
+
+### Avoid overlapping with backup windows
+
+RedisShake triggers a `BGSAVE` on each source shard to obtain its snapshot.
+ElastiCache automatic backups also perform a background save. Running both
+at once means two concurrent fork/save operations competing for memory and
+I/O on the same node.
+
+As a precaution, check the source's `SnapshotWindow` and start the migration
+outside it:
+
+```bash
+aws elasticache describe-replication-groups \
+  --replication-group-id <source-id> \
+  --query "ReplicationGroups[0].SnapshotWindow"
+```
+
+The same applies to any manually triggered snapshot, engine upgrade, or
+scaling operation — avoid running these during the initial sync, since a
+task restart means starting the full resync over.
+
+### Sizing
+
+The RDB phase is typically CPU-bound on the Fargate task rather than limited
+by the cluster. If the initial sync is slower than expected, increase
+`TaskCpu` and `TaskMemory` in the task parameters. `TaskMemory` is not
+inferred from `TaskCpu` — both must be set, using a valid Fargate
+combination (see the [Fargate task size
+docs](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-task-defs.html)).
+
+Fargate provides 20 GiB of ephemeral storage by default. RedisShake buffers
+the incremental stream to local `.aof` files while replaying the RDB, so a
+high write rate during a long RDB phase consumes disk. Raise the task's
+ephemeral storage if your workload's write volume during the sync window is
+large relative to this.
+
+### Monitoring
+
+All tasks write to the same log group (`/ecs/redisshake`) with a stream
+prefix per task name. If you are running more than one stage, filter by
+stream
+to read one at a time:
+
+```bash
+aws logs tail /ecs/redisshake --log-stream-name-prefix blue-to-green --follow
+aws logs tail /ecs/redisshake --log-stream-name-prefix green-to-red  --follow
+```
+
+Watch for repeated `ERR` lines or a task that keeps restarting — because
+there is no checkpoint, a restart loop means the sync never progresses.
+
+### Stopping cleanly
+
+Scale the service to zero rather than deleting the stack, so the task
+definition and parameters are preserved for a restart:
+
+```bash
+aws ecs update-service --cluster <cluster> --service <service> --desired-count 0
+```
+
+---
+
