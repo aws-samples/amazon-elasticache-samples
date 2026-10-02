@@ -15,19 +15,14 @@ connects to the source as a replica (via PSYNC), decodes what it receives,
 and writes to the target.
 
 ```
-                    ┌─────────────────────────────────────┐
-                    │   ECS Fargate (shared infra stack)  │
-                    │                                     │
-  ┌──────────┐      │  ┌───────────────────────────────┐  │     ┌───────────┐
-  │  SOURCE  │───────>│  RedisShake task (sync mode)  │───────>    TARGET   │
-  │  (blue)  │PSYNC                                             |  (green)  |
-  └──────────┘      │  └───────────────────────────────┘  │     └───────────┘
-                    │              │                      │
-                    └──────────────┼──────────────────────┘
-                                   |
-                                   v
-                         CloudWatch /ecs/redisshake
-                         (stream per task name)
+┌────────┐         ┌─────────────────┐         ┌──────────────────────────┐
+│ SOURCE │  PSYNC  │ RedisShake task │  write  │          TARGET          │
+│ (blue) │ ───────>│  (ECS Fargate)  │ ───────>│ (ElastiCache for Valkey) │
+└────────┘         └─────────────────┘         └──────────────────────────┘
+                             │
+                             v
+                   CloudWatch /ecs/redisshake
+                     (stream per task name)
 ```
 
 One task per source/target pair. All tasks share the infra stack (ECS
