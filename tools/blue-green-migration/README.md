@@ -305,10 +305,6 @@ does not have the script cached.
 
 ### PSYNC is unavailable through a proxy
 
-PSYNC is a single-dataset protocol: it hijacks the connection and streams
-one shard's data with one replication ID and offset. A proxy fronting
-multiple shards has no coherent way to serve it.
-
 Node-based ElastiCache exposes per-shard node endpoints, so PSYNC works
 (once enabled). ElastiCache Serverless presents a single synthetic endpoint
 — `CLUSTER NODES` reports one node owning all 16384 slots — and returns
@@ -319,6 +315,12 @@ workaround, because the command is absent rather than renamed.
 ---
 
 ## Best practices
+
+> This list reflects behaviors noticed while building and testing this
+> package — it is not an exhaustive migration guide. General migration
+> practices (cutover validation, rollback planning, data consistency
+> checks, etc.) still apply on top of this and should be adapted to your
+> own application and requirements.
 
 ### Before starting
 
@@ -334,17 +336,19 @@ allow inbound on 6379 from it. Without this, tasks time out connecting and
 restart in a loop. See the Security Group Configuration section above.
 
 **Pre-load Lua scripts on the target** if the application uses them. See
-Known limitations.
+Known limitations, and
+[Using Lua scripts with Amazon ElastiCache](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/BestPractices.Clients.Redis.LuaScripts.html)
+for `SCRIPT LOAD` usage.
 
 ### Avoid overlapping with backup windows
 
 RedisShake triggers a `BGSAVE` on each source shard to obtain its snapshot.
-ElastiCache automatic backups also perform a background save. Running both
-at once means two concurrent fork/save operations competing for memory and
-I/O on the same node.
+If a `BGSAVE` is already running on a shard (for example, from an
+ElastiCache automatic backup), RedisShake waits for it to finish rather than
+starting a competing one.
 
-As a precaution, check the source's `SnapshotWindow` and start the migration
-outside it:
+To avoid that wait, check the source's `SnapshotWindow` and start the
+migration outside it:
 
 ```bash
 aws elasticache describe-replication-groups \
@@ -352,9 +356,8 @@ aws elasticache describe-replication-groups \
   --query "ReplicationGroups[0].SnapshotWindow"
 ```
 
-The same applies to any manually triggered snapshot, engine upgrade, or
-scaling operation — avoid running these during the initial sync, since a
-task restart means starting the full resync over.
+The same applies to any manually triggered snapshot — avoid overlapping with
+the initial sync if you want it to start without delay.
 
 ### Sizing
 
@@ -397,3 +400,13 @@ aws ecs update-service --cluster <cluster> --service <service> --desired-count 0
 
 ---
 
+## Third-party software
+
+This package uses [RedisShake](https://github.com/tair-opensource/RedisShake),
+licensed under the [MIT License](https://github.com/tair-opensource/RedisShake/blob/v4/license.txt),
+Copyright (c) 2019 Alibaba Inc. The RedisShake container image is pulled from
+`ghcr.io/tair-opensource/redisshake` at build time and is not modified or
+redistributed in this repository.
+
+The glide-test-tools depend on [valkey-glide](https://github.com/valkey-io/valkey-glide)
+(Apache-2.0), installed via pip.
