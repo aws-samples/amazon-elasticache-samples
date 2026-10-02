@@ -327,9 +327,7 @@ workaround, because the command is absent rather than renamed.
 
 **Enable PSYNC on every source cluster.** PSYNC is disabled by default on
 ElastiCache and must be enabled per cluster via an AWS Support request. Have
-the replication group ARNs ready. In a chained migration, remember that
-intermediate clusters are sources too. Verify with the `psync '?' -1` check
-above before deploying tasks — a `+FULLRESYNC` response confirms it.
+the replication group ARNs ready.
 
 **Add the security group inbound rule.** The infra stack's ECS security
 group allows all outbound, but the ElastiCache security group must also
