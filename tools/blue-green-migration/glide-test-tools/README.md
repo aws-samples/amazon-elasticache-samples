@@ -104,8 +104,7 @@ migrate, benchmark, or demo against.
 
 The `--gb` argument is the target **logical payload** size, split evenly
 across the three types by byte count. Actual memory usage on the server
-will be higher due to per-key and per-field overhead (observed ~1.6x in
-testing — e.g. a 5 GiB logical target used ~8.25 GiB of server memory).
+will be higher due to per-key and per-field overhead.
 
 ### Usage
 
