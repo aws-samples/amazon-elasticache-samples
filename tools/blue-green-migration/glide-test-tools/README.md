@@ -21,7 +21,8 @@ real data to whatever target you point them at.
   until stopped, competing with real application traffic.
 - Keys are namespaced under a single prefix (`glidetest:...`), but if your
   application happens to use that prefix, **existing keys will be
-  silently overwritten**.
+  silently overwritten**. Change the `KEY_PREFIX` constant at the top of
+  each script to something unique to your environment if this applies.
 - Neither script has an undo. There is no dry-run mode.
 
 Use these only against a dedicated test, sandbox, or throwaway cluster
