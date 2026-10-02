@@ -113,20 +113,6 @@ python3 seed_data.py --host <cluster-config-endpoint> --gb 5 --port 6380
 python3 seed_data.py --host <cluster-config-endpoint> --gb 5 --no-tls
 ```
 
-### Performance
-
-Uses pipelined `ClusterBatch` writes (1000 keys per batch, up to 8
-batches in flight concurrently) rather than one write per round trip.
-On a single small EC2 instance this reached ~4,000-4,800 ops/sec against
-a 5-shard cluster. Throughput will vary with instance size, network
-path, and cluster capacity.
-
-Batch execution occasionally raises a transient `TimeoutError` under
-sustained concurrent load — observed intermittently even against a
-healthy, fully-connected cluster. Each batch is retried up to 3 times
-with a short backoff before being counted as a real failure, which
-eliminated the issue in repeated testing (10/10 clean runs).
-
 ### Output
 
 Logs progress every 10 seconds to both the console and a timestamped
