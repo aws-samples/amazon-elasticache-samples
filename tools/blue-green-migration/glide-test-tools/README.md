@@ -192,6 +192,9 @@ block per iteration:
 
 ## Cleaning up
 
+Neither script deletes its own data when it finishes or is stopped.
+Cleanup is a manual step using `valkey-cli` directly.
+
 Both scripts namespace every key they write under `glidetest:` by
 default, or under whatever you passed to `--key-prefix`. To remove
 everything they have written, scan for that prefix and delete the
