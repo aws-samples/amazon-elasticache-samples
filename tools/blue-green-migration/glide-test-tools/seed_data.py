@@ -352,6 +352,7 @@ async def seed(
 
 async def main() -> int:
     """Entry point. Returns process exit code."""
+    global KEY_PREFIX
     ap = argparse.ArgumentParser(
         description="Seed a cluster with mixed data types. "
                     "SANDBOX/TEST USE ONLY -- do not run against production."
@@ -363,7 +364,15 @@ async def main() -> int:
     ap.add_argument("--no-tls", dest="tls", action="store_false")
     ap.add_argument("--password", help="AUTH password (optional; omit if no auth)")
     ap.add_argument("--username", help="ACL/RBAC username (optional, requires --password)")
+    ap.add_argument(
+        "--key-prefix",
+        default=KEY_PREFIX,
+        help=f"Prefix for every key written (default: {KEY_PREFIX!r}). "
+             "Change this if the default collides with existing application keys.",
+    )
     args = ap.parse_args()
+
+    KEY_PREFIX = args.key_prefix
 
     if args.username and not args.password:
         logger.error("--username requires --password")

@@ -301,6 +301,7 @@ async def connect_with_fallback(
 
 
 async def main():
+    global KEY_PREFIX
     parser = argparse.ArgumentParser(
         description="Valkey Glide slot load test. "
                     "SANDBOX/TEST USE ONLY -- do not run against production."
@@ -311,12 +312,20 @@ async def main():
     parser.add_argument("--no-tls", dest="tls", action="store_false")
     parser.add_argument("--password", help="AUTH password (optional; omit if no auth)")
     parser.add_argument("--username", help="ACL/RBAC username (optional, requires --password)")
+    parser.add_argument(
+        "--key-prefix",
+        default=KEY_PREFIX,
+        help=f"Prefix for every key written (default: {KEY_PREFIX!r}). "
+             "Change this if the default collides with existing application keys.",
+    )
     parser.add_argument("--duration", type=int, help="Duration in seconds")
     parser.add_argument("--iterations", type=int, help="Number of iterations")
     parser.add_argument("--az", type=str, help="AZ for affinity reads (e.g. us-east-1a)")
     parser.add_argument("--read-from", choices=["primary", "prefer_replica", "az_affinity"],
                         default="prefer_replica", help="Read strategy")
     args = parser.parse_args()
+
+    KEY_PREFIX = args.key_prefix
 
     if args.duration and args.iterations:
         logger.error("Error: Provide either --duration OR --iterations, not both.")

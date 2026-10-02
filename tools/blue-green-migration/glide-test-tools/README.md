@@ -19,10 +19,10 @@ real data to whatever target you point them at.
   application data, or hit the maxmemory limit and cause write failures.
 - `glide_load_generator.py` drives sustained write and read load continuously
   until stopped, competing with real application traffic.
-- Keys are namespaced under a single prefix (`glidetest:...`), but if your
-  application happens to use that prefix, **existing keys will be
-  silently overwritten**. Change the `KEY_PREFIX` constant at the top of
-  each script to something unique to your environment if this applies.
+- Keys are namespaced under a single prefix (`glidetest:...` by default),
+  but if your application happens to use that prefix, **existing keys
+  will be silently overwritten**. Use `--key-prefix <value>` to pick
+  something unique to your environment if this applies.
 - Neither script has an undo. There is no dry-run mode.
 
 Use these only against a dedicated test, sandbox, or throwaway cluster
@@ -111,6 +111,7 @@ testing — e.g. a 5 GiB logical target used ~8.25 GiB of server memory).
 python3 seed_data.py --host <cluster-config-endpoint> --gb 5
 python3 seed_data.py --host <cluster-config-endpoint> --gb 5 --port 6380
 python3 seed_data.py --host <cluster-config-endpoint> --gb 5 --no-tls
+python3 seed_data.py --host <cluster-config-endpoint> --gb 5 --key-prefix myteam
 ```
 
 ### Output
@@ -151,6 +152,9 @@ python3 glide_load_generator.py --host <cluster-config-endpoint>
 
 # Prefer same-AZ replicas/primary for reads (recommended on AWS)
 python3 glide_load_generator.py --host <cluster-config-endpoint> --az us-east-1a
+
+# Use a custom key prefix instead of the default glidetest:
+python3 glide_load_generator.py --host <cluster-config-endpoint> --key-prefix myteam
 ```
 
 Each "iteration" is one full sweep: a SET followed by a GET for every
@@ -188,9 +192,11 @@ block per iteration:
 
 ## Cleaning up
 
-Both scripts namespace every key they write under `glidetest:` (see
-`KEY_PREFIX` in each script). To remove everything they have written,
-scan for that prefix and delete the matches on each node:
+Both scripts namespace every key they write under `glidetest:` by
+default, or under whatever you passed to `--key-prefix`. To remove
+everything they have written, scan for that prefix and delete the
+matches on each node (adjust the pattern below if you used a custom
+`--key-prefix`):
 
 ```bash
 # standalone target
