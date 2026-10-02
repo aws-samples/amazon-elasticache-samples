@@ -258,8 +258,9 @@ not already received. The cost is a brief write pause at step 1.
 
 Because each stage is an independent task, this can also be chained across
 more than two clusters (sometimes called **blue-green-red**) — for example
-migrating blue to green, then green to red — by deploying additional
-task stacks with their own parameters files for rollback strategy.
+migrating blue to green (**Amazon ElastiCache for Valkey**), then green to
+red — by deploying additional task stacks with their own parameters files
+for rollback strategy.
 
 ---
 
