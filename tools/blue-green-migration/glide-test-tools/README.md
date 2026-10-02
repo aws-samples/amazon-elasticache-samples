@@ -19,8 +19,8 @@ real data to whatever target you point them at.
   application data, or hit the maxmemory limit and cause write failures.
 - `glide_load_generator.py` drives sustained write and read load continuously
   until stopped, competing with real application traffic.
-- Keys are namespaced (`str:`, `hash:`, `set:`, `slot:`), but if your
-  application happens to use those prefixes, **existing keys will be
+- Keys are namespaced under a single prefix (`glidetest:...`), but if your
+  application happens to use that prefix, **existing keys will be
   silently overwritten**.
 - Neither script has an undo. There is no dry-run mode.
 
@@ -168,10 +168,10 @@ python3 glide_load_generator.py --host <cluster-config-endpoint> --az us-east-1a
 
 Each "iteration" is one full sweep: a SET followed by a GET for every
 slot (16384 x 2 = 32768 operations), using a key pattern of
-`slot:{N}` so each key deterministically lands on slot N. Because each
-sweep overwrites the same 16384 keys with new random values, the total
-data footprint on the cluster stays constant (~16 MB) regardless of how
-long the script runs.
+`glidetest:slot:{N}` so each key deterministically lands on slot N.
+Because each sweep overwrites the same 16384 keys with new random
+values, the total data footprint on the cluster stays constant (~16 MB)
+regardless of how long the script runs.
 
 ### Read strategy
 
@@ -196,6 +196,31 @@ block per iteration:
 2026-09-16 19:50:15 INFO   Slots [0-3276] | SET ok=3277 fail=0 retries=0 | GET ok=3277 fail=0 retries=0
 2026-09-16 19:50:15 INFO   Slots [3277-6553] | SET ok=3277 fail=0 retries=0 | GET ok=3277 fail=0 retries=0
 ```
+
+---
+
+## Cleaning up
+
+Both scripts namespace every key they write under `glidetest:` (see
+`KEY_PREFIX` in each script). To remove everything they have written,
+scan for that prefix and delete the matches on each node:
+
+```bash
+# standalone target
+valkey-cli --tls -h <endpoint> -p 6379 \
+  --scan --pattern "glidetest:*" | \
+  xargs -r -n 100 valkey-cli --tls -h <endpoint> -p 6379 DEL
+
+# cluster target -- SCAN/DEL are per-node, run against each shard primary
+for primary in <shard1-endpoint> <shard2-endpoint> <shard3-endpoint>; do
+  valkey-cli --tls -h "$primary" -p 6379 \
+    --scan --pattern "glidetest:*" | \
+    xargs -r -n 100 valkey-cli --tls -h "$primary" -p 6379 DEL
+done
+```
+
+Drop `--tls` if the target does not use TLS. `xargs -r` avoids invoking
+`DEL` with no arguments if the scan finds nothing.
 
 ---
 
