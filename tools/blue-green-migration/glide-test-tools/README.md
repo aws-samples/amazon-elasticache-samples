@@ -23,7 +23,9 @@ real data to whatever target you point them at.
   but if your application happens to use that prefix, **existing keys
   will be silently overwritten**. Use `--key-prefix <value>` to pick
   something unique to your environment if this applies.
-- Neither script has an undo. There is no dry-run mode.
+- Neither script has an undo or a dry-run mode. See
+  [Cleaning up](#cleaning-up) for the manual steps to remove what they
+  wrote.
 
 Use these only against a dedicated test, sandbox, or throwaway cluster
 that you are willing to have arbitrary data written to. Double-check the
