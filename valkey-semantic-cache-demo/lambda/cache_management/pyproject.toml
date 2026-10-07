@@ -1,0 +1,8 @@
+[project]
+name = "cache-management"
+version = "0.1.0"
+description = "Cache management Lambda for semantic caching demo"
+requires-python = ">=3.12"
+dependencies = [
+    "valkey-glide-sync>=2.1.1",
+]

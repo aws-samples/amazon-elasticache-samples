@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Semantic Cache Demo (Local)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    h1 {
+      text-align: center;
+      font-size: 2.5rem;
+      margin-bottom: 2rem;
+      color: #fff;
+    }
+    .buttons {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    button {
+      font-size: 1.5rem;
+      padding: 1rem 2.5rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.1s;
+    }
+    button:hover { transform: scale(1.05); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .start { background: #4ade80; color: #000; }
+    .reset { background: #f87171; color: #000; }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .kpi {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 2rem;
+      text-align: center;
+    }
+    .kpi-value {
+      font-size: 4rem;
+      font-weight: 700;
+      color: #4ade80;
+      line-height: 1;
+    }
+    .kpi-label {
+      font-size: 1.25rem;
+      color: #94a3b8;
+      margin-top: 0.5rem;
+    }
+    .status {
+      text-align: center;
+      margin-top: 1.5rem;
+      font-size: 1rem;
+      color: #64748b;
+    }
+    .status.active { color: #4ade80; }
+  </style>
+</head>
+<body>
+  <h1>🚀 Semantic Cache Demo (Local)</h1>
+  
+  <div class="buttons">
+    <button class="start" onclick="startDemo()">Start Demo</button>
+    <button class="reset" onclick="resetCache()">Reset Cache</button>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="kpi-value" id="hitRate">0%</div>
+      <div class="kpi-label">Cache Hit Rate</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value" id="latency">0ms</div>
+      <div class="kpi-label">Avg Latency (Hit)</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value" id="savings">0%</div>
+      <div class="kpi-label">Cost Reduction</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value" id="requests">0</div>
+      <div class="kpi-label">Total Requests</div>
+    </div>
+  </div>
+
+  <div class="status" id="status">Ready</div>
+
+  <script>
+    const METRICS_API = 'http://127.0.0.1:3000';
+    const SIMULATOR_API = 'http://127.0.0.1:8081';
+    const CACHE_API = 'http://127.0.0.1:8082';
+    let polling = null;
+
+    async function fetchMetrics() {
+      try {
+        const res = await fetch(`${METRICS_API}/metrics`);
+        const data = await res.json();
+        document.getElementById('hitRate').textContent = data.cacheHitRate.toFixed(1) + '%';
+        document.getElementById('latency').textContent = data.avgLatencyMs.toFixed(0) + 'ms';
+        document.getElementById('savings').textContent = data.costReduction.toFixed(1) + '%';
+        document.getElementById('requests').textContent = data.totalRequests;
+      } catch (e) {
+        console.error('Failed to fetch metrics:', e);
+      }
+    }
+
+    async function startDemo() {
+      document.getElementById('status').textContent = 'Demo running...';
+      document.getElementById('status').className = 'status active';
+      try {
+        await fetch(`${SIMULATOR_API}/start`, { method: 'POST' });
+        if (!polling) {
+          polling = setInterval(fetchMetrics, 3000);
+        }
+        setTimeout(() => {
+          document.getElementById('status').textContent = 'Demo complete';
+          document.getElementById('status').className = 'status';
+        }, 300000);
+      } catch (e) {
+        document.getElementById('status').textContent = 'Error starting demo';
+      }
+    }
+
+    async function resetCache() {
+      try {
+        await fetch(`${CACHE_API}/reset`, { method: 'POST' });
+        document.getElementById('status').textContent = 'Cache reset';
+        setTimeout(() => {
+          document.getElementById('status').textContent = 'Ready';
+          document.getElementById('status').className = 'status';
+        }, 3000);
+      } catch (e) {
+        document.getElementById('status').textContent = 'Error resetting cache';
+      }
+    }
+
+    fetchMetrics();
+  </script>
+</body>
+</html>

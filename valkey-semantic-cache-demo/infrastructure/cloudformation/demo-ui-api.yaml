@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Demo UI API for semantic caching demo'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: "semantic-cache-demo"
+
+Globals:
+  Api:
+    Cors: "'*'"
+
+Resources:
+  DemoUiApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-demo-ui-api"
+      CodeUri: ../../lambda/demo_ui_api/
+      Handler: handler.handler
+      Runtime: python3.12
+      Architectures:
+        - arm64
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          METRIC_NAMESPACE: "SemanticSupportDesk"
+          RAMP_UP_FUNCTION: !Sub "${ProjectName}-ramp-up-simulator"
+          CACHE_MGMT_FUNCTION: !Sub "${ProjectName}-cache-management"
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: cloudwatch:GetMetricData
+              Resource: "*"
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource:
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-ramp-up-simulator"
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-cache-management"
+      Events:
+        GetMetrics:
+          Type: Api
+          Properties:
+            Path: /metrics
+            Method: GET
+        StartDemo:
+          Type: Api
+          Properties:
+            Path: /start
+            Method: POST
+        ResetCache:
+          Type: Api
+          Properties:
+            Path: /reset
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway URL"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"

@@ -1,0 +1,157 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "ElastiCache (Valkey 8.2) cluster for semantic caching demo with vector search"
+
+Parameters:
+  VpcId:
+    Type: String
+    Default: "vpc-0f9b5afd31283e9d1"
+    Description: "VPC ID for ElastiCache cluster (default VPC in us-east-2)"
+
+  VpcCidrBlock:
+    Type: String
+    Default: "172.31.0.0/16"
+    Description: "CIDR block of the VPC for security group rules"
+
+  SubnetIds:
+    Type: CommaDelimitedList
+    Default: "subnet-0e80dd54d46959a91,subnet-0257db422851c0d6b,subnet-0da73b5aadcb5e744"
+    Description: "Comma-separated list of subnet IDs across availability zones"
+
+  CacheNodeType:
+    Type: String
+    Default: "cache.t4g.small"
+    AllowedValues:
+      - cache.t4g.small
+      - cache.t4g.medium
+    Description: "ElastiCache node type (t4g.small or larger required for vector search)"
+
+  EngineVersion:
+    Type: String
+    Default: "8.2"
+    Description: "Valkey engine version (8.2 required for vector search)"
+
+Resources:
+  # Subnet Group for ElastiCache (spans multiple AZs)
+  CacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: "Subnet group for semantic caching demo ElastiCache cluster"
+      SubnetIds: !Ref SubnetIds
+      CacheSubnetGroupName: "semantic-cache-subnet-group"
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-demo-subnet-group"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  # Security Group for ElastiCache (allows Valkey traffic within VPC)
+  CacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "semantic-cache-sg-v2"
+      GroupDescription: "Security group for ElastiCache cluster - allows Redis/Valkey traffic (port 6379) from within VPC"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          CidrIp: !Ref VpcCidrBlock
+          Description: "Allow Redis/Valkey traffic from VPC (Lambda functions, EC2 instances)"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic"
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-demo-sg"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  # Parameter Group for ElastiCache (required for vector search on t4g.small)
+  CacheParameterGroup:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      CacheParameterGroupFamily: "valkey8"
+      Description: "Custom parameter group for semantic cache demo with 30% memory reserve for vector search"
+      Properties:
+        reserved-memory-percent: "30"
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-demo-params"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+
+  # ElastiCache Replication Group (Valkey 8.2 with vector search)
+  # Requires ReplicationGroup, not CacheCluster
+  ValkeyReplicationGroup:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupDescription: "Valkey 8.2 cluster for semantic caching demo with vector search"
+      Engine: "valkey"
+      EngineVersion: !Ref EngineVersion
+      CacheNodeType: !Ref CacheNodeType
+      CacheParameterGroupName: !Ref CacheParameterGroup
+      NumCacheClusters: 1
+      AutomaticFailoverEnabled: false
+      TransitEncryptionEnabled: false # setting to false for this project
+      Port: 6379
+      CacheSubnetGroupName: !Ref CacheSubnetGroup
+      SecurityGroupIds:
+        - !Ref CacheSecurityGroup
+      PreferredMaintenanceWindow: "sun:05:00-sun:06:00"
+      AutoMinorVersionUpgrade: true
+      Tags:
+        - Key: Name
+          Value: "semantic-cache-demo-valkey-cluster"
+        - Key: Project
+          Value: "valkey-semantic-cache-demo"
+        - Key: Engine
+          Value: "valkey"
+        - Key: Purpose
+          Value: "vector-search-semantic-caching"
+
+Outputs:
+  ReplicationGroupId:
+    Description: "Valkey replication group ID"
+    Value: !Ref ValkeyReplicationGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ReplicationGroupId"
+
+  ClusterEndpoint:
+    Description: "Primary endpoint address for Valkey cluster"
+    Value: !GetAtt ValkeyReplicationGroup.PrimaryEndPoint.Address
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterEndpoint"
+
+  ClusterPort:
+    Description: "Port number for Valkey cluster"
+    Value: !GetAtt ValkeyReplicationGroup.PrimaryEndPoint.Port
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterPort"
+
+  ClusterConnectionString:
+    Description: "Full connection string for Valkey cluster (use from Lambda/VPC)"
+    Value: !Sub "redis://${ValkeyReplicationGroup.PrimaryEndPoint.Address}:${ValkeyReplicationGroup.PrimaryEndPoint.Port}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ConnectionString"
+
+  SecurityGroupId:
+    Description: "Security group ID for Lambda functions to use"
+    Value: !Ref CacheSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-SecurityGroupId"
+
+  SubnetGroupName:
+    Description: "Subnet group name for reference"
+    Value: !Ref CacheSubnetGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-SubnetGroupName"
+
+  StackName:
+    Description: "Name of this CloudFormation stack"
+    Value: !Ref AWS::StackName
+
+  EstimatedMonthlyCost:
+    Description: "Estimated monthly cost if running 24/7 (cache.t4g.small)"
+    Value: "$38/month ($0.052/hour * 730 hours)"
