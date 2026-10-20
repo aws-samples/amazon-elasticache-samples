@@ -1,0 +1,308 @@
+# Aerospike to Valkey Mapping Configuration
+# This file defines how different Aerospike data types and structures should be mapped to Valkey
+
+# ---------------------------------------------------------------------------
+# SECURITY NOTE (threat T4: config tampering / redirection)
+#
+# This file decides where production data is read from, where it is written to,
+# whether the transport is encrypted, and what the destination keys are named.
+# Treat it as a protected artifact:
+#
+#   chmod 600 mapping_config.yaml                       # owner-only
+#   python3 config_security.py --pin mapping_config.yaml  # record its SHA-256
+#
+# Every run re-checks ownership, permissions, the pinned digest and the schema
+# below, and refuses to start on a mismatch. After an intentional edit, review
+# the diff and re-pin.
+# ---------------------------------------------------------------------------
+
+# Connection settings
+connection_settings:
+  aerospike:
+    host: "127.0.0.1"
+    # 3000 is the plaintext service port; 4333 is the TLS port. Set this to the
+    # TLS port when tls is true below.
+    port: 3000
+    # Encrypt the SOURCE leg as well (threat T1). Records cross the network
+    # twice - Aerospike -> migrator -> Valkey - so encrypting only the Valkey
+    # leg still exposes every record in plaintext on the way out of Aerospike.
+    tls: false
+    # CA bundle that signed the Aerospike server certificates. Required when
+    # tls is true.
+    tls_ca_cert: ""
+    # The tls-name configured on the Aerospike nodes. Required when tls is true:
+    # it is the identity the server certificate is verified against.
+    tls_name: ""
+  valkey:
+    host: "your-valkey-endpoint"
+    port: 6379
+    tls: true
+    # Path to the CA certificate bundle used to verify the Valkey/ElastiCache
+    # server certificate. Required when tls is true (threat T2: MITM). Leaving
+    # this empty with tls enabled will cause the migration to refuse to start.
+    tls_ca_cert: ""
+
+# Transport encryption policy (threat T1: plaintext transport)
+transport_security:
+  # When false (the default), the migration refuses to run if either leg is
+  # unencrypted rather than warning and continuing. Set to true only for
+  # isolated test environments that hold no real data.
+  allow_plaintext: false
+
+# Global mapping settings
+global_settings:
+  # Default behavior for single-bin records
+  single_bin_strategy: "direct"  # Options: "direct", "with_bin_name"
+  
+  # Default behavior for multi-bin records  
+  multi_bin_strategy: "separate_keys"  # Options: "separate_keys", "json_document", "hybrid"
+  
+  # Key naming convention
+  key_format: "{namespace}.{set}:{primary_key}"  # For single bin
+  multi_key_format: "{namespace}.{set}:{primary_key}:{bin_name}"  # For multi-bin
+  
+  # Default TTL handling
+  preserve_ttl: true
+  
+  # Logging level for mapping decisions.
+  # Use WARNING or ERROR for production runs so record keys/values are not
+  # written to log files (threat T3). Raw data values are never logged unless
+  # the LOG_DATA_VALUES=1 environment variable is explicitly set.
+  mapping_log_level: "WARNING"  # DEBUG, INFO, WARNING, ERROR
+
+# Data type mappings - defines how each Aerospike type maps to Valkey
+data_type_mappings:
+  
+  # Scalar types
+  scalar_types:
+    integer:
+      valkey_type: "string"  # Options: "string", "native"
+      valkey_command: "SET"
+      preserve_type: true
+      
+    float:
+      valkey_type: "string"
+      valkey_command: "SET" 
+      preserve_type: true
+      
+    string:
+      valkey_type: "string"
+      valkey_command: "SET"
+      encoding: "utf-8"
+      
+    boolean:
+      valkey_type: "string"
+      valkey_command: "SET"
+      format: "integer"  # Options: "integer" (0/1), "string" (true/false)
+      
+    binary:
+      valkey_type: "string"
+      valkey_command: "SET"
+      encoding: "base64"
+      prefix: "BINARY:"
+  
+  # Collection types
+  collection_types:
+    list:
+      simple_list:  # List with only scalar values
+        valkey_type: "list"
+        valkey_command: "RPUSH"
+        convert_items: "string"
+        
+      complex_list:  # List with nested structures
+        valkey_type: "json"
+        valkey_command: "JSON.SET"
+        fallback: "string"  # If JSON not available
+        
+      nested_list:  # List containing other lists/maps
+        valkey_type: "json"
+        valkey_command: "JSON.SET"
+        
+    map:
+      simple_map:  # Map with only scalar values
+        valkey_type: "hash"
+        valkey_command: "HSET"
+        convert_values: "string"
+        
+      complex_map:  # Map with nested structures
+        valkey_type: "json"
+        valkey_command: "JSON.SET"
+        fallback: "string"
+        
+      nested_map:  # Map containing other maps/lists
+        valkey_type: "json"
+        valkey_command: "JSON.SET"
+
+  # Special types
+  special_types:
+    geojson:
+      point:
+        valkey_type: "geospatial"
+        valkey_command: "GEOADD"
+        key_suffix: "_geo"
+        
+      polygon:
+        valkey_type: "json"
+        valkey_command: "JSON.SET"
+        fallback: "string"
+        
+      other:
+        valkey_type: "json"
+        valkey_command: "JSON.SET"
+        
+    hyperloglog:
+      valkey_type: "hyperloglog"
+      valkey_command: "PFADD"
+      detection_patterns: ["hll", "unique", "distinct", "cardinality"]
+      
+    timestamp:
+      valkey_type: "string"
+      valkey_command: "SET"
+      format: "iso"  # Options: "iso", "unix", "preserve"
+
+# Namespace-specific mappings (override global settings)
+namespace_mappings:
+  test:
+    # Override settings for 'test' namespace
+    sets:
+      benchmark:
+        # Specific mapping for test.benchmark
+        strategy: "separate_keys"
+        data_types:
+          integer:
+            valkey_type: "native"  # Store as native integers
+          list:
+            simple_list:
+              valkey_type: "list"
+              
+      million_data:
+        # Specific mapping for your asbench data
+        strategy: "separate_keys"
+        bin_mappings:
+          bin1:  # I8 integer
+            valkey_type: "native"
+            valkey_command: "SET"
+          bin2:  # S40 string
+            valkey_type: "string"
+            valkey_command: "SET"
+          bin3:  # D double
+            valkey_type: "native"
+            valkey_command: "SET"
+          bin4:  # [2*I4] list
+            valkey_type: "list"
+            valkey_command: "RPUSH"
+          bin5:  # {S10:I2,S10:I2} map
+            valkey_type: "hash"
+            valkey_command: "HSET"
+            
+      users:
+        # User records - prefer JSON documents for complete records
+        strategy: "json_document"
+        single_bin_strategy: "direct"
+
+# Field-specific mappings (most specific, highest priority)
+field_mappings:
+  # Map specific field names to specific types regardless of data
+  field_name_patterns:
+    "*_id":
+      valkey_type: "native"
+      valkey_command: "SET"
+      
+    "*_count":
+      valkey_type: "hyperloglog"
+      valkey_command: "PFADD"
+      
+    "*_location":
+      valkey_type: "geospatial"
+      valkey_command: "GEOADD"
+      
+    "*_geo":
+      valkey_type: "geospatial"
+      valkey_command: "GEOADD"
+      
+    "*_timestamp":
+      valkey_type: "string"
+      valkey_command: "SET"
+      format: "iso"
+      
+    "preferences":
+      valkey_type: "json"
+      valkey_command: "JSON.SET"
+      
+    "metadata":
+      valkey_type: "json"
+      valkey_command: "JSON.SET"
+
+# Detection rules - how to identify data types
+detection_rules:
+  simple_list:
+    # Rules to identify a simple list (scalars only)
+    max_nesting_level: 0
+    allowed_types: ["int", "float", "str", "bool"]
+    
+  simple_map:
+    # Rules to identify a simple map (scalar values only)
+    max_nesting_level: 0
+    allowed_value_types: ["int", "float", "str", "bool"]
+    
+  hyperloglog:
+    # Rules to identify HyperLogLog candidates.
+    # HLL conversion is LOSSY (values become a probabilistic estimate), so it now
+    # requires explicit field-level opt-in: a field is only converted when its
+    # name matches one of field_name_patterns below. Size/duplicate heuristics
+    # alone will NOT trigger conversion (threat T13).
+    min_list_size: 10
+    duplicate_threshold: 0.3  # Retained as a sanity check only; not sufficient on its own
+    field_name_patterns: ["*unique*", "*distinct*", "*hll*", "*cardinality*"]
+    
+  geojson:
+    # Rules to identify GeoJSON
+    required_fields: ["type", "coordinates"]
+    supported_types: ["Point", "Polygon", "LineString"]
+    
+  timestamp:
+    # Rules to identify timestamps
+    field_name_patterns: ["*time*", "*date*", "*created*", "*updated*"]
+    value_patterns: ["unix_timestamp", "iso_string"]
+
+# Fallback strategies
+fallback_strategies:
+  json_not_available:
+    action: "string"  # Store as JSON string
+    
+  geospatial_failed:
+    action: "json"    # Store as JSON
+    
+  hyperloglog_failed:
+    action: "list"    # Store as regular list
+    
+  unknown_type:
+    action: "string"  # Convert to string
+
+# Performance optimizations
+performance_settings:
+  batch_operations:
+    enabled: true
+    batch_size: 1000
+    
+  pipeline_operations:
+    enabled: true
+    pipeline_size: 100
+    
+  connection_pooling:
+    enabled: true
+    pool_size: 10
+
+# Validation rules
+validation_rules:
+  key_length:
+    max_length: 512
+    action: "truncate"  # Options: "truncate", "hash", "error"
+    
+  value_size:
+    max_size: "512MB"
+    action: "skip"  # Options: "skip", "truncate", "error"
+    
+  special_characters:
+    allowed_in_keys: "alphanumeric_underscore_colon"
+    replacement_char: "_"
