@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Migration runtime artifacts
+migration_logs/
