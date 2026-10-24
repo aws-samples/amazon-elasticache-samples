@@ -1,0 +1,4 @@
+valkey
+developer-toolkit-elasticache
+boto3
+certifi
