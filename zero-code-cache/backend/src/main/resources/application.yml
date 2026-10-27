@@ -1,0 +1,23 @@
+server:
+  port: 8080
+  address: 0.0.0.0
+
+spring:
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  datasource:
+    username: ${DB_USERNAME:shopmind}
+    password: ${DB_PASSWORD:shopmind}
+
+# Cache / JDBC Wrapper configuration
+cache:
+  enabled: ${CACHE_ENABLED:false}
+  endpoint: ${CACHE_ENDPOINT:localhost:6379}
+  use-ssl: ${CACHE_USE_SSL:false}
+  use-wrapper: ${CACHE_USE_WRAPPER:false}
+  ttl-seconds: ${CACHE_TTL:300}
+
+# Amazon Bedrock configuration
+bedrock:
+  model-id: ${BEDROCK_MODEL_ID:us.anthropic.claude-haiku-4-5-20251001-v1:0}
+  region: ${BEDROCK_REGION:us-east-1}

@@ -1,0 +1,402 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ShopMind Demo - Aurora PostgreSQL + ElastiCache for Valkey + EC2
+
+Parameters:
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 key pair for SSH access
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 12
+    AllowedPattern: '[^/@"\s]+'
+    ConstraintDescription: Must be at least 12 characters and exclude / @ " and whitespace.
+    # DEMO ONLY: the database contains synthetic sample data and the stack is
+    # deleted after the demo. For real workloads, store this in AWS Secrets
+    # Manager (e.g. ManageMasterUserPassword) instead of a stack parameter.
+    Description: Aurora PostgreSQL password (no default; must be supplied at deploy time). Demo DB only, synthetic data, stack is deleted after the demo.
+  AllowedSshCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    AllowedPattern: '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}'
+    ConstraintDescription: Must be a valid CIDR (e.g. 203.0.113.4/32). Do not use 0.0.0.0/0.
+    Description: CIDR allowed to SSH to the app instance. Set to your own IP (x.x.x.x/32). Defaults to a non-routable placeholder so it fails safe.
+  AllowedAppCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    AllowedPattern: '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}'
+    ConstraintDescription: Must be a valid CIDR. Do not use 0.0.0.0/0.
+    Description: CIDR allowed to reach the app on ports 8080/3000. Set to your own IP or trusted range.
+  SourceS3Uri:
+    Type: String
+    AllowedPattern: '^s3://[^/]+/.+\.tar\.gz$'
+    ConstraintDescription: Must be an s3:// URI pointing to the app tarball (e.g. s3://my-bucket/shopmind-demo.tar.gz).
+    Description: S3 URI of the ShopMind application tarball to deploy on instance launch.
+  BedrockInferenceProfilePrefix:
+    Type: String
+    Default: us
+    AllowedValues: [us, eu, apac]
+    Description: Geo prefix of the Bedrock cross-region inference profile (must match the stack region's geography).
+  BedrockFoundationModelId:
+    Type: String
+    Default: anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: >-
+      Bedrock foundation model ID used by the backend. The instance role is
+      scoped to exactly this model via the inference profile
+      <prefix>.<model-id>, which is also passed to the app as BEDROCK_MODEL_ID.
+  AmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: >-
+      SSM public parameter resolving to the latest Amazon Linux 2023 AMI for the
+      stack region. AL2023 is the current, supported generation (Amazon Linux 2
+      reached end of standard support on 2026-06-30). Leave as default unless you
+      must pin a specific AMI.
+
+Resources:
+
+  # ── VPC ──────────────────────────────────────────────────────────────
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: shopmind-demo-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: shopmind-public-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: shopmind-public-2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.10.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: shopmind-private-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: shopmind-private-2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # ── Security Groups ──────────────────────────────────────────────────
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ShopMind App (EC2)
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref AllowedAppCidr
+          Description: App backend (restricted to AllowedAppCidr)
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: !Ref AllowedAppCidr
+          Description: Frontend dev server (restricted to AllowedAppCidr)
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedSshCidr
+          Description: SSH (restricted to AllowedSshCidr)
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ShopMind Aurora PostgreSQL
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+
+  CacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ShopMind ElastiCache Valkey
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+
+  # ── Aurora PostgreSQL Serverless v2 ──────────────────────────────────
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: ShopMind DB subnets
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Delete
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: '16.15'
+      DatabaseName: shopmind
+      MasterUsername: shopmind
+      MasterUserPassword: !Ref DBPassword
+      StorageEncrypted: true
+      EnableIAMDatabaseAuthentication: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 4
+
+  AuroraInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: db.serverless
+      Engine: aurora-postgresql
+
+  # ── ElastiCache for Valkey (Serverless) ──────────────────────────────
+  CacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: ShopMind cache subnets
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  ValkeyCache:
+    Type: AWS::ElastiCache::ServerlessCache
+    Properties:
+      Engine: valkey
+      ServerlessCacheName: shopmind-cache
+      SecurityGroupIds:
+        - !Ref CacheSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  # ── EC2 Instance ─────────────────────────────────────────────────────
+  AppInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        # Least privilege for Bedrock: the backend only calls Converse
+        # (BedrockAgentService), which needs bedrock:InvokeModel on the
+        # configured cross-region inference profile plus the underlying
+        # foundation model in each region the profile can route to.
+        - PolicyName: ShopMindBedrockInvoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: InvokeInferenceProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockInferenceProfilePrefix}.${BedrockFoundationModelId}'
+              - Sid: InvokeFoundationModelViaProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:*::foundation-model/${BedrockFoundationModelId}'
+                Condition:
+                  StringLike:
+                    bedrock:InferenceProfileArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockInferenceProfilePrefix}.${BedrockFoundationModelId}'
+        - PolicyName: ShopMindSourceS3Read
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub
+                  - 'arn:aws:s3:::${BucketAndKey}'
+                  - BucketAndKey: !Select [1, !Split ['s3://', !Ref SourceS3Uri]]
+
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref AppInstanceRole
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - AuroraInstance
+      - ValkeyCache
+    Properties:
+      InstanceType: t3.medium
+      KeyName: !Ref KeyPairName
+      IamInstanceProfile: !Ref AppInstanceProfile
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref AppSecurityGroup
+      ImageId: !Ref AmiId
+      Tags:
+        - Key: Name
+          Value: shopmind-demo-app
+      UserData:
+        # DEMO ONLY: this UserData contains the DB password in plaintext.
+        # See the credential-handling note inside the script; use Secrets
+        # Manager instead for any non-demo environment.
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -ex
+          exec > >(tee /var/log/shopmind-bootstrap.log) 2>&1
+          # Amazon Linux 2023 uses dnf as the package manager.
+          dnf update -y
+          dnf install -y java-17-amazon-corretto-devel postgresql16 git nodejs npm tar
+
+          # Environment for the app and for interactive SSH sessions.
+          # DB_PASSWORD is written 0600 and owned by ec2-user, not world-readable.
+          cat > /etc/profile.d/shopmind.sh << 'ENVEOF'
+          export DB_HOST=${AuroraCluster.Endpoint.Address}
+          export DB_PORT=5432
+          export DB_NAME=shopmind
+          export DB_USERNAME=shopmind
+          export CACHE_ENABLED=true
+          export CACHE_ENDPOINT=${ValkeyCache.Endpoint.Address}:${ValkeyCache.Endpoint.Port}
+          export CACHE_USE_SSL=true
+          export BEDROCK_REGION=${AWS::Region}
+          export BEDROCK_MODEL_ID=${BedrockInferenceProfilePrefix}.${BedrockFoundationModelId}
+          ENVEOF
+          chmod 644 /etc/profile.d/shopmind.sh
+
+          # ── DEMO-ONLY credential handling ──────────────────────────────
+          # NOTE: This stack is a short-lived demo. The Aurora database holds
+          # only synthetic sample data (db/init.sql), no real or customer data,
+          # and the whole stack is deleted after the demo.
+          #
+          # Known, accepted risk for this demo: Fn::Sub renders DBPassword in
+          # plaintext into the instance UserData (readable via
+          # ec2:DescribeInstanceAttribute and the instance metadata service),
+          # and `set -x` echoes it into /var/log/shopmind-bootstrap.log.
+          #
+          # In a real deployment, do NOT pass the DB password through UserData.
+          # Instead use AWS Secrets Manager, e.g. ManageMasterUserPassword: true
+          # on the DBCluster (RDS-managed secret) and have the app/instance role
+          # fetch it at runtime with secretsmanager:GetSecretValue, or use the
+          # IAM database authentication already enabled on the cluster.
+          umask 077
+          cat > /home/ec2-user/.shopmind-secrets << 'SECEOF'
+          export DB_PASSWORD='${DBPassword}'
+          SECEOF
+          chown ec2-user:ec2-user /home/ec2-user/.shopmind-secrets
+          chmod 600 /home/ec2-user/.shopmind-secrets
+          echo '[ -f ~/.shopmind-secrets ] && source ~/.shopmind-secrets' >> /home/ec2-user/.bashrc
+
+          source /etc/profile.d/shopmind.sh
+          source /home/ec2-user/.shopmind-secrets
+
+          # Fetch the application source from S3 (uses the instance role credentials).
+          cd /home/ec2-user
+          aws s3 cp ${SourceS3Uri} /tmp/shopmind-demo.tar.gz
+          mkdir -p shopmind-demo
+          tar -xzf /tmp/shopmind-demo.tar.gz -C shopmind-demo --strip-components=1
+          chown -R ec2-user:ec2-user /home/ec2-user/shopmind-demo
+          cd shopmind-demo
+
+          # Seed the database.
+          PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USERNAME" -d "$DB_NAME" -f db/init.sql
+
+          # Build and start the backend (Java 17 via the bundled Maven wrapper).
+          cd backend
+          sudo -u ec2-user -E ./mvnw -q clean package -DskipTests
+          nohup sudo -u ec2-user -E java -jar target/*.jar > /var/log/shopmind-backend.log 2>&1 &
+
+          # Build and start the frontend.
+          cd ../frontend
+          sudo -u ec2-user -E npm install
+          nohup sudo -u ec2-user -E npm start > /var/log/shopmind-frontend.log 2>&1 &
+
+          echo "ShopMind app bootstrap complete"
+          echo "DB: ${AuroraCluster.Endpoint.Address}"
+          echo "Cache: ${ValkeyCache.Endpoint.Address}:${ValkeyCache.Endpoint.Port}"
+
+Outputs:
+  AppInstancePublicIP:
+    Value: !GetAtt AppInstance.PublicIp
+    Description: EC2 public IP — access app at http://<ip>:8080
+
+  AuroraEndpoint:
+    Value: !GetAtt AuroraCluster.Endpoint.Address
+    Description: Aurora PostgreSQL endpoint
+
+  ValkeyEndpoint:
+    Value: !Sub '${ValkeyCache.Endpoint.Address}:${ValkeyCache.Endpoint.Port}'
+    Description: ElastiCache Valkey endpoint
+
+  SSHCommand:
+    Value: !Sub 'ssh -i ${KeyPairName}.pem ec2-user@${AppInstance.PublicIp}'
+    Description: SSH into the app instance
