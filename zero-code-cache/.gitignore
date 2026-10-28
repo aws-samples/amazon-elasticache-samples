@@ -1,0 +1,27 @@
+# Dependencies (never committed or scanned)
+node_modules/
+**/node_modules/
+
+# Build output
+target/
+**/target/
+build/
+dist/
+**/build/
+frontend/build/
+
+# Logs
+*.log
+build.log
+
+# OS / editor noise
+.DS_Store
+**/.DS_Store
+
+# Local env / secrets
+.env
+*.env
+.shopmind-secrets
+
+# Local tarball produced for deployment
+shopmind-demo.tar.gz

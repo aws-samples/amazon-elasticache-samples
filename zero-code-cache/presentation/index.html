@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShopMind - JDBC Caching Demo Presentation</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body { font-family: 'Inter', sans-serif; }
+.slide { display: none; min-height: 100vh; }
+.slide.active { display: flex; }
+.code { font-family: 'Courier New', monospace; }
+.diagram-box { border: 2px solid; border-radius: 12px; padding: 12px 20px; text-align: center; }
+.arrow { font-size: 24px; color: #6366f1; }
+@media print { .slide { display: flex !important; page-break-after: always; } .nav { display: none; } }
+</style>
+</head>
+<body class="bg-gray-900 text-white">
+<!-- Navigation -->
+<div class="nav fixed bottom-4 right-4 z-50 flex gap-2">
+<button onclick="prev()" class="px-4 py-2 bg-white/10 rounded-lg hover:bg-white/20 text-sm">← Prev</button>
+<span id="counter" class="px-4 py-2 text-sm text-gray-400"></span>
+<button onclick="next()" class="px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-700 text-sm">Next →</button>
+</div>
+
+<!-- Slide 1: Title -->
+<div class="slide active flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-indigo-950 to-gray-900 p-16">
+<div class="text-center max-w-4xl">
+<div class="inline-flex items-center gap-2 bg-indigo-600/20 border border-indigo-500/30 rounded-full px-4 py-1.5 mb-8">
+<span class="text-indigo-400 text-sm font-medium">AWS Livestream Demo</span>
+</div>
+<h1 class="text-5xl font-extrabold mb-6 bg-gradient-to-r from-white to-indigo-200 bg-clip-text text-transparent leading-tight">
+Zero Code Cache:<br>Supercharge Your Agentic AI Apps
+</h1>
+<p class="text-xl text-gray-400 mb-8">JDBC Query Caching with Amazon ElastiCache for Valkey</p>
+<div class="flex items-center justify-center gap-8 mt-12">
+<div class="flex items-center gap-3"><div class="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center text-lg font-bold">⚡</div><span class="text-sm text-gray-300">ElastiCache<br>for Valkey</span></div>
+<div class="flex items-center gap-3"><div class="w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center text-lg font-bold">🔌</div><span class="text-sm text-gray-300">AWS JDBC<br>Wrapper</span></div>
+<div class="flex items-center gap-3"><div class="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center text-lg font-bold">🤖</div><span class="text-sm text-gray-300">Amazon<br>Bedrock</span></div>
+</div>
+</div>
+</div>
+
+<!-- Slide 2: The Problem -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2 text-red-400">The Problem</h2>
+<p class="text-lg text-gray-400 mb-10">Your AI agent's hidden performance bottleneck</p>
+<div class="grid grid-cols-2 gap-8">
+<div class="bg-gray-800 rounded-2xl p-8 border border-gray-700">
+<h3 class="text-xl font-semibold mb-4">One Agent Request =</h3>
+<div class="space-y-3">
+<div class="flex items-center gap-3"><span class="text-red-400">🔴</span><span>User profile lookup — 30ms</span></div>
+<div class="flex items-center gap-3"><span class="text-red-400">🔴</span><span>Product catalog search — 173ms</span></div>
+<div class="flex items-center gap-3"><span class="text-red-400">🔴</span><span>Category browse — 60ms</span></div>
+<div class="flex items-center gap-3"><span class="text-red-400">🔴</span><span>Recommendation query 1 — 50ms</span></div>
+<div class="flex items-center gap-3"><span class="text-red-400">🔴</span><span>Recommendation query 2 — 45ms</span></div>
+<div class="flex items-center gap-3"><span class="text-red-400">🔴</span><span>Complementary products — 35ms</span></div>
+</div>
+<div class="mt-6 pt-4 border-t border-gray-600">
+<span class="text-2xl font-bold text-red-400">370ms</span><span class="text-gray-400 ml-2">total DB time per request</span>
+</div>
+</div>
+<div class="bg-gray-800 rounded-2xl p-8 border border-gray-700">
+<h3 class="text-xl font-semibold mb-4">At Scale</h3>
+<div class="space-y-6">
+<div><p class="text-4xl font-bold text-red-400">1,000</p><p class="text-gray-400">concurrent users</p></div>
+<div><p class="text-4xl font-bold text-red-400">10,000</p><p class="text-gray-400">DB queries per second</p></div>
+<div><p class="text-4xl font-bold text-red-400">$$$</p><p class="text-gray-400">database costs skyrocket</p></div>
+</div>
+<div class="mt-6 pt-4 border-t border-gray-600 text-gray-400">
+Sluggish responses. High costs. Poor UX.
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Slide 3: Architecture Without Cache -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2">Architecture</h2>
+<p class="text-lg text-red-400 mb-10">Without Cache — Every query hits the database</p>
+<div class="flex items-center justify-center gap-6">
+<div class="diagram-box border-blue-400 bg-blue-500/10 w-40"><p class="text-sm font-semibold text-blue-400">User</p><p class="text-xs text-gray-400">Browser</p></div>
+<div class="arrow">→</div>
+<div class="diagram-box border-purple-400 bg-purple-500/10 w-52">
+<p class="text-sm font-semibold text-purple-400">Spring Boot</p>
+<p class="text-xs text-gray-400 mt-1">Amazon Bedrock Agent</p>
+<p class="text-xs text-gray-400">(tool calls)</p>
+</div>
+<div class="arrow">→</div>
+<div class="diagram-box border-indigo-400 bg-indigo-500/10 w-48">
+<p class="text-sm font-semibold text-indigo-400">JDBC Driver</p>
+<p class="text-xs text-gray-400 mt-1">org.postgresql.Driver</p>
+</div>
+<div class="arrow">→</div>
+<div class="diagram-box border-red-400 bg-red-500/10 w-48">
+<p class="text-sm font-semibold text-red-400">Aurora PostgreSQL</p>
+<p class="text-xs text-gray-400 mt-1">Every query, every time</p>
+</div>
+</div>
+<div class="mt-12 bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center">
+<p class="text-red-400 font-semibold text-lg">5-10 DB round-trips per agent request</p>
+<p class="text-gray-400 mt-1">Same queries repeated across users — all hitting the database</p>
+</div>
+</div>
+</div>
+
+<!-- Slide 4: Architecture With Cache -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2">Architecture</h2>
+<p class="text-lg text-emerald-400 mb-10">With Cache — Repeated queries served from Valkey</p>
+<div class="flex items-center justify-center gap-4">
+<div class="diagram-box border-blue-400 bg-blue-500/10 w-36"><p class="text-sm font-semibold text-blue-400">User</p></div>
+<div class="arrow">→</div>
+<div class="diagram-box border-purple-400 bg-purple-500/10 w-44">
+<p class="text-sm font-semibold text-purple-400">Spring Boot</p>
+<p class="text-xs text-gray-400">Amazon Bedrock Agent</p>
+</div>
+<div class="arrow">→</div>
+<div class="diagram-box border-indigo-400 bg-indigo-500/10 w-52">
+<p class="text-sm font-semibold text-indigo-400">AWS JDBC Wrapper</p>
+<p class="text-xs text-emerald-400 mt-1">+ Remote Query Cache</p>
+</div>
+<div class="flex flex-col items-center gap-3">
+<div class="flex items-center gap-3">
+<div class="arrow">→</div>
+<div class="diagram-box border-emerald-400 bg-emerald-500/10 w-44">
+<p class="text-sm font-semibold text-emerald-400">ElastiCache</p>
+<p class="text-xs text-gray-400">Valkey — HIT: &lt;1ms</p>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="text-xs text-gray-500">miss ↓</div>
+<div class="diagram-box border-gray-500 bg-gray-500/10 w-44">
+<p class="text-sm font-semibold text-gray-400">Aurora PostgreSQL</p>
+<p class="text-xs text-gray-500">Only on cache miss</p>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-10 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-6 text-center">
+<p class="text-emerald-400 font-semibold text-lg">First request: DB + async write to Valkey</p>
+<p class="text-emerald-400 font-semibold text-lg">Every subsequent request: Valkey in &lt;1ms</p>
+</div>
+</div>
+</div>
+
+<!-- Slide 5: ElastiCache for Valkey -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2 text-orange-400">Amazon ElastiCache for Valkey</h2>
+<p class="text-lg text-gray-400 mb-10">Fully managed, sub-millisecond caching</p>
+<div class="grid grid-cols-3 gap-6">
+<div class="bg-gray-800 rounded-xl p-6 border border-gray-700 text-center">
+<p class="text-3xl mb-3">⚡</p>
+<h3 class="font-semibold mb-2">Sub-millisecond</h3>
+<p class="text-sm text-gray-400">In-memory reads and writes. Microsecond latency at scale.</p>
+</div>
+<div class="bg-gray-800 rounded-xl p-6 border border-gray-700 text-center">
+<p class="text-3xl mb-3">🔒</p>
+<h3 class="font-semibold mb-2">Secure</h3>
+<p class="text-sm text-gray-400">TLS encryption, IAM authentication, VPC isolation.</p>
+</div>
+<div class="bg-gray-800 rounded-xl p-6 border border-gray-700 text-center">
+<p class="text-3xl mb-3">📈</p>
+<h3 class="font-semibold mb-2">Serverless</h3>
+<p class="text-sm text-gray-400">Auto-scales with demand. No capacity planning needed.</p>
+</div>
+<div class="bg-gray-800 rounded-xl p-6 border border-gray-700 text-center">
+<p class="text-3xl mb-3">🔄</p>
+<h3 class="font-semibold mb-2">High Availability</h3>
+<p class="text-sm text-gray-400">Automatic failover, replication, and backup.</p>
+</div>
+<div class="bg-gray-800 rounded-xl p-6 border border-gray-700 text-center">
+<p class="text-3xl mb-3">🌐</p>
+<h3 class="font-semibold mb-2">Open-source</h3>
+<p class="text-sm text-gray-400">Valkey — the community-driven successor to Redis.</p>
+</div>
+<div class="bg-gray-800 rounded-xl p-6 border border-gray-700 text-center">
+<p class="text-3xl mb-3">💰</p>
+<h3 class="font-semibold mb-2">Cost Efficient</h3>
+<p class="text-sm text-gray-400">Reduce DB load by up to 90%+ in this demo configuration (see Slide 11). Pay only for what you use.</p>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Slide 6: AWS Advanced JDBC Wrapper -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2 text-indigo-400">AWS Advanced JDBC Wrapper</h2>
+<p class="text-lg text-gray-400 mb-10">Open-source. Transparent. Production-ready.</p>
+<div class="bg-gray-800 rounded-2xl p-8 border border-gray-700 mb-8">
+<p class="text-gray-300 text-lg leading-relaxed">An open-source JDBC driver that <span class="text-indigo-400 font-semibold">wraps your existing PostgreSQL or MySQL driver</span> and adds cloud-native capabilities — without changing your application code.</p>
+</div>
+<div class="grid grid-cols-2 gap-6">
+<div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+<h3 class="font-semibold text-indigo-400 mb-2">Failover Handling</h3>
+<p class="text-sm text-gray-400">Automatic reconnection on Aurora failover events</p>
+</div>
+<div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+<h3 class="font-semibold text-indigo-400 mb-2">Read-Write Splitting</h3>
+<p class="text-sm text-gray-400">Route reads to replicas automatically</p>
+</div>
+<div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+<h3 class="font-semibold text-indigo-400 mb-2">IAM Authentication</h3>
+<p class="text-sm text-gray-400">Token-based auth without passwords</p>
+</div>
+<div class="bg-indigo-600/20 rounded-xl p-5 border border-indigo-500/40">
+<h3 class="font-semibold text-indigo-300 mb-2">🆕 Remote Query Cache Plugin</h3>
+<p class="text-sm text-indigo-200">Transparent query caching in Valkey — v4.4.0</p>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Slide 7: How the Plugin Works -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2">Remote Query Cache Plugin</h2>
+<p class="text-lg text-gray-400 mb-10">How it works — step by step</p>
+<div class="space-y-4">
+<div class="flex items-start gap-4 bg-gray-800 rounded-xl p-5 border border-gray-700">
+<div class="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0 font-bold">1</div>
+<div><h3 class="font-semibold">You add a SQL hint</h3><p class="text-sm text-gray-400 mt-1 code">/* CACHE_PARAM(ttl=300s) */ SELECT * FROM products WHERE ...</p></div>
+</div>
+<div class="flex items-start gap-4 bg-gray-800 rounded-xl p-5 border border-gray-700">
+<div class="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0 font-bold">2</div>
+<div><h3 class="font-semibold">Wrapper intercepts the query</h3><p class="text-sm text-gray-400 mt-1">Parses the CACHE_PARAM hint, extracts TTL, generates cache key from query + user + schema</p></div>
+</div>
+<div class="flex items-start gap-4 bg-gray-800 rounded-xl p-5 border border-gray-700">
+<div class="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center flex-shrink-0 font-bold">3</div>
+<div><h3 class="font-semibold text-emerald-400">Cache HIT → returns result in &lt;1ms</h3><p class="text-sm text-gray-400 mt-1">Database is never touched. Result deserialized from Valkey.</p></div>
+</div>
+<div class="flex items-start gap-4 bg-gray-800 rounded-xl p-5 border border-gray-700">
+<div class="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0 font-bold">4</div>
+<div><h3 class="font-semibold text-red-400">Cache MISS → queries database</h3><p class="text-sm text-gray-400 mt-1">Returns result to app immediately. Writes to Valkey asynchronously in background.</p></div>
+</div>
+<div class="flex items-start gap-4 bg-gray-800 rounded-xl p-5 border border-gray-700">
+<div class="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center flex-shrink-0 font-bold">5</div>
+<div><h3 class="font-semibold text-emerald-400">Next identical query → instant cache hit</h3><p class="text-sm text-gray-400 mt-1">Served from Valkey until TTL expires. Zero database load.</p></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Slide 8: The Code Changes -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2">The Code Changes</h2>
+<p class="text-lg text-gray-400 mb-10">Two changes. That's it.</p>
+<div class="grid grid-cols-2 gap-8">
+<div>
+<h3 class="text-sm font-semibold text-red-400 uppercase tracking-wider mb-3">Before — Plain JDBC</h3>
+<div class="bg-gray-800 rounded-xl p-5 border border-red-500/30 code text-sm">
+<p class="text-gray-400">// DataSource</p>
+<p class="text-red-300">driver = "org.postgresql.Driver"</p>
+<p class="text-red-300">url = "jdbc:postgresql://..."</p>
+<p class="text-gray-600 mt-4">// Query</p>
+<p class="text-red-300">SELECT * FROM products</p>
+<p class="text-red-300">WHERE category = 'Laptops'</p>
+</div>
+</div>
+<div>
+<h3 class="text-sm font-semibold text-emerald-400 uppercase tracking-wider mb-3">After — With Cache</h3>
+<div class="bg-gray-800 rounded-xl p-5 border border-emerald-500/30 code text-sm">
+<p class="text-gray-400">// DataSource</p>
+<p class="text-emerald-300">driver = "software.amazon.jdbc.Driver"</p>
+<p class="text-emerald-300">url = "jdbc:aws-wrapper:postgresql://..."</p>
+<p class="text-emerald-300">wrapperPlugins = "remoteQueryCache"</p>
+<p class="text-emerald-300">cacheEndpointAddrRw = "mycache:6379"</p>
+<p class="text-gray-600 mt-4">// Query</p>
+<p class="text-emerald-300">/* CACHE_PARAM(ttl=300s) */</p>
+<p class="text-emerald-300">SELECT * FROM products</p>
+<p class="text-emerald-300">WHERE category = 'Laptops'</p>
+</div>
+</div>
+</div>
+<div class="mt-8 bg-indigo-600/20 border border-indigo-500/30 rounded-xl p-6 text-center">
+<p class="text-indigo-300 font-semibold text-lg">Zero application logic changes. The agent code doesn't change at all.</p>
+</div>
+</div>
+</div>
+
+<!-- Slide 9: Agent Flow Without Cache -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2">Agent Flow</h2>
+<p class="text-lg text-red-400 mb-8">Without Cache</p>
+<div class="bg-gray-800 rounded-2xl p-8 border border-gray-700">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-sm">👤</div>
+<p class="text-gray-300">"Find me a gaming laptop under $1000"</p>
+</div>
+<div class="ml-4 border-l-2 border-purple-500 pl-6 mb-6">
+<p class="text-purple-400 font-semibold text-sm mb-1">🤖 Amazon Bedrock Agent (Claude Haiku) — 3,000ms</p>
+<p class="text-xs text-gray-500">Reasoning, tool selection, response generation</p>
+</div>
+<div class="ml-4 space-y-3">
+<div class="flex items-center gap-3 bg-red-500/10 rounded-lg p-3 border border-red-500/20">
+<span class="text-red-400">🔴</span>
+<span class="text-sm flex-1 code">search_products(query="gaming laptop under $1000")</span>
+<span class="text-red-400 font-bold">173ms</span>
+<span class="text-xs text-gray-500">→ PostgreSQL</span>
+</div>
+<div class="flex items-center gap-3 bg-red-500/10 rounded-lg p-3 border border-red-500/20">
+<span class="text-red-400">🔴</span>
+<span class="text-sm flex-1 code">browse_category(category="Laptops")</span>
+<span class="text-red-400 font-bold">60ms</span>
+<span class="text-xs text-gray-500">→ PostgreSQL</span>
+</div>
+</div>
+<div class="mt-6 pt-4 border-t border-gray-600 flex justify-between">
+<span class="text-gray-400">Total JDBC time:</span>
+<span class="text-2xl font-bold text-red-400">211ms</span>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Slide 10: Agent Flow With Cache -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2">Agent Flow</h2>
+<p class="text-lg text-emerald-400 mb-8">With Cache — Second Request</p>
+<div class="bg-gray-800 rounded-2xl p-8 border border-gray-700">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-sm">👤</div>
+<p class="text-gray-300">"Find me a gaming laptop under $1000"</p>
+</div>
+<div class="ml-4 border-l-2 border-purple-500 pl-6 mb-6">
+<p class="text-purple-400 font-semibold text-sm mb-1">🤖 Amazon Bedrock Agent (Claude Haiku) — 3,000ms</p>
+<p class="text-xs text-gray-500">Same reasoning time (LLM doesn't change)</p>
+</div>
+<div class="ml-4 space-y-3">
+<div class="flex items-center gap-3 bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/20">
+<span class="text-emerald-400">🟢</span>
+<span class="text-sm flex-1 code">search_products(query="gaming laptop under $1000")</span>
+<span class="text-emerald-400 font-bold">4ms</span>
+<span class="text-xs text-emerald-400">→ Valkey HIT</span>
+</div>
+<div class="flex items-center gap-3 bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/20">
+<span class="text-emerald-400">🟢</span>
+<span class="text-sm flex-1 code">browse_category(category="Laptops")</span>
+<span class="text-emerald-400 font-bold">6ms</span>
+<span class="text-xs text-emerald-400">→ Valkey HIT</span>
+</div>
+</div>
+<div class="mt-6 pt-4 border-t border-gray-600 flex justify-between items-center">
+<span class="text-gray-400">Total JDBC time:</span>
+<div class="text-right">
+<span class="text-2xl font-bold text-emerald-400">10ms</span>
+<span class="text-gray-500 ml-2 text-sm">(was 211ms — <span class="text-emerald-400 font-bold">21x faster</span>)</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Slide 11: Performance Results -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2">Performance Results</h2>
+<p class="text-lg text-gray-400 mb-10">Real numbers from the live demo</p>
+<table class="w-full text-left">
+<thead><tr class="border-b border-gray-700">
+<th class="py-3 text-gray-400 text-sm">Metric</th>
+<th class="py-3 text-red-400 text-sm">Without Cache</th>
+<th class="py-3 text-emerald-400 text-sm">With Cache</th>
+<th class="py-3 text-indigo-400 text-sm">Improvement</th>
+</tr></thead>
+<tbody class="text-lg">
+<tr class="border-b border-gray-800"><td class="py-4">Category browse</td><td class="text-red-400 font-bold">60ms</td><td class="text-emerald-400 font-bold">6ms</td><td class="text-indigo-400 font-bold">10x</td></tr>
+<tr class="border-b border-gray-800"><td class="py-4">Product search</td><td class="text-red-400 font-bold">173ms</td><td class="text-emerald-400 font-bold">4ms</td><td class="text-indigo-400 font-bold">43x</td></tr>
+<tr class="border-b border-gray-800"><td class="py-4">Agent tool calls</td><td class="text-red-400 font-bold">211ms</td><td class="text-emerald-400 font-bold">10ms</td><td class="text-indigo-400 font-bold">21x</td></tr>
+<tr class="border-b border-gray-800"><td class="py-4">Cache hit rate</td><td class="text-red-400">0%</td><td class="text-emerald-400 font-bold">50-100%</td><td></td></tr>
+<tr><td class="py-4">Database load</td><td class="text-red-400">Every query</td><td class="text-emerald-400">First only</td><td class="text-indigo-400 font-bold">up to 90%+ reduction</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<!-- Slide 12: Production Features -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-5xl w-full">
+<h2 class="text-3xl font-bold mb-2">Production-Ready</h2>
+<p class="text-lg text-gray-400 mb-10">Built into the plugin — no code required</p>
+<div class="grid grid-cols-3 gap-4">
+<div class="bg-gray-800 rounded-xl p-4 border border-gray-700"><p class="font-semibold text-sm mb-1">Async Write-Back</p><p class="text-xs text-gray-400">No added latency on miss</p></div>
+<div class="bg-gray-800 rounded-xl p-4 border border-gray-700"><p class="font-semibold text-sm mb-1">TTL Expiration</p><p class="text-xs text-gray-400">Per-query configurable</p></div>
+<div class="bg-gray-800 rounded-xl p-4 border border-gray-700"><p class="font-semibold text-sm mb-1">Connection Pooling</p><p class="text-xs text-gray-400">Managed Valkey connections</p></div>
+<div class="bg-gray-800 rounded-xl p-4 border border-gray-700"><p class="font-semibold text-sm mb-1">TLS Encryption</p><p class="text-xs text-gray-400">Secure cache connections</p></div>
+<div class="bg-gray-800 rounded-xl p-4 border border-gray-700"><p class="font-semibold text-sm mb-1">IAM Authentication</p><p class="text-xs text-gray-400">ElastiCache IAM support</p></div>
+<div class="bg-gray-800 rounded-xl p-4 border border-gray-700"><p class="font-semibold text-sm mb-1">Health Monitoring</p><p class="text-xs text-gray-400">HEALTHY → SUSPECT → DEGRADED</p></div>
+<div class="bg-gray-800 rounded-xl p-4 border border-gray-700"><p class="font-semibold text-sm mb-1">Graceful Degradation</p><p class="text-xs text-gray-400">Falls back to DB if cache down</p></div>
+<div class="bg-gray-800 rounded-xl p-4 border border-gray-700"><p class="font-semibold text-sm mb-1">Key Isolation</p><p class="text-xs text-gray-400">Prefix-based multi-tenancy</p></div>
+<div class="bg-gray-800 rounded-xl p-4 border border-gray-700"><p class="font-semibold text-sm mb-1">Telemetry</p><p class="text-xs text-gray-400">OpenTelemetry metrics built-in</p></div>
+</div>
+</div>
+</div>
+
+<!-- Slide 13: Getting Started -->
+<div class="slide flex-col items-center justify-center bg-gray-900 p-16">
+<div class="max-w-4xl w-full">
+<h2 class="text-3xl font-bold mb-2">Getting Started</h2>
+<p class="text-lg text-gray-400 mb-10">5 steps to production-ready caching</p>
+<div class="space-y-4">
+<div class="flex items-start gap-4 bg-gray-800 rounded-xl p-5 border border-gray-700">
+<div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold">1</div>
+<div><h3 class="font-semibold">Add the JDBC wrapper dependency</h3><p class="text-sm text-gray-400 mt-1 code">aws-advanced-jdbc-wrapper v4.4.0 + valkey-glide + commons-pool2</p></div>
+</div>
+<div class="flex items-start gap-4 bg-gray-800 rounded-xl p-5 border border-gray-700">
+<div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold">2</div>
+<div><h3 class="font-semibold">Switch the JDBC driver and URL</h3><p class="text-sm text-gray-400 mt-1 code">software.amazon.jdbc.Driver + jdbc:aws-wrapper:postgresql://</p></div>
+</div>
+<div class="flex items-start gap-4 bg-gray-800 rounded-xl p-5 border border-gray-700">
+<div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold">3</div>
+<div><h3 class="font-semibold">Add 3 properties</h3><p class="text-sm text-gray-400 mt-1 code">wrapperPlugins=remoteQueryCache, cacheEndpointAddrRw, cacheUseSSL</p></div>
+</div>
+<div class="flex items-start gap-4 bg-gray-800 rounded-xl p-5 border border-gray-700">
+<div class="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold">4</div>
+<div><h3 class="font-semibold">Add SQL hints to cacheable queries</h3><p class="text-sm text-gray-400 mt-1 code">/* CACHE_PARAM(ttl=300s) */ SELECT ...</p></div>
+</div>
+<div class="flex items-start gap-4 bg-emerald-600/20 rounded-xl p-5 border border-emerald-500/30">
+<div class="w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold">5</div>
+<div><h3 class="font-semibold text-emerald-400">Deploy — done</h3><p class="text-sm text-gray-400 mt-1">Your queries are now cached in Valkey. No other changes needed.</p></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Slide 14: Summary -->
+<div class="slide flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-indigo-950 to-gray-900 p-16">
+<div class="text-center max-w-4xl">
+<h2 class="text-4xl font-extrabold mb-8 bg-gradient-to-r from-white to-indigo-200 bg-clip-text text-transparent">Two Code Changes.<br>Zero Complexity.<br>Real Results.</h2>
+<div class="grid grid-cols-3 gap-8 mb-12">
+<div class="bg-white/5 rounded-2xl p-6 border border-white/10">
+<p class="text-3xl mb-2">🔌</p>
+<h3 class="font-semibold mb-1">AWS JDBC Wrapper</h3>
+<p class="text-sm text-gray-400">Open-source, transparent, production-ready</p>
+</div>
+<div class="bg-white/5 rounded-2xl p-6 border border-white/10">
+<p class="text-3xl mb-2">⚡</p>
+<h3 class="font-semibold mb-1">ElastiCache for Valkey</h3>
+<p class="text-sm text-gray-400">Fully managed, sub-millisecond, scalable</p>
+</div>
+<div class="bg-white/5 rounded-2xl p-6 border border-white/10">
+<p class="text-3xl mb-2">🤖</p>
+<h3 class="font-semibold mb-1">Agentic AI Ready</h3>
+<p class="text-sm text-gray-400">Your agent gets faster without knowing it</p>
+</div>
+</div>
+<p class="text-xl text-gray-300 mb-8">A low-friction path to better database performance for Java applications.</p>
+<div class="flex items-center justify-center gap-4">
+<a href="https://github.com/aws/aws-advanced-jdbc-wrapper" class="px-6 py-3 bg-indigo-600 rounded-xl font-medium hover:bg-indigo-700 transition-colors">GitHub: AWS JDBC Wrapper</a>
+<a href="https://github.com/aws/aws-advanced-jdbc-wrapper/blob/main/docs/using-the-jdbc-driver/using-plugins/UsingTheRemoteQueryCachePlugin.md" class="px-6 py-3 bg-white/10 rounded-xl font-medium hover:bg-white/20 transition-colors">Plugin Documentation</a>
+</div>
+</div>
+</div>
+
+<!-- JavaScript -->
+<script>
+let current = 0;
+const slides = document.querySelectorAll('.slide');
+const counter = document.getElementById('counter');
+function show(n) {
+  slides.forEach(s => s.classList.remove('active'));
+  current = Math.max(0, Math.min(n, slides.length - 1));
+  slides[current].classList.add('active');
+  counter.textContent = `${current + 1} / ${slides.length}`;
+}
+function next() { show(current + 1); }
+function prev() { show(current - 1); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); prev(); }
+});
+show(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.1</version>
+    </parent>
+
+    <groupId>com.amazon.shopmind</groupId>
+    <artifactId>shopmind-demo</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>ShopMind Demo</name>
+    <description>E-commerce demo with JDBC query caching via ElastiCache for Valkey</description>
+
+    <properties>
+        <java.version>17</java.version>
+        <aws.jdbc.wrapper.version>4.4.0</aws.jdbc.wrapper.version>
+        <aws.sdk.version>2.55.1</aws.sdk.version>
+    </properties>
+
+    <dependencies>
+        <!-- Spring Boot -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- AWS Advanced JDBC Wrapper -->
+        <dependency>
+            <groupId>software.amazon.jdbc</groupId>
+            <artifactId>aws-advanced-jdbc-wrapper</artifactId>
+            <version>${aws.jdbc.wrapper.version}</version>
+        </dependency>
+
+        <!-- Remote Query Cache Plugin dependencies -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+            <version>2.13.1</version>
+        </dependency>
+        <dependency>
+            <groupId>io.valkey</groupId>
+            <artifactId>valkey-glide</artifactId>
+            <version>2.5.3</version>
+            <classifier>linux-x86_64</classifier>
+        </dependency>
+
+        <!-- AWS SDK - Bedrock Runtime (Converse API) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>bedrockruntime</artifactId>
+            <version>${aws.sdk.version}</version>
+        </dependency>
+
+        <!--
+          Jackson: this app uses the Jackson 2 API directly
+          (com.fasterxml.jackson.databind.ObjectMapper) in BedrockAgentService.
+          Spring Boot 4 ships Jackson 3 (tools.jackson) in its managed BOM, so
+          the Jackson 2 databind coordinate is pinned explicitly here to keep the
+          direct API usage compiling. Spring's own HTTP message conversion uses
+          the Jackson version it manages.
+        -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.22.3</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

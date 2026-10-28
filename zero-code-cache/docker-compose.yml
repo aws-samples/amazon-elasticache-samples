@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: shopmind
+      POSTGRES_USER: shopmind
+      POSTGRES_PASSWORD: shopmind
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  valkey:
+    image: valkey/valkey:8
+    ports:
+      - "6379:6379"
