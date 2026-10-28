@@ -8,9 +8,9 @@ import { aws_elasticache as ElastiCache } from "aws-cdk-lib";
 export class ElasticacheServerlessMinimalStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
-    const elastiCacheServerlessName = "ElastiCacheServerlessRedis";
+    const elastiCacheServerlessName = "ElastiCacheServerlessValkey";
     new ElastiCache.CfnServerlessCache(this, "ServerlessCache", {
-      engine: "redis",
+      engine: "valkey",
       serverlessCacheName: elastiCacheServerlessName.toLowerCase(),
     });
   }

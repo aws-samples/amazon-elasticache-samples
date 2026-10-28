@@ -35,8 +35,8 @@ Deploy infrastructe as code
 #### TypeScript
 
 - [Amazon ElastiCache Serverless for Memached](devops/aws-cdk/typescript/elasticache-serverless-memcached-minimal/README.md)
-- [Amazon ElastiCache Serverless with Redis OSS compatibility](devops/aws-cdk/typescript/elasticache-serverless-redis-minimal/README.md)
-- [Amazon ElastiCache with Redis OSS compatibility Cluster Mode Disabled](devops/aws-cdk/typescript/elasticache-redis-cmd/README.md)
+- [Amazon ElastiCache Serverless for Valkey](devops/aws-cdk/typescript/elasticache-serverless-redis-minimal/README.md)
+- [Amazon ElastiCache for Valkey Cluster Mode Disabled](devops/aws-cdk/typescript/elasticache-redis-cmd/README.md)
 
 ---
 
