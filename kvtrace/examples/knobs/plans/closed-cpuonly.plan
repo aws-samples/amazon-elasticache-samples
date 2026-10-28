@@ -1,0 +1,3 @@
+# Closed-loop background (GPU always busy), probes miss in this mode.
+c_cpuonly_bg1 load --bg-closed 1 --probe-kind miss --key-factor 0 --duration 120
+c_cpuonly_bg2 load --bg-closed 2 --probe-kind miss --key-factor 0 --duration 120

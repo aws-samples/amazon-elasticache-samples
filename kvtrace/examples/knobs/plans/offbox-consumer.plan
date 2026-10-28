@@ -1,0 +1,2 @@
+# kv_consumer against the remote Valkey: lookups on a miss, no saves (B2 lookup only).
+b2_consumer_ttft ttft --key-factor 0

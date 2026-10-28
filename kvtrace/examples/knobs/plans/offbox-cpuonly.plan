@@ -1,0 +1,13 @@
+# CPU tier only (the benchmark's OFF servers). The GLIDE writers still SET into the remote Valkey,
+# so the client and NIC cost is measured without LMCache's Valkey logic. Needs LMCACHE_API_PORT=9000.
+b2_cpuonly_ttft ttft --key-factor 0 --cpu-clear-url http://127.0.0.1:9001
+# CPU-tier hit: the GPU cache is reset before the measured request, the CPU tier is not.
+b4_cpuonly_hit hit --key-factor 0
+b6_cpuonly_concurrency concurrency --key-factor 0
+w_cpuonly_0 load --probe-kinds miss,cpuhit --key-factor 0 --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 0 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_cpuonly_0.5 load --probe-kinds miss,cpuhit --key-factor 0 --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 0.5 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_cpuonly_1 load --probe-kinds miss,cpuhit --key-factor 0 --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 1 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_cpuonly_1.8 load --probe-kinds miss,cpuhit --key-factor 0 --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 1.8 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_cpuonly_2.5 load --probe-kinds miss,cpuhit --key-factor 0 --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 2.5 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_cpuonly_4 load --probe-kinds miss,cpuhit --key-factor 0 --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 4 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w0end_cpuonly load --probe-kinds miss,cpuhit --key-factor 0 --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 0 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384

@@ -1,0 +1,37 @@
+# HELP lmcache_mp_l2_load_completed_requests_total Total L2 load tasks completed (per-adapter)
+# TYPE lmcache_mp_l2_load_completed_requests_total counter
+lmcache_mp_l2_load_completed_requests_total{l2_name="valkey"} 588.0
+# HELP lmcache_mp_l2_prefetch_load_completed_chunks_total Total chunks successfully loaded from L2
+# TYPE lmcache_mp_l2_prefetch_load_completed_chunks_total counter
+lmcache_mp_l2_prefetch_load_completed_chunks_total 220576.0
+# HELP lmcache_mp_lookup_requested_tokens_total Total tokens submitted for lookup (denominator of the L1+L2 token-level hit rate). Only chunk-aligned tokens are counted.
+# TYPE lmcache_mp_lookup_requested_tokens_total counter
+lmcache_mp_lookup_requested_tokens_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 6.531072e+07
+# HELP lmcache_mp_lookup_hit_tokens_total Total tokens found in L1+L2 during lookup (numerator of the L1+L2 token-level hit rate). Counts the contiguous prefix hit only.
+# TYPE lmcache_mp_lookup_hit_tokens_total counter
+lmcache_mp_lookup_hit_tokens_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 2.1075712e+07
+# HELP lmcache_mp_lookups_requests_total Completed lookups (denominator for lookup_early_exit).
+# TYPE lmcache_mp_lookups_requests_total counter
+lmcache_mp_lookups_requests_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 4987.0
+# HELP lmcache_mp_lookup_hit_l1_tokens_total Of lookup_hit: tokens served from objects L1 already held (from the storage manager's per-tier hit counts).
+# TYPE lmcache_mp_lookup_hit_l1_tokens_total counter
+lmcache_mp_lookup_hit_l1_tokens_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 1.3981696e+07
+# HELP lmcache_mp_lookup_hit_l2_tokens_total Of lookup_hit: tokens L2 added beyond the L1-servable prefix. lookup_hit_l1 + lookup_hit_l2 == lookup_hit.
+# TYPE lmcache_mp_lookup_hit_l2_tokens_total counter
+lmcache_mp_lookup_hit_l2_tokens_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 7.094016e+06
+# HELP lmcache_mp_lookup_hit_l1_keys_total Hit keys (one per object group, kv rank and chunk) that L1 already held.
+# TYPE lmcache_mp_lookup_hit_l1_keys_total counter
+lmcache_mp_lookup_hit_l1_keys_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 17048.0
+# HELP lmcache_mp_lookup_hit_l2_keys_total Hit keys loaded from L2 into L1.
+# TYPE lmcache_mp_lookup_hit_l2_keys_total counter
+lmcache_mp_lookup_hit_l2_keys_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 220576.0
+# HELP lmcache_mp_num_chunks_loaded_total Total number of LMCache chunks loaded into the engine (summed across all retrieve operations).
+# TYPE lmcache_mp_num_chunks_loaded_total counter
+lmcache_mp_num_chunks_loaded_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8",worker_id="533099143305925759"} 27446.0
+lmcache_mp_num_chunks_loaded_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8",worker_id="1144675778063219892"} 27446.0
+lmcache_mp_num_chunks_loaded_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8",worker_id="61239826964291734"} 27446.0
+lmcache_mp_num_chunks_loaded_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8",worker_id="3956062659926444310"} 27446.0
+lmcache_mp_num_chunks_loaded_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8",worker_id="2742847023617427861"} 27446.0
+lmcache_mp_num_chunks_loaded_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8",worker_id="3510270322234924410"} 27446.0
+lmcache_mp_num_chunks_loaded_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8",worker_id="4210209178520511224"} 27446.0
+lmcache_mp_num_chunks_loaded_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8",worker_id="185080524784805318"} 27446.0

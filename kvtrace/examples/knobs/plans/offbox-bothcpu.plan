@@ -1,0 +1,12 @@
+# CPU tier + remote Valkey (the benchmark's ON servers). Needs LMCACHE_API_PORT=9000.
+b2_bothcpu_ttft ttft --cpu-clear-url http://127.0.0.1:9001
+# Valkey hit: the GPU cache and the CPU tier are reset before the measured request.
+b4_bothcpu_hit hit --cpu-clear-url http://127.0.0.1:9001
+b6_bothcpu_concurrency concurrency --cpu-clear-url http://127.0.0.1:9001
+w_bothcpu_0 load --probe-kinds miss,l2hit,cpuhit --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 0 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_bothcpu_0.5 load --probe-kinds miss,l2hit,cpuhit --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 0.5 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_bothcpu_1 load --probe-kinds miss,l2hit,cpuhit --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 1 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_bothcpu_1.8 load --probe-kinds miss,l2hit,cpuhit --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 1.8 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_bothcpu_2.5 load --probe-kinds miss,l2hit,cpuhit --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 2.5 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w_bothcpu_4 load --probe-kinds miss,l2hit,cpuhit --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 4 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384
+w0end_bothcpu load --probe-kinds miss,l2hit,cpuhit --cpu-clear-url http://127.0.0.1:9001 --ext-write-gbps 0 --duration 120 --probe-rate 0.5 --probe-length 2048 --host-metrics --gpu-pcie --ext-writer glide --ext-procs 8 --ext-threads 2 --ext-value-bytes 6160384

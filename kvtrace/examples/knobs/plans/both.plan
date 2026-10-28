@@ -1,0 +1,24 @@
+b2_both_ttft ttft
+b3_both_e2e e2e
+b4_both_hit hit
+b6_both_concurrency concurrency
+b5_both_bg0.00 load --bg-rate 0
+b5_both_bg0.10 load --bg-rate 0.10
+b5_both_bg0.20 load --bg-rate 0.20
+b5_both_bg0.28 load --bg-rate 0.28
+b5_both_ext0.5 load --ext-write-gbps 0.5
+b5_both_ext1 load --ext-write-gbps 1
+b5_both_ext2 load --ext-write-gbps 2
+b5_both_ext4 load --ext-write-gbps 4
+tc on
+b2_both_tc_ttft ttft
+b3_both_tc_e2e e2e
+b4_both_tc_hit hit
+b6_both_tc_concurrency concurrency
+b5_both_tc_bg0.00 load --bg-rate 0
+b5_both_tc_bg0.10 load --bg-rate 0.10
+b5_both_tc_bg0.20 load --bg-rate 0.20
+b5_both_tc_bg0.28 load --bg-rate 0.28
+b5_both_tc_ext0.5 load --ext-write-gbps 0.5
+b5_both_tc_ext1 load --ext-write-gbps 1
+tc off

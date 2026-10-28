@@ -1,0 +1,2 @@
+# Off-box TCP baseline (Valkey on a separate cache node, VALKEY_URL). B1: recompute TTFT.
+b1_plain_ttft ttft

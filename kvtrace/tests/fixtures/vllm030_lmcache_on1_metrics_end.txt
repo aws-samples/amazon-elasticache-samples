@@ -1,0 +1,59 @@
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 290.81
+# HELP vllm:prefix_cache_queries_total Prefix cache queries, in terms of number of queried tokens.
+# TYPE vllm:prefix_cache_queries_total counter
+vllm:prefix_cache_queries_total{engine="0",model_name="qwen3-235b"} 7.6030144e+07
+# HELP vllm:prefix_cache_hits_total Prefix cache hits, in terms of number of cached tokens.
+# TYPE vllm:prefix_cache_hits_total counter
+vllm:prefix_cache_hits_total{engine="0",model_name="qwen3-235b"} 1.2080224e+07
+# HELP vllm:external_prefix_cache_queries_total External prefix cache queries from KV connector cross-instance cache sharing, in terms of number of queried tokens.
+# TYPE vllm:external_prefix_cache_queries_total counter
+vllm:external_prefix_cache_queries_total{engine="0",model_name="qwen3-235b"} 6.394992e+07
+# HELP vllm:external_prefix_cache_hits_total External prefix cache hits from KV connector cross-instance cache sharing, in terms of number of cached tokens.
+# TYPE vllm:external_prefix_cache_hits_total counter
+vllm:external_prefix_cache_hits_total{engine="0",model_name="qwen3-235b"} 8.679008e+06
+# HELP vllm:prompt_tokens_total Number of prefill tokens processed.
+# TYPE vllm:prompt_tokens_total counter
+vllm:prompt_tokens_total{engine="0",model_name="qwen3-235b"} 7.5905936e+07
+# HELP vllm:prompt_tokens_by_source_total Number of prompt tokens by source.
+# TYPE vllm:prompt_tokens_by_source_total counter
+vllm:prompt_tokens_by_source_total{engine="0",model_name="qwen3-235b",source="local_compute"} 5.5156176e+07
+vllm:prompt_tokens_by_source_total{engine="0",model_name="qwen3-235b",source="local_cache_hit"} 1.2077664e+07
+vllm:prompt_tokens_by_source_total{engine="0",model_name="qwen3-235b",source="external_kv_transfer"} 8.672096e+06
+# HELP vllm:prompt_tokens_cached_total Number of cached prompt tokens (local + external).
+# TYPE vllm:prompt_tokens_cached_total counter
+vllm:prompt_tokens_cached_total{engine="0",model_name="qwen3-235b"} 2.074976e+07
+# HELP vllm:request_success_total Count of successfully processed requests.
+# TYPE vllm:request_success_total counter
+vllm:request_success_total{engine="0",finished_reason="stop",model_name="qwen3-235b"} 0.0
+vllm:request_success_total{engine="0",finished_reason="length",model_name="qwen3-235b"} 6295.0
+vllm:request_success_total{engine="0",finished_reason="abort",model_name="qwen3-235b"} 0.0
+vllm:request_success_total{engine="0",finished_reason="error",model_name="qwen3-235b"} 5.0
+vllm:request_success_total{engine="0",finished_reason="repetition",model_name="qwen3-235b"} 0.0
+vllm:request_prompt_tokens_count{engine="0",model_name="qwen3-235b"} 6300.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.001",model_name="qwen3-235b"} 0.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.005",model_name="qwen3-235b"} 0.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.01",model_name="qwen3-235b"} 0.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.02",model_name="qwen3-235b"} 0.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.04",model_name="qwen3-235b"} 0.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.06",model_name="qwen3-235b"} 1.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.08",model_name="qwen3-235b"} 12.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.1",model_name="qwen3-235b"} 23.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.25",model_name="qwen3-235b"} 158.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.5",model_name="qwen3-235b"} 399.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="0.75",model_name="qwen3-235b"} 828.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="1.0",model_name="qwen3-235b"} 1158.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="2.5",model_name="qwen3-235b"} 3248.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="5.0",model_name="qwen3-235b"} 4922.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="7.5",model_name="qwen3-235b"} 5626.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="10.0",model_name="qwen3-235b"} 5959.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="20.0",model_name="qwen3-235b"} 6267.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="40.0",model_name="qwen3-235b"} 6298.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="80.0",model_name="qwen3-235b"} 6300.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="160.0",model_name="qwen3-235b"} 6300.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="640.0",model_name="qwen3-235b"} 6300.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="2560.0",model_name="qwen3-235b"} 6300.0
+vllm:time_to_first_token_seconds_bucket{engine="0",le="+Inf",model_name="qwen3-235b"} 6300.0
+vllm:time_to_first_token_seconds_count{engine="0",model_name="qwen3-235b"} 6300.0
+vllm:time_to_first_token_seconds_sum{engine="0",model_name="qwen3-235b"} 22042.36186361313
