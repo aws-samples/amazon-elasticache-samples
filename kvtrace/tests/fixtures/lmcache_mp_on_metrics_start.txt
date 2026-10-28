@@ -1,0 +1,21 @@
+# HELP lmcache_mp_lookup_requested_tokens_total Total tokens submitted for lookup (denominator of the L1+L2 token-level hit rate). Only chunk-aligned tokens are counted.
+# TYPE lmcache_mp_lookup_requested_tokens_total counter
+lmcache_mp_lookup_requested_tokens_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 5.254912e+06
+# HELP lmcache_mp_lookup_hit_tokens_total Total tokens found in L1+L2 during lookup (numerator of the L1+L2 token-level hit rate). Counts the contiguous prefix hit only.
+# TYPE lmcache_mp_lookup_hit_tokens_total counter
+lmcache_mp_lookup_hit_tokens_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 640000.0
+# HELP lmcache_mp_lookups_requests_total Completed lookups (denominator for lookup_early_exit).
+# TYPE lmcache_mp_lookups_requests_total counter
+lmcache_mp_lookups_requests_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 377.0
+# HELP lmcache_mp_lookup_hit_l1_tokens_total Of lookup_hit: tokens served from objects L1 already held (from the storage manager's per-tier hit counts).
+# TYPE lmcache_mp_lookup_hit_l1_tokens_total counter
+lmcache_mp_lookup_hit_l1_tokens_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 640000.0
+# HELP lmcache_mp_lookup_hit_l2_tokens_total Of lookup_hit: tokens L2 added beyond the L1-servable prefix. lookup_hit_l1 + lookup_hit_l2 == lookup_hit.
+# TYPE lmcache_mp_lookup_hit_l2_tokens_total counter
+lmcache_mp_lookup_hit_l2_tokens_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 0.0
+# HELP lmcache_mp_lookup_hit_l1_keys_total Hit keys (one per object group, kv rank and chunk) that L1 already held.
+# TYPE lmcache_mp_lookup_hit_l1_keys_total counter
+lmcache_mp_lookup_hit_l1_keys_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 0.0
+# HELP lmcache_mp_lookup_hit_l2_keys_total Hit keys loaded from L2 into L1.
+# TYPE lmcache_mp_lookup_hit_l2_keys_total counter
+lmcache_mp_lookup_hit_l2_keys_total{cache_salt="",model_name="Qwen3-235B-A22B-Instruct-2507-FP8"} 0.0

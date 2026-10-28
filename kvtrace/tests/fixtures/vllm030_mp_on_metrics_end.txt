@@ -1,0 +1,15 @@
+# HELP vllm:prefix_cache_hits_total Prefix cache hits, in terms of number of cached tokens.
+# TYPE vllm:prefix_cache_hits_total counter
+vllm:prefix_cache_hits_total{engine="0",model_name="qwen3-235b"} 1.3282656e+07
+# HELP vllm:external_prefix_cache_hits_total External prefix cache hits from KV connector cross-instance cache sharing, in terms of number of cached tokens.
+# TYPE vllm:external_prefix_cache_hits_total counter
+vllm:external_prefix_cache_hits_total{engine="0",model_name="qwen3-235b"} 7.026176e+06
+# HELP vllm:prompt_tokens_total Number of prefill tokens processed.
+# TYPE vllm:prompt_tokens_total counter
+vllm:prompt_tokens_total{engine="0",model_name="qwen3-235b"} 6.4983588e+07
+# HELP vllm:prompt_tokens_by_source_total Number of prompt tokens by source.
+# TYPE vllm:prompt_tokens_by_source_total counter
+vllm:prompt_tokens_by_source_total{engine="0",model_name="qwen3-235b",source="local_compute"} 4.4674756e+07
+vllm:prompt_tokens_by_source_total{engine="0",model_name="qwen3-235b",source="local_cache_hit"} 1.3282656e+07
+vllm:prompt_tokens_by_source_total{engine="0",model_name="qwen3-235b",source="external_kv_transfer"} 7.026176e+06
+vllm:request_prompt_tokens_count{engine="0",model_name="qwen3-235b"} 4936.0

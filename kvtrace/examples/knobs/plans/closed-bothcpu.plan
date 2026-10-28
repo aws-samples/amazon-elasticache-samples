@@ -1,0 +1,4 @@
+# Closed-loop background (GPU always busy), probes alternate miss and hit; a hit can come from the
+# LMCache CPU tier (FLUSHALL and /reset_prefix_cache do not clear it) or from Valkey.
+c_bothcpu_bg1 load --bg-closed 1 --duration 120
+c_bothcpu_bg2 load --bg-closed 2 --duration 120
