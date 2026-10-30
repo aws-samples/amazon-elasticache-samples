@@ -1,0 +1,15 @@
+# Keep the build context small and free of local/dev artifacts.
+.venv
+.venv*
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.coverage
+tests
+infra
+.git
+.github
+*.md
+.env
+.env.*

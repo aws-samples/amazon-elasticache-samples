@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv*/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Local Redis / Valkey snapshot
+dump.rdb
+
+# Node / CDK
+node_modules/
+infra/cdk.out/
+*.d.ts
+infra/*.js
+!infra/jest.config.js
+
+# Secrets & local env (never commit)
+.env
+.env.*
+*.pem
+*.key
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,147 @@
+{#
+  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  SPDX-License-Identifier: MIT-0
+#}
+{% extends "base.html" %}
+{% block title %}Failover demo &mdash; Valkey Coffee Co.{% endblock %}
+{% block content %}
+  <nav class="crumbs"><a href="{{ url_for('view_cart') }}">&larr; Back to cart</a></nav>
+  <h1>Primary failover</h1>
+
+  {% if not enabled %}
+    <div class="notice notice-muted">
+      <p>The failover demo is turned off. Set
+         <code>ENABLE_FAILOVER_DEMO=true</code> (and
+         <code>REDIS_REPLICATION_GROUP_ID</code>) to enable it. It triggers a
+         real ElastiCache failover, so it is off by default.</p>
+    </div>
+  {% else %}
+    {% if error %}
+      <div class="notice notice-error">
+        <p><strong>Could not start a new failover.</strong> {{ error }}</p>
+        {% if "already in progress" in error %}
+          <p>A failover is already running on this shard &mdash; the live status
+             below is tracking it. ElastiCache allows only one at a time.</p>
+        {% else %}
+          <p>Your cart is unaffected &mdash; it is still stored in Valkey.</p>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="notice notice-ok">
+        <p><strong>Failover initiated.</strong> ElastiCache is promoting a
+           replica to primary for shard <code>{{ result.node_group_id }}</code>
+           of <code>{{ result.replication_group_id }}</code>.</p>
+        <p>Watch the live progress below: the cluster moves to
+           <code>modifying</code> while a replica is promoted, then back to
+           <code>available</code> &mdash; and your cart count never changes,
+           because the data lives in the replication group.</p>
+      </div>
+    {% endif %}
+
+    {# Live progress renders whenever the demo is enabled, so it tracks a
+       failover even when THIS click was rejected (e.g. one already running). #}
+    <section class="failover-progress" id="fo-progress"
+             data-status-url="{{ url_for('demo_failover_status') }}">
+      <h2>Failover progress</h2>
+      <p>Cluster status:
+         <span id="fo-status" class="fo-badge fo-wait">checking&hellip;</span>
+         <span id="fo-spinner" class="fo-spinner" aria-hidden="true"></span>
+      </p>
+      <p>Cart items (should stay constant):
+         <strong id="fo-cart">&mdash;</strong></p>
+      <h3>Shard nodes</h3>
+      <ul id="fo-nodes" class="fo-nodes"><li class="muted">loading&hellip;</li></ul>
+      <p class="muted" style="font-size:.85rem">ElastiCache does not expose the
+         live primary/replica role per node through its API, so nodes are listed
+         by id and AZ. The <strong>cluster status</strong> above is the real
+         failover signal &mdash; watch it move to <code>modifying</code> and
+         back while your cart count stays constant.</p>
+      <p id="fo-done" class="notice notice-ok" hidden>
+        <strong>Failover complete.</strong> The cluster is back to
+        <code>available</code> and your cart is intact.
+      </p>
+    </section>
+
+    <script>
+      (function () {
+        var panel = document.getElementById('fo-progress');
+        var url = panel.getAttribute('data-status-url');
+        var statusEl = document.getElementById('fo-status');
+        var cartEl = document.getElementById('fo-cart');
+        var nodesEl = document.getElementById('fo-nodes');
+        var doneEl = document.getElementById('fo-done');
+        var spinner = document.getElementById('fo-spinner');
+        var sawModifying = false;
+        var stableAvailable = 0;
+        var polls = 0;
+
+        function render(d) {
+          if (d.error) { statusEl.textContent = 'error: ' + d.error; return true; }
+          statusEl.textContent = d.status;
+          statusEl.className = 'fo-badge ' +
+            (d.in_progress ? 'fo-modifying' : 'fo-available');
+          if (d.cart_count !== null && d.cart_count !== undefined) {
+            cartEl.textContent = d.cart_count;
+          }
+          // Build nodes with createElement + textContent so no value from the
+          // status response can ever be interpreted as HTML (no raw-HTML sink).
+          while (nodesEl.firstChild) { nodesEl.removeChild(nodesEl.firstChild); }
+          (d.members || []).forEach(function (m) {
+            var li = document.createElement('li');
+            var idSpan = document.createElement('span');
+            idSpan.className = 'fo-node-id';
+            idSpan.textContent = m.id || '';
+            var azSpan = document.createElement('span');
+            azSpan.className = 'muted';
+            azSpan.textContent = ' (' + (m.az || '') + ')';
+            li.appendChild(idSpan);
+            li.appendChild(azSpan);
+            nodesEl.appendChild(li);
+          });
+          if (d.in_progress) { sawModifying = true; stableAvailable = 0; }
+          else { stableAvailable++; }
+
+          // Finish once we have watched a modify return to available. If it was
+          // already available at load (failover finished or none running), stop
+          // after a few stable polls so we don't poll forever.
+          var finished = (sawModifying && !d.in_progress)
+            || (!sawModifying && stableAvailable >= 3)
+            || polls > 80;
+          if (finished) {
+            if (sawModifying) { doneEl.hidden = false; }
+            spinner.style.display = 'none';
+            return true;
+          }
+          return false;
+        }
+
+        function poll() {
+          polls++;
+          fetch(url, { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { if (!render(d)) setTimeout(poll, 3000); })
+            .catch(function () { setTimeout(poll, 3000); });
+        }
+        poll();
+      })();
+    </script>
+  {% endif %}
+
+  {% if cart is defined %}
+    <h2>Your cart right now</h2>
+    {% if cart.is_empty %}
+      <p class="empty">Your cart is empty &mdash; add an item first to see it
+         survive the failover.</p>
+    {% else %}
+      <ul class="failover-cart">
+        {% for line in cart.lines %}
+          <li>{{ line.quantity }} &times; {{ line.product.name }}
+              <span class="muted">({{ line.subtotal_display }})</span></li>
+        {% endfor %}
+      </ul>
+      <p class="total">Total: {{ cart.total_display }}</p>
+    {% endif %}
+  {% endif %}
+
+  <p><a class="btn btn-primary" href="{{ url_for('view_cart') }}">Reload cart</a></p>
+{% endblock %}

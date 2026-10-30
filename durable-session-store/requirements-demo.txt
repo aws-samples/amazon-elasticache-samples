@@ -1,0 +1,4 @@
+# Optional dependencies for the failover demo only (not needed in normal runs).
+# Install with:  pip install -r requirements-demo.txt
+-r requirements.txt
+boto3==1.35.24

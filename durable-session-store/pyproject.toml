@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "durable-session-store"
+version = "1.0.0"
+description = "Durable session store on Amazon ElastiCache for Valkey 9.1"
+license = { text = "MIT-0" }
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+addopts = "-ra --cov=app --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["app"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S", "UP"]
+# S101 (assert) is fine in tests.
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.bandit]
+exclude_dirs = ["tests"]

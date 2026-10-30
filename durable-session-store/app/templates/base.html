@@ -1,0 +1,60 @@
+<!doctype html>
+<!--
+  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  SPDX-License-Identifier: MIT-0
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Valkey Coffee Co.{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='store.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="{{ url_for('index') }}">
+        <span class="brand-mark">&#9749;</span>
+        <span>Valkey Coffee Co.</span>
+      </a>
+      <nav class="nav">
+        <a href="{{ url_for('index') }}">Shop</a>
+        <a class="cart-link" href="{{ url_for('view_cart') }}">
+          Cart
+          {% if cart_count %}<span class="badge">{{ cart_count }}</span>{% endif %}
+        </a>
+        {% if username %}
+          <span class="user">Hi, {{ username }}</span>
+          <a href="{{ url_for('logout') }}">Log out</a>
+        {% else %}
+          <a href="{{ url_for('login') }}">Log in</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="wrap">
+        <ul class="flashes">
+          {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>
+        Demo storefront &mdash; your cart lives server-side in
+        <strong>Amazon ElastiCache for Valkey</strong>, so it survives app
+        restarts and failover. The browser cookie holds only a session id.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

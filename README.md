@@ -22,6 +22,8 @@ The following are tutorials covering various use cases for [Amazon ElastiCache](
 
 - [Multi-Tenant Isolation](./multi-tenant-isolation/) - Isolate many tenants on a shared Amazon ElastiCache for Valkey cluster using numbered databases (Valkey 9.0) and database-level ACLs (Valkey 9.1), so that the engine, not the application, blocks cross-tenant access. Includes a hardened CloudFormation deployment, scripts that prove isolation with pass/fail checks, and an optional multi-tenant storefront demo.
 
+- [Durable Session Store](./durable-session-store/) - Keep shopping carts and session state durable on Amazon ElastiCache for Valkey 9.1 (cluster mode enabled, one primary and two replicas, synchronous durability), so carts survive app restarts and a primary failover. Includes a Flask storefront on ECS Fargate behind an HTTPS-only load balancer, an AWS CDK deployment, and a live "fail over the primary" demo.
+
 ## Webinars
 
 - [Generative AI Virtual Assistant](./webinars/genai-chatbot/) - Build a generative AI Virtual Assistant with [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Langchain](https://github.com/langchain-ai/langchain) and [Amazon Elasticache](https://aws.amazon.com/elasticache/). See [YouTube Video](https://www.youtube.com/watch?v=yWxDmQYelvg).
