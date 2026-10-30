@@ -20,6 +20,8 @@ The following are tutorials covering various use cases for [Amazon ElastiCache](
 
 - [Spring Framework with GLIDE](./glide-samples/spring-framework-glide-example/) - See an example implementation of Spring Boot caching using the [Valkey GLIDE](https://github.com/valkey-io/valkey-glide) client.
 
+- [Multi-Tenant Isolation](./multi-tenant-isolation/) - Isolate many tenants on a shared Amazon ElastiCache for Valkey cluster using numbered databases (Valkey 9.0) and database-level ACLs (Valkey 9.1), so that the engine, not the application, blocks cross-tenant access. Includes a hardened CloudFormation deployment, scripts that prove isolation with pass/fail checks, and an optional multi-tenant storefront demo.
+
 ## Webinars
 
 - [Generative AI Virtual Assistant](./webinars/genai-chatbot/) - Build a generative AI Virtual Assistant with [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Langchain](https://github.com/langchain-ai/langchain) and [Amazon Elasticache](https://aws.amazon.com/elasticache/). See [YouTube Video](https://www.youtube.com/watch?v=yWxDmQYelvg).

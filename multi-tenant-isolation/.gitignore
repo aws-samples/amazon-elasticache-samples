@@ -1,0 +1,22 @@
+# Local environment / credentials
+.env
+*.local
+
+# macOS
+.DS_Store
+
+# Logs and scratch output
+*.log
+build.log
+
+# CloudFormation packaged output
+packaged-*.yaml
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/

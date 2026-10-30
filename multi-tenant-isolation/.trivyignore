@@ -1,0 +1,9 @@
+# Trivy ignore file.
+#
+# List specific finding IDs here (one per line) only when the finding is a
+# documented, justified exception. Keep a comment above each with the reason.
+# An empty list means "fail on any CRITICAL/HIGH finding", which is the goal.
+#
+# Example (do not uncomment unless the finding is real and justified):
+#   # AVS-XXXX: <why this is acceptable for this sample>
+#   AVD-AWS-XXXX

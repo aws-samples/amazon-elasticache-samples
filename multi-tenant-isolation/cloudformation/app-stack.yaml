@@ -1,0 +1,400 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Multi-tenant SaaS storefront demo (app tier) on ECS Fargate behind an
+  INTERNAL, HTTPS-only Application Load Balancer. The ALB has no internet path;
+  reach it from inside the VPC via SSM port-forwarding through the EC2 client.
+  The app connects to the shared ElastiCache for Valkey cluster as per-tenant
+  RBAC users and reads each tenant's password from Secrets Manager at runtime.
+  Deploy this on top of the base stack; deploy-app.sh wires the parameters from
+  the base stack outputs.
+
+Parameters:
+  BaseStackName:
+    Type: String
+    Description: Name of the base stack (used to derive the tenant secret prefix).
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC id (from the base stack output VpcId).
+
+  AppSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >
+      Private subnets for the Fargate tasks AND the internal ALB (base output
+      AppSubnetIds).
+
+  AppSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: SG for the Fargate tasks (base output AppSecurityGroupId).
+
+  AlbSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: SG for the internal ALB (base output AlbSecurityGroupId).
+
+  RedisHost:
+    Type: String
+    Description: Valkey CMD primary endpoint (base output CmdPrimaryEndpoint).
+
+  TenantCount:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 100
+    Description: >
+      Number of tenants the app exposes (must match the RBAC setup). Valkey
+      supports up to 10,000 databases per cluster; this demo caps at 100.
+
+  ContainerImage:
+    Type: String
+    Description: >
+      ECR image URI for the app (built and pushed by deploy-app.sh), e.g.
+      <account>.dkr.ecr.<region>.amazonaws.com/<repo>:<tag>.
+
+  CertificateArn:
+    Type: String
+    Description: >
+      ACM certificate ARN for the HTTPS listener. Required - the ALB serves
+      HTTPS only (no port 80). Request/import a certificate in ACM first.
+
+  FlaskSecretArn:
+    Type: String
+    Description: Secrets Manager ARN holding the Flask SECRET_KEY.
+
+  LogKmsKeyArn:
+    Type: String
+    Description: >
+      Customer-managed KMS key ARN (base output EncryptionKeyArn) used to
+      encrypt the app's CloudWatch log group, matching the base stack.
+
+  RotationCodeBucket:
+    Type: String
+    Description: S3 bucket holding the rotation Lambda zip (uploaded by deploy-app.sh).
+
+  RotationCodeKey:
+    Type: String
+    Description: S3 key of the rotation Lambda zip.
+
+Resources:
+  # Internal ALB ingress (HTTPS from the EC2 client only) is defined in the base
+  # stack as AlbIngressFromClient - there is no public ingress rule here.
+
+  # --- Logs -----------------------------------------------------------------
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 30
+      KmsKeyId: !Ref LogKmsKeyArn
+
+  # --- IAM roles ------------------------------------------------------------
+  # The execution role injects the Flask SECRET_KEY secret into the container at
+  # launch, so it needs read access to that one secret.
+  ExecutionSecretPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Allow the ECS execution role to read the Flask secret
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Ref FlaskSecretArn
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        - !Ref ExecutionSecretPolicy
+
+  # The app reads each tenant's RBAC password from Secrets Manager at runtime,
+  # scoped to this base stack's tenant secret prefix.
+  TaskSecretsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Allow the app task to read per-tenant RBAC password secrets
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${BaseStackName}/tenant/*"
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref TaskSecretsPolicy
+
+  # --- Secret rotation (Lambda + schedule for the Flask key) ----------------
+  # The rotation function also backs the schedules that setup-rbac.sh attaches
+  # to the AUTH token and per-tenant password secrets.
+  RotationPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Permissions for the Secrets Manager rotation Lambda
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Per-secret rotation actions, scoped to THIS stack's secrets only:
+          # the base stack's AUTH token + tenant passwords (<base>/*) and this
+          # stack's Flask key. No access to any other account/secret.
+          - Sid: RotateThisStacksSecrets
+            Effect: Allow
+            Action:
+              - secretsmanager:DescribeSecret
+              - secretsmanager:GetSecretValue
+              - secretsmanager:PutSecretValue
+              - secretsmanager:UpdateSecretVersionStage
+            Resource:
+              - !Ref FlaskSecretArn
+              - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${BaseStackName}/*"
+              - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:AuthTokenSecret-*"
+          # GetRandomPassword is not tied to any secret, so it cannot be
+          # resource-scoped; it only generates a value and exposes no data.
+          - Sid: GenerateRandomPassword
+            Effect: Allow
+            Action: secretsmanager:GetRandomPassword
+            Resource: "*"
+            # GetRandomPassword has no resource type, so it cannot be ARN-scoped.
+            # Constrain it to this region as a guardrail (it only returns a
+            # random string and exposes no stored data).
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+          # Rotating an ElastiCache RBAC user's password, scoped to this
+          # account/region's users.
+          - Sid: ModifyElastiCacheUser
+            Effect: Allow
+            Action: elasticache:ModifyUser
+            Resource: !Sub "arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:user:*"
+          # CloudWatch Logs for this function's log group only.
+          - Sid: WriteOwnLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+          # ENI lifecycle for a VPC-attached Lambda. AWS does not support
+          # resource-level scoping for these three actions, so "*" is required
+          # (they create/describe/delete the function's own ENIs only). Scope
+          # them to this region as a constraint.
+          - Sid: VpcEniManagement
+            Effect: Allow
+            Action:
+              - ec2:CreateNetworkInterface
+              - ec2:DescribeNetworkInterfaces
+              - ec2:DeleteNetworkInterface
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+          # Send failed async invocations to the dead-letter queue.
+          - Sid: DeadLetterQueue
+            Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt RotationDlq.Arn
+
+  RotationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref RotationPolicy
+
+  # Dead-letter queue for failed asynchronous rotation invocations.
+  # Encrypted at rest with the AWS-managed KMS key for SQS (alias/aws/sqs),
+  # which needs no extra key-policy wiring.
+  RotationDlq:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+
+  RotationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: handler.handler
+      Timeout: 60
+      # Bound concurrency: rotation is infrequent and serial by design.
+      ReservedConcurrentExecutions: 2
+      DeadLetterConfig:
+        TargetArn: !GetAtt RotationDlq.Arn
+      Role: !GetAtt RotationRole.Arn
+      Code:
+        S3Bucket: !Ref RotationCodeBucket
+        S3Key: !Ref RotationCodeKey
+      VpcConfig:
+        SubnetIds: !Ref AppSubnetIds
+        SecurityGroupIds: [!Ref AppSecurityGroupId]
+
+  # Allow Secrets Manager (in THIS account only) to invoke the rotation
+  # function. SourceAccount prevents any other account's Secrets Manager from
+  # invoking it.
+  RotationInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RotationFunction
+      Action: lambda:InvokeFunction
+      Principal: secretsmanager.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  # Rotate the Flask signing key every 30 days (opaque rotation - no backing
+  # system to update; a new value invalidates existing session cookies).
+  FlaskKeyRotation:
+    Type: AWS::SecretsManager::RotationSchedule
+    DependsOn: RotationInvokePermission
+    Properties:
+      SecretId: !Ref FlaskSecretArn
+      RotationLambdaARN: !GetAtt RotationFunction.Arn
+      RotationRules:
+        AutomaticallyAfterDays: 30
+
+  # --- ECS cluster + task definition ----------------------------------------
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AWS::StackName}-task"
+      Cpu: "512"
+      Memory: "1024"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: storefront
+          Image: !Ref ContainerImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+          Environment:
+            - Name: REDIS_HOST
+              Value: !Ref RedisHost
+            - Name: REDIS_PORT
+              Value: "6379"
+            - Name: REDIS_SSL
+              Value: "true"
+            - Name: TENANT_COUNT
+              Value: !Ref TenantCount
+            - Name: TENANT_SECRET_PREFIX
+              Value: !Sub "${BaseStackName}/tenant"
+            - Name: SESSION_COOKIE_SECURE
+              Value: "true"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+          Secrets:
+            - Name: SECRET_KEY
+              ValueFrom: !Ref FlaskSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AppLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: storefront
+
+  # --- ALB (internal; no internet path) -------------------------------------
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internal
+      Type: application
+      SecurityGroups: [!Ref AlbSecurityGroupId]
+      Subnets: !Ref AppSubnetIds
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: 8080
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /healthz
+      HealthCheckProtocol: HTTP
+      Matcher:
+        HttpCode: "200"
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # --- Fargate service ------------------------------------------------------
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: HttpsListener
+    Properties:
+      Cluster: !Ref Cluster
+      LaunchType: FARGATE
+      DesiredCount: 2
+      TaskDefinition: !Ref TaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50
+        MaximumPercent: 200
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Ref AppSubnetIds
+          SecurityGroups: [!Ref AppSecurityGroupId]
+      LoadBalancers:
+        - ContainerName: storefront
+          ContainerPort: 8080
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  LoadBalancerDns:
+    Description: >
+      Internal ALB DNS name. Not reachable from the internet. Reach the
+      storefront from your laptop with SSM port-forwarding via the EC2 client
+      (see scripts/port-forward.sh), then open https://localhost:8443/.
+    Value: !GetAtt LoadBalancer.DNSName
+
+  StorefrontAccess:
+    Description: How to open the storefront (it is on an internal ALB)
+    Value: !Sub "Run scripts/port-forward.sh, then open https://localhost:8443/ (ALB: ${LoadBalancer.DNSName})"
+
+  RotationFunctionArn:
+    Description: >
+      Rotation Lambda ARN. setup-rbac.sh attaches rotation schedules on the
+      AUTH token and per-tenant password secrets to this function.
+    Value: !GetAtt RotationFunction.Arn

@@ -1,0 +1,7 @@
+# Development + test + security tooling.
+-r requirements.txt
+pytest==8.3.3
+fakeredis==2.26.1
+ruff==0.6.9
+bandit==1.7.10
+pip-audit==2.7.3

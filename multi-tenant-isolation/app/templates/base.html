@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Multi-Tenant Valkey Demo{% endblock %}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: -apple-system, system-ui, sans-serif; margin: 0; line-height: 1.5; }
+    header { background: #232f3e; color: #fff; padding: 0.8rem 1.2rem; display: flex; align-items: center; justify-content: space-between; }
+    header a { color: #ff9900; text-decoration: none; }
+    main { max-width: 820px; margin: 0 auto; padding: 1.5rem 1.2rem; }
+    h1 { font-size: 1.4rem; }
+    .card { border: 1px solid #ccc3; border-radius: 10px; padding: 1rem 1.2rem; margin: 1rem 0; }
+    .tenant-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.8rem; }
+    .tenant-grid form { margin: 0; }
+    button { background: #ff9900; border: 0; border-radius: 6px; padding: 0.5rem 0.9rem; font-weight: 600; cursor: pointer; }
+    button.secondary { background: #e3e3e3; color: #111; }
+    button.danger { background: #d13212; color: #fff; }
+    input, select { padding: 0.45rem 0.6rem; border-radius: 6px; border: 1px solid #aaa; }
+    .flash { background: #fff3cd; border: 1px solid #ffe28a; border-radius: 8px; padding: 0.6rem 0.9rem; margin: 0.5rem 0; font-family: ui-monospace, monospace; font-size: 0.9rem; white-space: pre-wrap; }
+    .pill { display: inline-block; background: #146eb4; color: #fff; border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.8rem; }
+    ul.items { font-family: ui-monospace, monospace; }
+    .muted { color: #6b7280; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="{{ url_for('index') }}"><strong>Valkey Multi-Tenant Demo</strong></a>
+    <span>
+      {% if current_tenant %}
+        <span class="pill">tenant{{ current_tenant }} &middot; db {{ current_tenant }}</span>
+        <a href="{{ url_for('logout') }}">switch tenant</a>
+      {% else %}
+        <span class="muted">{{ tenant_count }} tenants on one cluster</span>
+      {% endif %}
+    </span>
+  </header>
+  <main>
+    {% with messages = get_flashed_messages() %}
+      {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

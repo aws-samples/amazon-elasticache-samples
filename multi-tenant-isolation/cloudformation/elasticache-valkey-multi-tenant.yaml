@@ -1,0 +1,878 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Multi-tenant isolation with Amazon ElastiCache (Valkey 9.0 / 9.1), hardened.
+  Self-contained VPC with no internet path, a private EC2 client (reached via
+  Session Manager over interface VPC endpoints) running the Valkey CLI, and two
+  ElastiCache for Valkey clusters (Cluster Mode Disabled + Cluster Mode Enabled).
+  Security: customer-managed KMS at-rest encryption, TLS 'required' in transit,
+  an AUTH token generated into Secrets Manager, isolated cache subnets with
+  SG-to-SG ingress and no cache egress, slow-/engine-log + VPC flow logs, and
+  daily snapshots. The setup-rbac step migrates the CMD cluster from the AUTH
+  token to RBAC for per-tenant, database-level ACLs.
+
+Parameters:
+  EngineVersion:
+    Type: String
+    Default: "9.1"
+    Description: >
+      ElastiCache for Valkey engine version. Use 9.0 or later for numbered
+      databases in Cluster Mode Enabled, and 9.1 or later for database-level
+      ACLs (the db= access-string rule used for per-tenant isolation).
+    AllowedValues:
+      - "9.0"
+      - "9.1"
+
+  CacheNodeType:
+    Type: String
+    Default: cache.t3.micro
+    Description: Node type for both clusters. cache.t3.micro keeps costs low.
+
+  ClusterDatabases:
+    Type: Number
+    Default: 16
+    MinValue: 1
+    MaxValue: 10000
+    Description: >
+      Number of logical (numbered) databases exposed by the Cluster Mode
+      Enabled cluster. Valkey 9.0+ supports up to 10,000 databases in cluster
+      mode via the cluster-databases setting (serverless caches support up to
+      1,024). The default of 16 keeps the demo small; raise it to pack more
+      tenants onto one cluster.
+
+  SnapshotRetentionLimit:
+    Type: Number
+    Default: 7
+    MinValue: 0
+    MaxValue: 35
+    Description: >
+      Days of automatic daily snapshots to retain for the CMD cluster (0
+      disables backups). Matches the durable-session-store reference default.
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI (resolved automatically).
+
+  S3PrefixListId:
+    Type: String
+    Default: ""
+    Description: >
+      The com.amazonaws.<region>.s3 managed prefix list id, used to scope the
+      app tasks' egress to S3 (ECR image layers come from S3) through the S3
+      gateway endpoint. deploy.sh looks this up automatically; leave blank only
+      if you are not deploying the app stack.
+
+Conditions:
+  # True when an S3 prefix list id was supplied (app stack is being deployed).
+  HasS3PrefixList: !Not [!Equals [!Ref S3PrefixListId, ""]]
+
+Resources:
+  # ------------------------------------------------------------------
+  # Customer-managed KMS key for at-rest encryption (clusters + secret).
+  # Rotation enabled; retained on stack delete so encrypted snapshots stay
+  # decryptable. (Mirrors durable-session-store SessionStoreKmsKey.)
+  # ------------------------------------------------------------------
+  EncryptionKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub "CMK for ${AWS::StackName} Valkey at-rest encryption and AUTH secret"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableRootAccount
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          # CloudWatch Logs must be able to use the key to encrypt the slow-log,
+          # engine-log, and VPC flow-log groups. Scope the grant to log groups
+          # in this account and Region.
+          - Sid: AllowCloudWatchLogs
+            Effect: Allow
+            Principal:
+              Service: !Sub "logs.${AWS::Region}.amazonaws.com"
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+            Condition:
+              ArnLike:
+                "kms:EncryptionContext:aws:logs:arn": !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+
+  EncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AliasName: !Sub "alias/${AWS::StackName}-valkey"
+      TargetKeyId: !Ref EncryptionKey
+
+  # ------------------------------------------------------------------
+  # AUTH token generated into Secrets Manager (never a plaintext parameter).
+  # The clusters reference it dynamically; the scripts read it at runtime.
+  # The character set excludes the few punctuation marks Valkey AUTH tokens
+  # disallow, matching the reference secret's exclude list.
+  #
+  # ROTATION: a 30-day rotation schedule is attached to this secret at runtime
+  # by scripts/setup-rotation.sh, which points it at the rotation Lambda that
+  # lives in the app stack. It is not declared as an AWS::SecretsManager::
+  # RotationSchedule resource here because that Lambda is created by the app
+  # stack, which deploys AFTER this base stack - declaring it inline would
+  # create a circular stack dependency. A static scanner (e.g. cfn-guard
+  # SECRETSMANAGER_ROTATION_ENABLED_CHECK) cannot see the runtime-attached
+  # schedule and will flag this secret; that is a known, accepted false
+  # positive - rotation IS configured on the deployed secret.
+  # ------------------------------------------------------------------
+  AuthTokenSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub "Valkey AUTH token for ${AWS::StackName}"
+      KmsKeyId: !Ref EncryptionKey
+      GenerateSecretString:
+        PasswordLength: 48
+        ExcludePunctuation: true
+        ExcludeCharacters: '"@/\ ''<>&#$^'
+        RequireEachIncludedType: false
+
+  # ------------------------------------------------------------------
+  # Networking - fully private: no internet gateway, no NAT, no public IPs,
+  # no 0.0.0.0/0 route. The EC2 client, the Fargate app tasks, the internal
+  # ALB, and the cache all reach AWS APIs through interface/gateway VPC
+  # endpoints. The storefront is reached from inside the VPC only.
+  # ------------------------------------------------------------------
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-vpc"
+
+  # Private subnet for the EC2 client (no public IP, no route to the internet).
+  ClientSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-client-subnet"
+
+  # Private app subnets for the Fargate tasks (two AZs). No internet route;
+  # image pulls and logs go through the ECR/S3/Logs VPC endpoints below.
+  AppSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-app-subnet-a"
+
+  AppSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.5.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-app-subnet-b"
+
+  # No public subnets, internet gateway, NAT, or 0.0.0.0/0 route anywhere.
+  # The storefront ALB (app stack) is INTERNAL and lives in the app subnets;
+  # reach it from inside the VPC (e.g. SSM port-forwarding via the EC2 client).
+
+  # Two isolated subnets for the cache (ElastiCache subnet groups need >= 2 AZs).
+  CacheSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-cache-subnet-a"
+
+  CacheSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-cache-subnet-b"
+
+  # Single private route table, no 0.0.0.0/0 route anywhere.
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-rt"
+
+  ClientSubnetRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref ClientSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  AppSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  AppSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  CacheSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref CacheSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  CacheSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref CacheSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ------------------------------------------------------------------
+  # Security groups (least privilege)
+  # ------------------------------------------------------------------
+  ClientSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the Valkey CLI client instance
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        # The client needs HTTPS to reach the interface VPC endpoints and the
+        # Valkey port to reach the clusters; nothing else.
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/16
+          Description: HTTPS to interface VPC endpoints within the VPC
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          CidrIp: 10.0.0.0/16
+          Description: Valkey traffic to the cache subnets
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-client-sg"
+
+  # S3 egress for the client (via the S3 gateway endpoint), so the Amazon Linux
+  # 2023 dnf repositories - which are hosted on S3 - are reachable with no NAT.
+  # Added only when the S3 prefix list id is supplied.
+  ClientEgressToS3:
+    Type: AWS::EC2::SecurityGroupEgress
+    Condition: HasS3PrefixList
+    Properties:
+      GroupId: !Ref ClientSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationPrefixListId: !Ref S3PrefixListId
+      Description: HTTPS to S3 (AL2023 dnf repos) via the S3 gateway endpoint
+
+  CacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the ElastiCache for Valkey clusters
+      VpcId: !Ref Vpc
+      # Deny all egress from the cache tier (matches reference allowAllOutbound:false).
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 127.0.0.1/32
+          Description: No outbound access from the cache tier
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-cache-sg"
+
+  CacheIngressFromClient:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref CacheSecurityGroup
+      IpProtocol: tcp
+      FromPort: 6379
+      ToPort: 6379
+      SourceSecurityGroupId: !Ref ClientSecurityGroup
+      Description: Allow Valkey traffic from the client instance only
+
+  # Security group for the interface VPC endpoints: HTTPS from the client SG only.
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for interface VPC endpoints
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 127.0.0.1/32
+          Description: No outbound access needed from the endpoints
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-endpoint-sg"
+
+  EndpointIngressFromClient:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref ClientSecurityGroup
+      Description: HTTPS from the client instance to the VPC endpoints
+
+  # Security group attached to the Fargate app tasks (app stack). Defined here
+  # so the cache and endpoint SGs can reference it. Egress is limited to HTTPS
+  # (VPC endpoints: ECR, Logs, Secrets Manager) and the Valkey port.
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the Fargate storefront app tasks
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/16
+          Description: HTTPS to interface VPC endpoints within the VPC
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          CidrIp: 10.0.0.0/16
+          Description: Valkey traffic to the cache subnets
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-app-sg"
+
+  # S3 egress (for ECR image-layer pulls via the S3 gateway endpoint), added
+  # only when the S3 prefix list id is supplied (i.e. when deploying the app).
+  AppEgressToS3:
+    Type: AWS::EC2::SecurityGroupEgress
+    Condition: HasS3PrefixList
+    Properties:
+      GroupId: !Ref AppSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationPrefixListId: !Ref S3PrefixListId
+      Description: HTTPS to S3 (ECR layer pulls) via the S3 gateway endpoint
+
+  # Security group for the INTERNAL storefront ALB. It accepts HTTPS only from
+  # the EC2 client's security group, so the only way in is SSM port-forwarding
+  # through that client (there is no internet path to the ALB at all).
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the internal storefront ALB
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-alb-sg"
+
+  # HTTPS to the internal ALB from the EC2 client only (for SSM port-forwarding).
+  AlbIngressFromClient:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref ClientSecurityGroup
+      Description: HTTPS to the internal ALB from the EC2 client (SSM tunnel)
+
+  # App tasks accept traffic on the container port from the ALB SG only.
+  AppIngressFromAlb:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AppSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: !Ref AlbSecurityGroup
+      Description: App container port from the ALB only
+
+  # ALB may send to the app tasks on the container port.
+  AlbEgressToApp:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref AlbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      DestinationSecurityGroupId: !Ref AppSecurityGroup
+      Description: ALB to app tasks on the container port
+
+  CacheIngressFromApp:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref CacheSecurityGroup
+      IpProtocol: tcp
+      FromPort: 6379
+      ToPort: 6379
+      SourceSecurityGroupId: !Ref AppSecurityGroup
+      Description: Allow Valkey traffic from the Fargate app tasks
+
+  EndpointIngressFromApp:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref AppSecurityGroup
+      Description: HTTPS from the app tasks to the VPC endpoints
+
+  # ------------------------------------------------------------------
+  # Interface VPC endpoints so the private client can reach AWS APIs with no
+  # internet path. SSM (+ ssmmessages + ec2messages) powers Session Manager;
+  # KMS and Secrets Manager let the scripts read the AUTH token; ElastiCache
+  # lets the RBAC setup run control-plane calls from the client if desired.
+  # ------------------------------------------------------------------
+  SsmEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref ClientSubnet]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  SsmMessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssmmessages"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref ClientSubnet]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  Ec2MessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ec2messages"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref ClientSubnet]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  SecretsManagerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.secretsmanager"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      # One subnet per AZ (ClientSubnet is AZ-a, AppSubnetB is AZ-b). Reachable
+      # VPC-wide via private DNS, so both the client and the app tasks use it.
+      SubnetIds: [!Ref ClientSubnet, !Ref AppSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  KmsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.kms"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref ClientSubnet, !Ref AppSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  ElastiCacheEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.elasticache"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref ClientSubnet]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  # --- Endpoints the Fargate app tasks need to pull the image and log --------
+  # ECR (api + dkr) + CloudWatch Logs as interface endpoints, and S3 as a
+  # gateway endpoint (ECR image layers are served from S3). All created only
+  # when the app stack is being deployed (HasS3PrefixList).
+  EcrApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasS3PrefixList
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.api"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AppSubnetA, !Ref AppSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  EcrDkrEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasS3PrefixList
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.dkr"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AppSubnetA, !Ref AppSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasS3PrefixList
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.logs"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref AppSubnetA, !Ref AppSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: HasS3PrefixList
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref PrivateRouteTable]
+
+  # ------------------------------------------------------------------
+  # VPC flow logs to CloudWatch (mirrors the reference 'vpc-flow-logs').
+  # ------------------------------------------------------------------
+  FlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt EncryptionKey.Arn
+
+  FlowLogPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Allow VPC Flow Logs to write to the flow-log group
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource: !GetAtt FlowLogGroup.Arn
+
+  FlowLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref FlowLogPolicy
+
+  VpcFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      ResourceId: !Ref Vpc
+      ResourceType: VPC
+      TrafficType: ALL
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref FlowLogGroup
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+
+  # ------------------------------------------------------------------
+  # ElastiCache log groups (slow-log + engine-log), subnet + parameter groups
+  # ------------------------------------------------------------------
+  SlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt EncryptionKey.Arn
+
+  EngineLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt EncryptionKey.Arn
+
+  CacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Isolated subnets for the Valkey clusters
+      SubnetIds:
+        - !Ref CacheSubnetA
+        - !Ref CacheSubnetB
+
+  # Custom parameter group that turns on multiple numbered databases for the
+  # Cluster Mode Enabled cluster (Valkey 9.0+).
+  CmeParameterGroup:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      CacheParameterGroupFamily: valkey9
+      Description: Enables numbered databases for Cluster Mode Enabled Valkey
+      Properties:
+        cluster-databases: !Ref ClusterDatabases
+
+  # ------------------------------------------------------------------
+  # Cluster Mode Disabled (CMD) cluster - the one secured with RBAC
+  # ------------------------------------------------------------------
+  CmdReplicationGroup:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupId: !Sub "${AWS::StackName}-cmd"
+      ReplicationGroupDescription: Valkey Cluster Mode Disabled (numbered databases)
+      Engine: valkey
+      EngineVersion: !Ref EngineVersion
+      CacheNodeType: !Ref CacheNodeType
+      NumCacheClusters: 1
+      AutomaticFailoverEnabled: false
+      MultiAZEnabled: false
+      Port: 6379
+      # --- Security ---
+      TransitEncryptionEnabled: true
+      TransitEncryptionMode: required
+      AtRestEncryptionEnabled: true
+      KmsKeyId: !Ref EncryptionKey
+      # AUTH token sourced from Secrets Manager (not a plaintext parameter).
+      AuthToken: !Sub "{{resolve:secretsmanager:${AuthTokenSecret}:SecretString}}"
+      AutoMinorVersionUpgrade: true
+      # --- Backups ---
+      SnapshotRetentionLimit: !Ref SnapshotRetentionLimit
+      SnapshotWindow: "03:00-05:00"
+      PreferredMaintenanceWindow: "sun:05:00-sun:07:00"
+      CacheSubnetGroupName: !Ref CacheSubnetGroup
+      SecurityGroupIds:
+        - !Ref CacheSecurityGroup
+      LogDeliveryConfigurations:
+        - DestinationType: cloudwatch-logs
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref SlowLogGroup
+          LogFormat: json
+          LogType: slow-log
+        - DestinationType: cloudwatch-logs
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref EngineLogGroup
+          LogFormat: json
+          LogType: engine-log
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-cmd"
+
+  # ------------------------------------------------------------------
+  # Cluster Mode Enabled (CME) cluster - numbered databases in cluster mode
+  # ------------------------------------------------------------------
+  CmeReplicationGroup:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupId: !Sub "${AWS::StackName}-cme"
+      ReplicationGroupDescription: Valkey Cluster Mode Enabled (numbered databases in cluster mode)
+      Engine: valkey
+      EngineVersion: !Ref EngineVersion
+      CacheNodeType: !Ref CacheNodeType
+      NumNodeGroups: 1
+      ReplicasPerNodeGroup: 0
+      AutomaticFailoverEnabled: false
+      Port: 6379
+      # --- Security ---
+      TransitEncryptionEnabled: true
+      TransitEncryptionMode: required
+      AtRestEncryptionEnabled: true
+      KmsKeyId: !Ref EncryptionKey
+      AuthToken: !Sub "{{resolve:secretsmanager:${AuthTokenSecret}:SecretString}}"
+      AutoMinorVersionUpgrade: true
+      CacheParameterGroupName: !Ref CmeParameterGroup
+      CacheSubnetGroupName: !Ref CacheSubnetGroup
+      SecurityGroupIds:
+        - !Ref CacheSecurityGroup
+      LogDeliveryConfigurations:
+        - DestinationType: cloudwatch-logs
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref SlowLogGroup
+          LogFormat: json
+          LogType: slow-log
+        - DestinationType: cloudwatch-logs
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref EngineLogGroup
+          LogFormat: json
+          LogType: engine-log
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-cme"
+
+  # ------------------------------------------------------------------
+  # EC2 client (Valkey CLI) reachable through Session Manager only.
+  # No public IP, no SSH, no internet path - SSM works via the VPC endpoints.
+  # ------------------------------------------------------------------
+  # Least-privilege: allow the client to read ONLY this stack's AUTH secret and
+  # the per-tenant password secrets, and decrypt with the CMK.
+  ClientSecretsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Read this stack's demo secrets and decrypt with its CMK
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Ref AuthTokenSecret
+          # Per-tenant RBAC password secrets, created by setup-rbac.sh as
+          # "<stack>/tenant/<n>". Scoped to this stack's prefix only.
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AWS::StackName}/tenant/*"
+          - Effect: Allow
+            Action:
+              - kms:Decrypt
+            Resource: !GetAtt EncryptionKey.Arn
+
+  ClientInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        - !Ref ClientSecretsPolicy
+
+  ClientInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref ClientInstanceRole
+
+  ClientInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref ClientInstanceProfile
+      SubnetId: !Ref ClientSubnet
+      SecurityGroupIds:
+        - !Ref ClientSecurityGroup
+      # EBS-optimized throughput (no extra cost on t3) for consistent I/O.
+      EbsOptimized: true
+      # Enforce IMDSv2 (token-required) to protect instance credentials.
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+        HttpPutResponseHopLimit: 1
+      # Encrypt the root volume with the CMK.
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            Encrypted: true
+            KmsKeyId: !Ref EncryptionKey
+            VolumeSize: 8
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Install a Valkey/Redis-compatible CLI. On Amazon Linux 2023 the
+          # redis6 package provides the client as "redis6-cli".
+          dnf install -y openssl
+          dnf install -y redis6 || dnf install -y valkey || dnf install -y redis
+          # Expose the client under the names used by the scripts (redis-cli
+          # and valkey-cli), whichever binary actually got installed.
+          for c in redis6-cli valkey-cli redis-cli; do
+            if command -v "$c" >/dev/null 2>&1; then
+              ln -sf "$(command -v "$c")" /usr/local/bin/redis-cli
+              ln -sf "$(command -v "$c")" /usr/local/bin/valkey-cli
+              break
+            fi
+          done
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-client"
+
+Outputs:
+  ClientInstanceId:
+    Description: EC2 client instance id (connect with Session Manager)
+    Value: !Ref ClientInstance
+
+  CmdPrimaryEndpoint:
+    Description: Cluster Mode Disabled primary endpoint address
+    Value: !GetAtt CmdReplicationGroup.PrimaryEndPoint.Address
+
+  CmdPort:
+    Description: Cluster Mode Disabled port
+    Value: "6379"
+
+  CmeReplicationGroupId:
+    Description: >
+      Cluster Mode Enabled replication group id. Retrieve its endpoint with:
+      aws elasticache describe-replication-groups
+    Value: !Sub "${AWS::StackName}-cme"
+
+  CmdReplicationGroupId:
+    Description: Replication group id that the RBAC user group is attached to
+    Value: !Sub "${AWS::StackName}-cmd"
+
+  AuthTokenSecretArn:
+    Description: Secrets Manager ARN holding the generated Valkey AUTH token
+    Value: !Ref AuthTokenSecret
+
+  EncryptionKeyArn:
+    Description: Customer-managed KMS key used for at-rest encryption
+    Value: !GetAtt EncryptionKey.Arn
+
+  # --- Values consumed by the app stack (passed in by deploy-app.sh) ---------
+  VpcId:
+    Description: VPC id
+    Value: !Ref Vpc
+
+  AppSubnetIds:
+    Description: >
+      Private subnets for the Fargate app tasks AND the internal ALB
+      (comma-separated).
+    Value: !Join [",", [!Ref AppSubnetA, !Ref AppSubnetB]]
+
+  AppSecurityGroupId:
+    Description: Security group to attach to the Fargate app tasks
+    Value: !GetAtt AppSecurityGroup.GroupId
+
+  AlbSecurityGroupId:
+    Description: Security group for the internal storefront ALB
+    Value: !GetAtt AlbSecurityGroup.GroupId
