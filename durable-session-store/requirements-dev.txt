@@ -1,0 +1,8 @@
+# Development & security tooling (pinned).
+-r requirements.txt
+pytest==8.3.3
+pytest-cov==5.0.0
+fakeredis==2.24.1
+bandit==1.7.10
+pip-audit==2.7.3
+ruff==0.6.9

@@ -1,0 +1,27 @@
+{#
+  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  SPDX-License-Identifier: MIT-0
+#}
+{% extends "base.html" %}
+{% block title %}{{ product.name }} &mdash; Valkey Coffee Co.{% endblock %}
+{% block content %}
+  <nav class="crumbs"><a href="{{ url_for('index') }}">&larr; Back to shop</a></nav>
+  <section class="detail">
+    <div class="detail-media">
+      <img src="{{ url_for('thumbnail', product_id=product.id) }}"
+           alt="{{ product.name }}" width="400" height="300">
+    </div>
+    <div class="detail-body">
+      <h1>{{ product.name }}</h1>
+      <p class="price price-lg">{{ product.price_display }}</p>
+      <p class="detail-desc">{{ product.description }}</p>
+      <form method="post" action="{{ url_for('add_to_cart') }}" class="detail-add">
+        <input type="hidden" name="product_id" value="{{ product.id }}">
+        <label>Qty
+          <input type="number" name="quantity" value="1" min="1" max="99">
+        </label>
+        <button type="submit" class="btn btn-primary">Add to cart</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

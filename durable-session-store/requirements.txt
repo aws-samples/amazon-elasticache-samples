@@ -1,0 +1,5 @@
+# Runtime dependencies (pinned for reproducible, auditable builds).
+Flask==3.1.3
+Flask-Session==0.8.0
+redis==5.0.8
+gunicorn==23.0.0

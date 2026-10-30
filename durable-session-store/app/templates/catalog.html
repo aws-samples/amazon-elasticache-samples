@@ -1,0 +1,37 @@
+{#
+  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  SPDX-License-Identifier: MIT-0
+#}
+{% extends "base.html" %}
+{% block title %}Shop &mdash; Valkey Coffee Co.{% endblock %}
+{% block content %}
+  <section class="hero">
+    <h1>Fresh gear for a better brew</h1>
+    <p>Add items to your cart, then restart the server &mdash; your cart is still
+       there, because it is stored in Valkey, not in your browser.</p>
+  </section>
+
+  <section class="grid" aria-label="Product catalog">
+    {% for product in products %}
+      <article class="card">
+        <a class="card-media" href="{{ url_for('product_detail', product_id=product.id) }}">
+          <img src="{{ url_for('thumbnail', product_id=product.id) }}"
+               alt="{{ product.name }}" width="400" height="300" loading="lazy">
+        </a>
+        <div class="card-body">
+          <h2 class="card-title">
+            <a href="{{ url_for('product_detail', product_id=product.id) }}">{{ product.name }}</a>
+          </h2>
+          <p class="card-desc">{{ product.description }}</p>
+          <div class="card-foot">
+            <span class="price">{{ product.price_display }}</span>
+            <form method="post" action="{{ url_for('add_to_cart') }}">
+              <input type="hidden" name="product_id" value="{{ product.id }}">
+              <button type="submit" class="btn btn-primary">Add to cart</button>
+            </form>
+          </div>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}

@@ -1,0 +1,10 @@
+# The repo-level .gitignore ignores `lib/` (a Python build dir). Here lib/
+# holds the CDK stack source, so re-include it. Compiled *.js stays ignored.
+!lib/
+node_modules/
+cdk.out/
+cdk.context.json
+*.js
+!jest.config.js
+*.d.ts
+.cdk.staging/

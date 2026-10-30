@@ -1,0 +1,109 @@
+{#
+  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  SPDX-License-Identifier: MIT-0
+#}
+{% extends "base.html" %}
+{% block title %}Your cart &mdash; Valkey Coffee Co.{% endblock %}
+{% block content %}
+  <h1>Your cart</h1>
+
+  {% if cart.is_empty %}
+    <p class="empty">Your cart is empty. <a href="{{ url_for('index') }}">Start shopping</a>.</p>
+  {% else %}
+    <table class="cart-table">
+      <thead>
+        <tr><th>Product</th><th>Price</th><th>Qty</th><th>Subtotal</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for line in cart.lines %}
+          <tr>
+            <td class="cart-product">
+              <img src="{{ url_for('thumbnail', product_id=line.product.id) }}"
+                   alt="" width="64" height="48">
+              <span>{{ line.product.name }}</span>
+            </td>
+            <td>{{ line.product.price_display }}</td>
+            <td>
+              <form method="post" action="{{ url_for('update_cart') }}" class="qty-form">
+                <input type="hidden" name="product_id" value="{{ line.product.id }}">
+                <input type="number" name="quantity" value="{{ line.quantity }}"
+                       min="0" max="99" aria-label="Quantity for {{ line.product.name }}">
+                <button type="submit" class="btn btn-ghost">Update</button>
+              </form>
+            </td>
+            <td>{{ line.subtotal_display }}</td>
+            <td class="line-actions">
+              <form method="post" action="{{ url_for('save_for_later') }}">
+                <input type="hidden" name="product_id" value="{{ line.product.id }}">
+                <button type="submit" class="btn btn-link">Save for later</button>
+              </form>
+              <form method="post" action="{{ url_for('remove_from_cart') }}">
+                <input type="hidden" name="product_id" value="{{ line.product.id }}">
+                <button type="submit" class="btn btn-link">Remove</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" class="total-label">Total ({{ cart.item_count }} items)</td>
+          <td class="total">{{ cart.total_display }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    {% if cart.coupons %}
+      <p class="coupons">Applied coupons:
+        {% for code in cart.coupons %}<span class="coupon-chip">{{ code }}</span>{% endfor %}
+      </p>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('apply_coupon') }}" class="coupon-form">
+      <input type="text" name="code" placeholder="Promo code" aria-label="Promo code">
+      <button type="submit" class="btn btn-ghost">Apply coupon</button>
+    </form>
+
+    <div class="cart-actions">
+      <form method="post" action="{{ url_for('clear_cart') }}">
+        <button type="submit" class="btn btn-ghost">Clear cart</button>
+      </form>
+      <a class="btn btn-primary" href="{{ url_for('index') }}">Continue shopping</a>
+    </div>
+  {% endif %}
+
+  {% if cart.saved %}
+    <section class="saved-section">
+      <h2>Saved for later</h2>
+      <ul class="saved-list">
+        {% for line in cart.saved %}
+          <li>
+            <img src="{{ url_for('thumbnail', product_id=line.product.id) }}"
+                 alt="" width="48" height="36">
+            <span>{{ line.quantity }} &times; {{ line.product.name }}</span>
+            <form method="post" action="{{ url_for('move_to_cart') }}">
+              <input type="hidden" name="product_id" value="{{ line.product.id }}">
+              <button type="submit" class="btn btn-link">Move to cart</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if failover_demo_enabled %}
+    <section class="demo-panel">
+      <h2>Durability demo</h2>
+      <p>This cart is stored server-side in Amazon ElastiCache for Valkey. Force
+         the primary node to fail over &mdash; ElastiCache promotes a replica,
+         and your cart stays exactly as it is.</p>
+      <form method="post" action="{{ url_for('demo_failover') }}"
+            onsubmit="return confirm('Trigger a real ElastiCache primary failover? This briefly disrupts the cluster.');">
+        <button type="submit" class="btn btn-danger">Fail over the primary</button>
+      </form>
+      <p class="muted">Disruptive, demo-only. Enabled via
+         <code>ENABLE_FAILOVER_DEMO</code>.</p>
+    </section>
+  {% endif %}
+{% endblock %}

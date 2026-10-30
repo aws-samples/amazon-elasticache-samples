@@ -1,0 +1,19 @@
+{#
+  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  SPDX-License-Identifier: MIT-0
+#}
+{% extends "base.html" %}
+{% block title %}Log in &mdash; Valkey Coffee Co.{% endblock %}
+{% block content %}
+  <section class="auth">
+    <h1>Log in</h1>
+    <p class="muted">This demo has no password &mdash; it just associates a name
+       with your durable session so the cart feels personal.</p>
+    <form method="post" action="{{ url_for('login') }}" class="auth-form">
+      <label>Username
+        <input type="text" name="username" autofocus required>
+      </label>
+      <button type="submit" class="btn btn-primary">Log in</button>
+    </form>
+  </section>
+{% endblock %}
