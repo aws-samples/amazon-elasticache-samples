@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}tenant{{ tenant }} store{% endblock %}
+{% block content %}
+  <h1>tenant{{ tenant }}'s storefront <span class="pill">database {{ tenant }}</span></h1>
+  <p class="muted">
+    You are connected as RBAC user <code>tenant{{ tenant }}</code>, which is
+    locked to database {{ tenant }} by the Valkey <code>db=</code> ACL rule.
+  </p>
+
+  <div class="card">
+    <h2>Your items</h2>
+    {% if items %}
+      <ul class="items">
+        {% for item in items %}<li>{{ item }}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No items yet. Add one below.</p>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('add_item') }}">
+      <input name="item" placeholder="e.g. order-1001" required>
+      <button type="submit">Add to my database</button>
+    </form>
+    <form method="post" action="{{ url_for('clear_items') }}" style="margin-top:0.6rem;">
+      <button type="submit" class="secondary">Clear my database (FLUSHDB)</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Try to reach another tenant's data</h2>
+    <p class="muted">
+      Pick another tenant's database and attempt to read it. The engine returns
+      <code>NOPERM</code> &mdash; the app cannot cross the boundary even when it
+      tries.
+    </p>
+    <form method="post" action="{{ url_for('peek') }}">
+      <select name="target_db">
+        {% for n in others %}<option value="{{ n }}">database {{ n }} (tenant{{ n }})</option>{% endfor %}
+        <option value="0">database 0 (reserved)</option>
+      </select>
+      <button type="submit" class="danger">Attempt to peek</button>
+    </form>
+
+    <form method="post" action="{{ url_for('peek_flushall') }}" style="margin-top:0.6rem;">
+      <button type="submit" class="danger">Attempt FLUSHALL (all databases)</button>
+      <span class="muted">requires <code>alldbs</code> &mdash; denied for a single-db tenant</span>
+    </form>
+  </div>
+
+  <p><a href="{{ url_for('index') }}">&larr; back to tenant picker</a></p>
+{% endblock %}

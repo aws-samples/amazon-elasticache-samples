@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Pick a tenant storefront</h1>
+  <p class="muted">
+    Every tenant below lives on the <strong>same</strong> ElastiCache for Valkey
+    cluster, each pinned to its own numbered database. Sign in as any of them;
+    the app connects as that tenant's RBAC user, so the engine enforces the
+    boundary. This is a small-scale version of the "thousands of small
+    storefronts on one shared cluster" pattern.
+  </p>
+
+  <div class="card">
+    <div class="tenant-grid">
+      {% for t in tenants %}
+        <form method="post" action="{{ url_for('login') }}">
+          <input type="hidden" name="tenant" value="{{ t.n }}">
+          <button type="submit">
+            {{ t.user }}<br><span class="muted">database {{ t.db }}</span>
+          </button>
+        </form>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p class="muted">
+    Database 0 is reserved by convention. A single Valkey 9.0+ cluster supports
+    up to 10,000 numbered databases, so thousands of small tenants can share one
+    cluster (this demo provisions just a few). Larger tenant populations shard
+    across a fleet of clusters.
+  </p>
+{% endblock %}
