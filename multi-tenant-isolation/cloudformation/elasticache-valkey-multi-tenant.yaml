@@ -106,10 +106,12 @@ Resources:
               ArnLike:
                 "kms:EncryptionContext:aws:logs:arn": !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
 
+  # The alias is deleted with the stack (only the key is retained). A retained
+  # alias would block any redeploy with the same stack name, because the next
+  # create would find "alias/<stack>-valkey" already taken. Deleting an alias
+  # never affects the key it points to.
   EncryptionKeyAlias:
     Type: AWS::KMS::Alias
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       AliasName: !Sub "alias/${AWS::StackName}-valkey"
       TargetKeyId: !Ref EncryptionKey
@@ -827,6 +829,72 @@ Resources:
         - Key: Name
           Value: !Sub "${AWS::StackName}-client"
 
+  # ------------------------------------------------------------------
+  # Private bucket for the secret-rotation Lambda's deployment package.
+  # Created here, with a CloudFormation-generated name, so that it always
+  # exists and is owned by this account BEFORE deploy-app.sh uploads code to
+  # it. (A predictable, script-created name could be registered first by
+  # another account, which would then control the Lambda's code.)
+  # deploy-app.sh uploads with --expected-bucket-owner and pins the Lambda to
+  # the exact object version it uploaded.
+  # ------------------------------------------------------------------
+  RotationCodeBucket:
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: >-
+              Holds only the rotation Lambda package built from this repo.
+              Writes come from deploy-app.sh and are recorded by CloudTrail;
+              a separate access-log bucket would add cost without adding
+              useful audit data for a demo.
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+            BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-rotation-packages
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-rotation-code"
+
+  # Reject any request that is not over TLS. No statement grants access to
+  # other accounts, so only this account's principals can read or write.
+  RotationCodeBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref RotationCodeBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt RotationCodeBucket.Arn
+              - !Sub "${RotationCodeBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
 Outputs:
   ClientInstanceId:
     Description: EC2 client instance id (connect with Session Manager)
@@ -876,3 +944,9 @@ Outputs:
   AlbSecurityGroupId:
     Description: Security group for the internal storefront ALB
     Value: !GetAtt AlbSecurityGroup.GroupId
+
+  RotationCodeBucketName:
+    Description: >
+      Account-owned bucket for the rotation Lambda package (CloudFormation-
+      generated name). deploy-app.sh uploads here.
+    Value: !Ref RotationCodeBucket

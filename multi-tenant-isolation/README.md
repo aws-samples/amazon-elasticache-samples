@@ -155,7 +155,7 @@ with sensible defaults — see [Configuration](#configuration).
 | [`scripts/deploy-app.sh`](./scripts/deploy-app.sh) | **Browser demo.** Builds/pushes the app image, packages the rotation Lambda, creates the Flask secret, and deploys the internal ALB + Fargate app stack. Requires `CERT_ARN`. |
 | [`scripts/setup-rotation.sh`](./scripts/setup-rotation.sh) | Attaches 30-day Secrets Manager rotation schedules to the AUTH token and tenant password secrets (called automatically by `deploy-app.sh`). |
 | [`scripts/port-forward.sh`](./scripts/port-forward.sh) | Opens an SSM tunnel to the internal ALB so you can open the storefront at `https://localhost:8443/`. |
-| [`scripts/cleanup.sh`](./scripts/cleanup.sh) | Deletes the app stack first, then the base stack, then the RBAC user group, users, secrets, and the Lambda code bucket, in the correct order. |
+| [`scripts/cleanup.sh`](./scripts/cleanup.sh) | Deletes the app stack and its ECR repository first, then the base stack, then the RBAC user group, users, and secrets, in the correct order. Empties the rotation-code bucket so the base stack can delete it. |
 
 ### How commands reach the cluster
 
@@ -209,7 +209,7 @@ how a hardened, multi-tenant cache is set up:
 
 | Control | How it is implemented |
 |---|---|
-| **At-rest encryption** | Customer-managed **KMS key** with automatic rotation, used by both clusters, the AUTH secret, the client's EBS root volume, and the CloudWatch log groups. The key is `Retain` on delete so encrypted snapshots stay recoverable. |
+| **At-rest encryption** | Customer-managed **KMS key** with automatic rotation, used by both clusters, the AUTH secret, the client's EBS root volume, and the CloudWatch log groups. The key is `Retain` on delete so encrypted snapshots stay recoverable; its alias is deleted with the stack so you can redeploy under the same name. |
 | **In-transit encryption** | `TransitEncryptionEnabled: true` with `TransitEncryptionMode: required` on both clusters; every `redis-cli` connection uses `--tls`. |
 | **Secret handling** | The Valkey AUTH token is **generated into Secrets Manager** (never a CFN parameter, never in source). Clusters reference it with a `{{resolve:secretsmanager:...}}` dynamic reference; the client reads it at runtime via its IAM role. |
 | **Network isolation** | Cache in **private isolated** subnets; client in a **private** subnet. No internet gateway, no NAT, no public IPs. Session Manager and AWS API calls flow through **interface VPC endpoints** only. |
@@ -231,6 +231,14 @@ Manager via a **least-privilege task role**.
 Flask signing key and the per-tenant RBAC passwords (via `elasticache:ModifyUser`,
 staging both old and new passwords so connections are not dropped) on a 30-day
 schedule. See [`app/rotation/handler.py`](./app/rotation/handler.py).
+
+The rotation Lambda's code package lives in a **private bucket created by the
+base stack** with a CloudFormation-generated name (Block Public Access on,
+bucket-owner-enforced, SSE-KMS, versioned, TLS-only policy). `deploy-app.sh`
+reads the name from the stack output, uploads with
+`--expected-bucket-owner <your account>`, and pins the Lambda to the exact
+object version it uploaded. Nothing writes to a bucket with a guessable name,
+so another account cannot pre-create the bucket and supply the Lambda's code.
 
 One deliberate exception remains, appropriate for a demo:
 
@@ -330,6 +338,20 @@ the browser demo is running. Confirm with the
 [AWS Pricing Calculator](https://calculator.aws/). Costs accrue for as long as
 the resources exist, so run `cleanup.sh` when done.
 
+## Upgrading from an earlier version
+Earlier versions of `deploy-app.sh` uploaded the rotation Lambda to a bucket
+named `<stack>-lambda-<account-id>-<region>` without checking who owned it.
+If you deployed one of those versions:
+
+1. Re-run `./scripts/deploy.sh` to add the rotation-code bucket to the base
+   stack, then re-run `./scripts/deploy-app.sh`.
+2. Check that the old bucket belongs to you:
+   `aws s3api head-bucket --bucket <stack>-lambda-<account-id>-<region> --expected-bucket-owner <account-id>`.
+   A `403` means another account owns that name. In that case, treat the
+   rotation Lambda's earlier code as untrusted: rotate the Flask secret and the
+   tenant password secrets (`aws secretsmanager rotate-secret`) after
+   redeploying, and review the Lambda's CloudTrail activity.
+
 ## Cleanup
 
 ```bash
@@ -339,9 +361,12 @@ the resources exist, so run `cleanup.sh` when done.
 Order matters and the script handles it:
 
 1. The **app stack is deleted first** (it depends on the cluster and RBAC users).
-2. Then the **base stack** — the CMD replication group stays associated with the user group until the stack is gone.
-3. Then the **user group, tenant users, and per-tenant password secrets** are removed in the correct order.
-4. The script then reminds you about the **retained KMS key** (kept on purpose so encrypted snapshots remain recoverable) and prints the `aws kms schedule-key-deletion` command to remove it once you are sure it is no longer needed.
+2. The app's **ECR repository and its images** are deleted (`deploy-app.sh` creates it outside CloudFormation).
+3. The **rotation-code bucket is emptied** (all object versions) so the base stack can delete it.
+4. Then the **base stack** — the CMD replication group stays associated with the user group until the stack is gone. If an older version of the template left the `alias/<stack>-valkey` KMS alias behind, it is removed so the next deploy does not fail (the key is not affected).
+5. Then the **user group, tenant users, and per-tenant password secrets** are removed in the correct order.
+6. If a bucket named `<stack>-lambda-<account-id>-<region>` exists from an older version of this sample, it is removed, but **only if your account owns it**.
+7. The script then reminds you about the **retained KMS key** (kept on purpose so encrypted snapshots remain recoverable) and prints the `aws kms schedule-key-deletion` command to remove it once you are sure it is no longer needed.
 
 The base stack's AUTH-token secret is deleted with the stack but enters a
 recovery window; force-delete it if you need the name back sooner.
