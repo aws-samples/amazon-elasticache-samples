@@ -49,6 +49,8 @@ RUN_CME_DEMO="${RUN_CME_DEMO:-false}"
 TEMPLATE_FILE="${TEMPLATE_FILE:-$SCRIPT_DIR/../cloudformation/elasticache-valkey-multi-tenant.yaml}"
 APP_TEMPLATE_FILE="${APP_TEMPLATE_FILE:-$SCRIPT_DIR/../cloudformation/app-stack.yaml}"
 APP_STACK_NAME="${APP_STACK_NAME:-${STACK_NAME}-app}"
+# ECR repository for the app image (created by deploy-app.sh, removed by cleanup.sh).
+ECR_REPO="${ECR_REPO:-${STACK_NAME}-app}"
 
 # These RBAC identifiers are consumed by the other scripts that source this
 # file. ShellCheck analyzes each file in isolation and cannot see that
