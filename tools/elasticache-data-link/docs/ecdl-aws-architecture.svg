@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1560 700" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="aBlk" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L7.5,3 L0,6 Z" fill="#232F3E"/></marker>
+    <marker id="aGry" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L7.5,3 L0,6 Z" fill="#8a949b"/></marker>
+  </defs>
+  <rect x="0" y="0" width="1560" height="700" fill="#ffffff"/>
+  <text x="780" y="38" text-anchor="middle" font-size="22" font-weight="bold" fill="#232F3E">ECDL — AWS Architecture</text>
+
+  <!-- AWS Cloud -->
+  <rect x="24" y="56" width="1512" height="612" rx="8" fill="none" stroke="#232F3E" stroke-width="1.5"/>
+  <text x="44" y="80" font-size="13" font-weight="bold" fill="#232F3E">AWS Cloud · Region us-east-2</text>
+
+  <!-- VPC -->
+  <rect x="48" y="100" width="1256" height="360" rx="8" fill="#faf7ff" stroke="#8C4FFF" stroke-width="1.6"/>
+  <text x="68" y="124" font-size="13" font-weight="bold" fill="#8C4FFF">VPC · private subnets (Multi-AZ)</text>
+
+  <!-- Application (outside VPC) -->
+  <rect x="1360" y="230" width="150" height="120" rx="10" fill="#eef1f2" stroke="#5a666c" stroke-width="1.6"/>
+  <g text-anchor="middle" fill="#2b3439"><text x="1435" y="284" font-size="14" font-weight="bold">Application</text><text x="1435" y="306" font-size="11">sub-ms reads</text></g>
+
+  <!-- ===== EDGES ===== -->
+  <g fill="none" stroke="#232F3E" stroke-width="2.2">
+    <line x1="252" y1="258" x2="322" y2="258" marker-end="url(#aBlk)"/>
+    <line x1="512" y1="258" x2="582" y2="258" marker-end="url(#aBlk)"/>
+    <line x1="782" y1="258" x2="852" y2="258" marker-end="url(#aBlk)"/>
+    <line x1="1042" y1="258" x2="1112" y2="258" marker-end="url(#aBlk)"/>
+    <line x1="1360" y1="290" x2="1284" y2="270" marker-end="url(#aBlk)"/>
+  </g>
+  <g font-size="11" fill="#232F3E" style="paint-order:stroke;stroke:#faf7ff;stroke-width:4px;stroke-linejoin:round;">
+    <text x="287" y="248" text-anchor="middle">3306</text>
+    <text x="547" y="248" text-anchor="middle">6379</text>
+    <text x="817" y="248" text-anchor="middle">6379</text>
+    <text x="1077" y="248" text-anchor="middle">6379 · TLS</text>
+    <text x="1330" y="248" text-anchor="middle">TLS</text>
+  </g>
+
+  <!-- ===== CORE COMPONENTS ===== -->
+  <!-- Aurora -->
+  <path d="M72,206 L72,300 A90,14 0 0,0 252,300 L252,206 Z" fill="#E9E7F7" stroke="#4D27AA" stroke-width="1.6"/>
+  <ellipse cx="162" cy="206" rx="90" ry="14" fill="#E9E7F7" stroke="#4D27AA" stroke-width="1.6"/>
+  <g text-anchor="middle" fill="#2b1d63"><text x="162" y="248" font-size="13" font-weight="bold">Aurora MySQL</text><text x="162" y="268" font-size="10.5">Serverless v2 · source</text><text x="162" y="285" font-size="9.5" fill="#6b5aa8">Multi-AZ</text></g>
+
+  <!-- Debezium -->
+  <rect x="322" y="210" width="190" height="96" rx="10" fill="#FCE9D9" stroke="#ED7100" stroke-width="1.6"/>
+  <g text-anchor="middle" fill="#7a3d00"><text x="417" y="248" font-size="13" font-weight="bold">Debezium</text><text x="417" y="268" font-size="10.5">reads change log</text><text x="417" y="286" font-size="9.5" fill="#b5651a">ECS Fargate</text></g>
+
+  <!-- Broker -->
+  <rect x="582" y="204" width="200" height="108" rx="10" fill="#FDEDEE" stroke="#C7131F" stroke-width="1.6"/>
+  <g text-anchor="middle" fill="#7d0c14"><text x="682" y="240" font-size="13" font-weight="bold">Broker</text><text x="682" y="259" font-size="10.5">ElastiCache Valkey (Streams)</text><text x="682" y="276" font-size="10.5">durable buffer + DLQ</text><text x="682" y="294" font-size="9.5" fill="#c05058">Multi-AZ</text></g>
+
+  <!-- Sink -->
+  <rect x="852" y="210" width="190" height="96" rx="10" fill="#FCE9D9" stroke="#ED7100" stroke-width="1.6"/>
+  <g text-anchor="middle" fill="#7a3d00"><text x="947" y="242" font-size="13" font-weight="bold">Go Sink</text><text x="947" y="261" font-size="10.5">transform · retry · DLQ</text><text x="947" y="279" font-size="10.5">autoscale 1–10</text><text x="947" y="297" font-size="9.5" fill="#b5651a">ECS Fargate</text></g>
+
+  <!-- Target -->
+  <path d="M1112,206 L1112,300 A90,14 0 0,0 1292,300 L1292,206 Z" fill="#FDEDEE" stroke="#C7131F" stroke-width="1.6"/>
+  <ellipse cx="1202" cy="206" rx="90" ry="14" fill="#FDEDEE" stroke="#C7131F" stroke-width="1.6"/>
+  <g text-anchor="middle" fill="#7d0c14"><text x="1202" y="244" font-size="13" font-weight="bold">Target</text><text x="1202" y="263" font-size="10.5">ElastiCache Valkey</text><text x="1202" y="280" font-size="10.5">cluster-mode · TLS</text><text x="1202" y="297" font-size="9.5" fill="#c05058">Multi-AZ</text></g>
+
+  <!-- ===== SUPPORTING SERVICES (one grouped box, single connector) ===== -->
+  <line x1="676" y1="500" x2="676" y2="460" fill="none" stroke="#8a949b" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#aGry)"/>
+  <text x="686" y="484" font-size="10" fill="#5a666c" style="paint-order:stroke;stroke:#ffffff;stroke-width:3px;">credentials · images · logs · metrics · autoscaling · roles</text>
+
+  <rect x="48" y="500" width="1256" height="120" rx="8" fill="#f7f8f9" stroke="#8a949b" stroke-width="1.4"/>
+  <text x="68" y="524" font-size="13" font-weight="bold" fill="#3a444a">Supporting AWS services (regional)</text>
+  <g font-size="11" text-anchor="middle">
+    <rect x="70" y="540" width="185" height="62" rx="8" fill="#FBE7EB" stroke="#DD344C"/><text x="162" y="567" font-weight="bold" fill="#7d1420">Secrets Manager</text><text x="162" y="585" font-size="10" fill="#8a2531">DB credentials</text>
+    <rect x="272" y="540" width="185" height="62" rx="8" fill="#FCE9D9" stroke="#ED7100"/><text x="364" y="567" font-weight="bold" fill="#7a3d00">Amazon ECR</text><text x="364" y="585" font-size="10" fill="#8a4c12">container images</text>
+    <rect x="474" y="540" width="185" height="62" rx="8" fill="#FBE1EE" stroke="#E7157B"/><text x="566" y="567" font-weight="bold" fill="#8a0d4b">CloudWatch</text><text x="566" y="585" font-size="10" fill="#a02a68">logs · alarms · dashboard</text>
+    <rect x="676" y="540" width="185" height="62" rx="8" fill="#FCE9D9" stroke="#ED7100"/><text x="768" y="567" font-weight="bold" fill="#7a3d00">App Auto Scaling</text><text x="768" y="585" font-size="10" fill="#8a4c12">sink 1→10</text>
+    <rect x="878" y="540" width="185" height="62" rx="8" fill="#FBE1EE" stroke="#E7157B"/><text x="970" y="567" font-weight="bold" fill="#8a0d4b">SNS</text><text x="970" y="585" font-size="10" fill="#a02a68">alerts</text>
+    <rect x="1080" y="540" width="185" height="62" rx="8" fill="#FBE7EB" stroke="#DD344C"/><text x="1172" y="567" font-weight="bold" fill="#7d1420">IAM</text><text x="1172" y="585" font-size="10" fill="#8a2531">exec / task roles</text>
+  </g>
+
+  <!-- legend -->
+  <g font-size="10.5" fill="#3a444a">
+    <rect x="48" y="642" width="16" height="12" fill="#FCE9D9" stroke="#ED7100"/><text x="70" y="652">ECS Fargate</text>
+    <rect x="190" y="642" width="16" height="12" fill="#FDEDEE" stroke="#C7131F"/><text x="212" y="652">ElastiCache Valkey</text>
+    <rect x="368" y="642" width="16" height="12" fill="#E9E7F7" stroke="#4D27AA"/><text x="390" y="652">Aurora</text>
+    <text x="470" y="652" fill="#5a666c">·  numbers on arrows = port  ·  TLS = encrypted in transit  ·  all managed tiers Multi-AZ</text>
+  </g>
+</svg>

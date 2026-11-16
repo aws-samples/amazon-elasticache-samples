@@ -1,0 +1,73 @@
+name: ci
+
+# Runs the automated test suites on every push and pull request, on clean
+# runners with their own Go / Python / Node — so a suite that can't be run on a
+# given machine is still verified here.
+#
+# Commands mirror TESTING.md and the Makefile exactly; nothing new is defined.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python suites (ecdl_link, loader, backend, docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: pip install PyYAML Flask Flask-CORS boto3 requests
+      - name: make test
+        run: make test
+
+  go-sink:
+    name: Go sink
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: go vet
+        working-directory: tools/go-sink
+        run: go vet ./...
+      - name: go test
+        working-directory: tools/go-sink
+        run: go test ./...
+
+  frontend:
+    name: Frontend render tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+      - name: react-scripts test
+        working-directory: frontend
+        run: CI=true npx react-scripts test --watchAll=false
+
+  cfn-lint:
+    name: CloudFormation lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install cfn-lint
+      - name: make lint-cfn
+        run: make lint-cfn

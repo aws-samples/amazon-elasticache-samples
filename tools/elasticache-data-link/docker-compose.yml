@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Restart after a host reboot (nightly SSM patching may reboot the instance).
+    restart: unless-stopped
+    # Loopback only. A bare "5006:5000" publishes on every interface, and this
+    # API (with the host's AWS credentials) can create IAM roles and stacks.
+    # To use it from another machine, tunnel in (ssh -L / SSM port forwarding)
+    # rather than widening this.
+    ports:
+      - "127.0.0.1:5006:5000"
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app
+      - ./backend/templates:/app/templates
+      # The shared link schema and validator, which the CLI imports from the
+      # repo root. Mounted rather than copied because the build context is
+      # ./backend and cannot reach outside it; Task 12 copies it into the
+      # control-plane image instead.
+      - ./ecdl_link:/app/ecdl_link
+    environment:
+      - FLASK_ENV=development
+      # No API token (shipped default for now). Safe here only because the
+      # ports above are bound to loopback.
+      - ECDL_AUTH_DISABLED=true
+      - DATABASE_PATH=/app/data/app.db
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+      - AWS_DEFAULT_REGION=us-east-1
+    depends_on:
+      - frontend
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    # Restart after a host reboot (nightly SSM patching may reboot the instance).
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:5006
+
+volumes:
+  data:

@@ -1,0 +1,403 @@
+{
+  "x-draft": "json-schema-2020-12-subset",
+  "x-id": "ecdl/link/v1",
+  "title": "ECDL link",
+  "description": "One link = one source database, one target cache, N tables. This file is the single definition of what a customer may configure; the UI form and the YAML file are both validated against it, so neither can accept something the other cannot express. Anything absent here is either derived from the supplied ARNs (endpoints, ports, engine, VPC, security groups, TLS state, cluster mode) or defaulted by ECDL. Any key beginning with an underscore is treated as a comment and ignored, since JSON has no comment syntax.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "mode", "source", "target", "tables"],
+  "x-rejected": {
+    "pipeline": "ECDL has no 'pipeline' object. One link is one source, one target and a list of tables; sink replicas are a throughput setting under advanced.sink, unrelated to how many tables you replicate.",
+    "connector": "Debezium connector settings are not customer configuration. The connector class is derived from the source engine; snapshot behaviour comes from 'mode'. Overrides are set under advanced.debezium.",
+    "broker": "The broker is created and managed by ECDL. Overrides are set under advanced.broker.",
+    "performance": "Renamed. Sink tuning is advanced.sink, loader tuning is advanced.loader, capture tuning is advanced.debezium.",
+    "infrastructure": "Renamed to advanced.network. VPC and subnets are discovered from the source and target ARNs; set them only to override that discovery."
+  },
+  "properties": {
+    "schema_version": {
+      "description": "Version of this schema the document was written against.",
+      "enum": [1],
+      "default": 1
+    },
+    "name": {
+      "description": "Link name. Everything the link creates is named after it, so the limit comes from the strictest of those names: the broker's ElastiCache replication group is called ecdl-<name>-broker and ElastiCache rejects a replication group id longer than 40 characters, which leaves 28. The next strictest is a CloudFormation stack name at 128, which is not close.",
+      "type": "string",
+      "pattern": "^[a-z](?:[a-z0-9-]{0,26}[a-z0-9])?$",
+      "x-format-hint": "Use lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen, up to 28 characters."
+    },
+    "mode": {
+      "description": "What this link does. initial_load provisions no broker, no Debezium and no sink -- it runs the parallel loader once and finishes. cdc streams changes from the current position onward and does not backfill. initial_load_and_cdc captures the log position first, loads in parallel, then streams from that position so nothing is missed.",
+      "enum": ["initial_load", "cdc", "initial_load_and_cdc"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["database", "secret_arn"],
+      "description": "The source database. An AWS source (kind 'aws', the default) is given only by source.arn, and its endpoint, port, engine, VPC and security group are read from it. A self-managed or on-premises source (kind 'external') has no ARN to read, so you state source.engine and source.host instead; reachability to it (Direct Connect / VPN and the source firewall) and the change-capture prerequisites are your responsibility.",
+      "x-rejected": {
+        "endpoint": "For an AWS source it is derived from source.arn; for an external source set source.host.",
+        "ssl_mode": "Renamed to source.tls, which applies only to an external source. Connections to an AWS source always use TLS.",
+        "password": "Never put a password in this file. Put it in Secrets Manager and set source.secret_arn.",
+        "password_secret_arn": "Renamed to source.secret_arn.",
+        "slot_name": "Generated per link for PostgreSQL sources.",
+        "publication_name": "Generated per link for PostgreSQL sources.",
+        "snapshot_mode": "Determined by 'mode'. Override with advanced.debezium.snapshot_mode if you genuinely need to.",
+        "tables": "Moved to the top level, because the table list belongs to the link rather than to the source."
+      },
+      "properties": {
+        "kind": {
+          "description": "Where the source database is hosted. 'aws' (the default) is an RDS/Aurora instance given by source.arn. 'external' is a self-managed or on-premises database reached over the network; you supply source.engine and source.host because there is no ARN to read them from.",
+          "enum": ["aws", "external"],
+          "default": "aws"
+        },
+        "arn": {
+          "description": "ARN of the source RDS/Aurora cluster or instance. Required for an AWS source (kind 'aws'); not used for an external source. Endpoint, port, engine, engine version, VPC and security group are all read from it.",
+          "type": "string",
+          "pattern": "^arn:aws[a-z-]*:rds:[a-z0-9-]+:[0-9]{12}:(cluster|db):.+$",
+          "x-format-hint": "Expected an RDS cluster or instance ARN, like arn:aws:rds:us-east-2:111122223333:cluster:my-cluster."
+        },
+        "engine": {
+          "description": "Source database engine. Required for an external source (kind 'external'); for an AWS source it is read from source.arn and must not be set.",
+          "enum": ["mysql", "postgresql", "sqlserver", "oracle"]
+        },
+        "host": {
+          "description": "Hostname or IP of an external source (kind 'external'). Required for an external source; for an AWS source the endpoint is read from source.arn and this must not be set.",
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "description": "Port of an external source. Optional; defaults to the engine's standard port (MySQL 3306, PostgreSQL 5432, SQL Server 1433, Oracle 1521). Only valid for an external source.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "tls": {
+          "description": "Whether to connect to an external source over TLS. Defaults to true. Only valid for an external source; connections to an AWS source always use TLS.",
+          "type": "boolean",
+          "default": true
+        },
+        "database": {
+          "description": "Database (MySQL/PostgreSQL/SQL Server) or service name (Oracle). Required because RDS does not reliably report it -- DatabaseName is frequently null on Aurora clusters.",
+          "type": "string",
+          "minLength": 1
+        },
+        "schema": {
+          "description": "Schema holding the tables, for engines that separate schema from database. Defaults to 'public' for PostgreSQL, 'dbo' for SQL Server, the uppercased username for Oracle, and is unused for MySQL.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_$]*$",
+          "x-format-hint": "Expected a schema name: letters, digits and _, like public or dbo."
+        },
+        "secret_arn": {
+          "description": "Secrets Manager ARN holding the source credential. Accepts an RDS-managed JSON secret or a plaintext one. The pipeline reads it with its task role; the value never enters this file, a stack parameter, or a log.",
+          "type": "string",
+          "pattern": "^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$",
+          "x-format-hint": "Expected a Secrets Manager secret ARN, like arn:aws:secretsmanager:us-east-2:111122223333:secret:my-secret-AbCdEf."
+        },
+        "username": {
+          "description": "Source database user. Optional -- taken from the secret when it is an RDS-managed JSON secret.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["arn"],
+      "x-rejected": {
+        "endpoint": "Derived from target.arn -- the configuration endpoint when cluster mode is enabled, the primary endpoint when it is not.",
+        "cluster_endpoint": "Derived from target.arn.",
+        "host": "Derived from target.arn.",
+        "port": "Derived from target.arn.",
+        "tls": "Not configurable. TLS is always on, and whether the cluster has it enabled is read from target.arn.",
+        "ssl_enabled": "Not configurable. TLS is always on.",
+        "cluster_mode": "Detected from target.arn, never set. Setting it manually can leave a plain client connected to a sharded cluster, which connects and then fails MOVED on most keys -- partial silent failure.",
+        "auth_token": "Never put a credential in this file. Put it in Secrets Manager and set target.secret_arn.",
+        "auth_username": "Set target.secret_arn to a secret containing both username and password for an RBAC user.",
+        "write_mode": "Not configurable. Rows are written as hashes.",
+        "lww_enabled": "Not configurable. Target writes are idempotent and last-write-wins by construction.",
+        "sink_template": "Not configurable. There is one sink.",
+        "sink_replicas": "Renamed to advanced.sink.desired_count, and note the sink autoscales, so you rarely need to set a fixed count.",
+        "pipeline_batch_size": "Renamed to advanced.sink.batch_size.",
+        "dev_test": "Not a customer setting.",
+        "key_prefix": "Moved to advanced.key_prefix -- it applies to the whole link.",
+        "key_pattern": "Not configurable per target. Keys are <table>:<primary key>; add a prefix with advanced.key_prefix."
+      },
+      "properties": {
+        "arn": {
+          "description": "ARN of the target ElastiCache replication group. Endpoint, port, TLS state, cluster mode and auth mode are all read from it.",
+          "type": "string",
+          "pattern": "^arn:aws[a-z-]*:elasticache:[a-z0-9-]+:[0-9]{12}:replicationgroup:.+$",
+          "x-format-hint": "Expected an ElastiCache replication group ARN, like arn:aws:elasticache:us-east-2:111122223333:replicationgroup:my-cache. A cache cluster ARN or a bare endpoint is not accepted."
+        },
+        "secret_arn": {
+          "description": "Secrets Manager ARN holding the target cache credential. Required only when the cache has an auth token or RBAC enabled, which ECDL detects from target.arn. A plaintext secret is treated as an AUTH token; a JSON secret with username and password is treated as an RBAC user.",
+          "type": "string",
+          "pattern": "^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$",
+          "x-format-hint": "Expected a Secrets Manager secret ARN, like arn:aws:secretsmanager:us-east-2:111122223333:secret:my-secret-AbCdEf."
+        }
+      }
+    },
+    "tables": {
+      "description": "Tables to replicate. One entry per table, either bare ('orders') or qualified ('public.orders'); bare names are qualified during resolution using the engine and source.schema. All tables in a link share one Debezium reader and one sink service.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_$]*(?:\\.[A-Za-z_][A-Za-z0-9_$]*){0,2}$",
+        "x-format-hint": "Expected a table name, optionally qualified, like orders or public.orders."
+      }
+    },
+    "transforms": {
+      "description": "Optional per-table row shaping, applied identically by the initial loader and the CDC sink. Order per row is filter, then computed, then column selection, then rename.",
+      "type": "object",
+      "additionalProperties": false,
+      "x-rejected": {
+        "row_filters": "Renamed to transforms.tables.<table>.filter -- one condition per table.",
+        "columns": "Move under transforms.tables.<table>.columns.",
+        "rename": "Move under transforms.tables.<table>.rename. Renames are per table, since two tables can have the same column name and want different output names.",
+        "computed_fields": "Renamed to transforms.tables.<table>.computed.",
+        "denormalize": "Move under transforms.tables.<table>.denormalize.",
+        "key_pattern": "Not supported. Keys are <table>:<primary key>; add a prefix with advanced.key_prefix.",
+        "aggregations": "Not supported. Aggregations exist only in the legacy Python sink, which this deployment path does not use. Compute the value in the source or in your application."
+      },
+      "properties": {
+        "version": {
+          "description": "Accepted for compatibility with existing transforms.json files. Ignored.",
+          "type": "integer"
+        },
+        "tables": {
+          "description": "Keyed by table name, matching an entry in the top-level tables list.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "x-rejected": {
+              "row_filter": "Renamed to 'filter'.",
+              "row_filters": "Renamed to 'filter'. One condition per table.",
+              "computed_fields": "Renamed to 'computed'.",
+              "aggregations": "Not supported on this deployment path.",
+              "key_pattern": "Keys are named <table>:<primary key>. Set advanced.key_prefix to add a prefix; a per-table pattern is not supported.",
+              "table": "Redundant -- the table is the key of this object."
+            },
+            "properties": {
+              "columns": {
+                "description": "Columns to keep. Omit or leave empty to keep all of them.",
+                "type": "array",
+                "items": {"type": "string", "minLength": 1}
+              },
+              "rename": {
+                "description": "Output field renames, applied last. Keys are source column names.",
+                "type": "object",
+                "additionalProperties": {"type": "string", "minLength": 1}
+              },
+              "computed": {
+                "description": "Fields calculated from the row. Expressions support + - * / parentheses, unary minus, numeric literals and column names; a missing or non-numeric column reads as 0.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "expr"],
+                  "properties": {
+                    "name": {"type": "string", "minLength": 1},
+                    "expr": {"type": "string", "minLength": 1}
+                  }
+                }
+              },
+              "filter": {
+                "description": "Keep only rows matching this condition, evaluated against the original row before any other step. A row that stops matching is DELETED from the cache, not left behind.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["field", "op", "value"],
+                "x-rejected": {
+                  "table": "Redundant -- the table is the key of the enclosing object."
+                },
+                "properties": {
+                  "field": {"type": "string", "minLength": 1},
+                  "op": {
+                    "description": "Comparison. The numeric operators coerce both sides to numbers. 'contains', 'in' and their negations are deliberately absent: the sink treats an unrecognised operator as 'always true', so accepting them here would silently disable the filter.",
+                    "enum": ["=", "!=", ">", ">=", "<", "<="]
+                  },
+                  "value": {"type": "string"}
+                }
+              },
+              "denormalize": {
+                "description": "Embed selected columns of a parent row onto this (child) table's cached record. The parent must itself be a table in this link so it is materialised in the cache.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["parent_table", "join_field", "fields"],
+                  "properties": {
+                    "parent_table": {"type": "string", "minLength": 1},
+                    "join_field": {
+                      "description": "Foreign key column on this table, read from the original row.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "parent_key_prefix": {
+                      "description": "Cache key prefix for the parent, e.g. 'customers:'. Defaults to '<parent_table>:'.",
+                      "type": "string"
+                    },
+                    "fields": {
+                      "description": "Parent columns to embed.",
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {"type": "string", "minLength": 1}
+                    },
+                    "prefix": {
+                      "description": "Prefix applied to embedded field names, e.g. 'cust_'.",
+                      "type": "string"
+                    },
+                    "on_parent_delete": {
+                      "description": "What happens to embedded fields when the parent row is deleted. 'null' blanks them, 'leave' keeps the last known values.",
+                      "enum": ["null", "leave"],
+                      "default": "null"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "advanced": {
+      "description": "Overrides. Every value here has a default that works; setting one means you have a specific reason.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key_prefix": {
+          "description": "Prepended to every cache key, separated by a colon. Empty by default, so keys are <table>:<primary key>. Set it when another pipeline already writes a table of the same name into the same cache: keys become <prefix>:<table>:<primary key>.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]*:?$",
+          "x-format-hint": "Letters, digits, '.', '_' and '-', like orders-v2."
+        },
+        "alarms": {
+          "description": "Pipeline health alarms (capture not running, sink not running, sink lag, dead letters, logged errors). On by default; they publish to an SNS topic the CDC stack creates.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "email": {"description": "Subscribed to the alarm topic. The subscription must be confirmed from the email.", "type": "string", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", "x-format-hint": "Expected an email address, like ops@example.com."},
+            "sink_lag_seconds": {"type": "integer", "minimum": 30, "maximum": 86400},
+            "capture_stopped_minutes": {"type": "integer", "minimum": 5, "maximum": 1440}
+          }
+        },
+        "images": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "debezium": {"type": "string", "minLength": 1},
+            "sink": {"type": "string", "minLength": 1}
+          }
+        },
+        "sink": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "workers": {"type": "integer", "minimum": 1, "maximum": 128},
+            "batch_size": {
+              "description": "Entries claimed from the stream per read, and therefore the size of the pipeline sent to the cache. Larger drains faster; because the cache executes commands on one thread per shard, it also lengthens the window in which a customer read can queue behind a write batch.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "desired_count": {"type": "integer", "minimum": 0, "maximum": 100},
+            "min_count": {"type": "integer", "minimum": 0, "maximum": 100},
+            "max_count": {"type": "integer", "minimum": 1, "maximum": 100},
+            "target_cpu_percent": {"type": "integer", "minimum": 10, "maximum": 90},
+            "cpu": {"type": "string", "minLength": 1},
+            "memory": {"type": "string", "minLength": 1}
+          }
+        },
+        "loader": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "workers": {"type": "integer", "minimum": 1, "maximum": 64},
+            "fetch_batch": {
+              "description": "Rows fetched per round trip from the source cursor.",
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 200000
+            },
+            "min_pk": {"type": "integer"},
+            "max_pk": {"type": "integer"},
+            "primary_keys": {
+              "description": "Column the loader splits each table by, when it should not use the table's declared primary key. Keyed by table, either as written in tables[] or bare: {\"merchants\": \"merchant_id\"}. Leave a table out and the loader reads its primary key from the source, which is the normal case. Needed when a table has a composite primary key (the loader splits one numeric range, so one column must be chosen), when the key is not numeric, or when another indexed numeric column is a better split. The loader refuses to guess, so the alternative to this is a failed load.",
+              "type": "object",
+              "additionalProperties": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_$]*$",
+                                       "x-format-hint": "Expected a column name: letters, digits and _."}
+            },
+            "cpu": {"type": "string", "minLength": 1},
+            "memory": {"type": "string", "minLength": 1}
+          }
+        },
+        "broker": {
+          "type": "object",
+          "additionalProperties": false,
+          "x-rejected": {
+            "cluster_mode": "The broker is always cluster-mode disabled. Debezium's Redis sink is not cluster aware, and a single stream is stored in one hash slot, so sharding it would achieve nothing.",
+            "tls": "Not configurable. The broker carries full before and after row images, so TLS is always on and an auth token is always generated."
+          },
+          "properties": {
+            "node_type": {"type": "string", "minLength": 1},
+            "engine_version": {"type": "string", "minLength": 1},
+            "maxmemory_policy": {
+              "description": "Left at noeviction by default. Stream entries carry no TTL, so an evicting policy cannot free anything and a full broker should return an error to Debezium rather than lose events.",
+              "enum": ["noeviction", "allkeys-lru", "volatile-lru", "allkeys-lfu", "volatile-lfu"]
+            }
+          }
+        },
+        "debezium": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "signal_collection": {
+              "description": "Overrides the signalling table ECDL would use for day-2 changes. Default is ecdl_signal_<link name>, qualified the way this engine qualifies table.include.list. Debezium requires the signalling collection to be unique per connector, so do not point two links at one table.",
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_$]*(?:\\.[A-Za-z_][A-Za-z0-9_$]*){0,2}$",
+              "x-format-hint": "qualified name, e.g. Inventory.ecdl_signal_checkout (MySQL) or public.ecdl_signal_checkout (PostgreSQL)"
+            },
+            "snapshot_mode": {
+              "description": "Overrides what 'mode' would choose. initial_load_and_cdc normally uses the parallel loader with a captured log position; setting this to 'initial' falls back to Debezium doing the snapshot itself, which is simpler and much slower.",
+              "enum": ["schema_only", "no_data", "initial", "when_needed", "never"]
+            },
+            "server_id": {
+              "description": "MySQL replication server id. Must be unique across everything reading that source's binlog. Generated per link by default.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_batch_size": {"type": "integer", "minimum": 1},
+            "max_queue_size": {"type": "integer", "minimum": 1},
+            "poll_interval_ms": {"type": "integer", "minimum": 1},
+            "cpu": {"type": "string", "minLength": 1},
+            "memory": {"type": "string", "minLength": 1}
+          }
+        },
+        "cpu_architecture": {
+          "description": "CPU architecture the pipeline's Fargate tasks (Debezium, sink, loader) run on. Must match the images: release.sh builds amd64 and arm64 by default, which runs on either; a single-architecture build only runs on its own architecture. Default x86_64.",
+          "enum": ["x86_64", "arm64"]
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vpc_id": {"type": "string", "pattern": "^vpc-[0-9a-f]+$",
+            "x-format-hint": "Expected a VPC id, like vpc-0abc123def456789."},
+            "subnet_ids": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string", "pattern": "^subnet-[0-9a-f]+$",
+              "x-format-hint": "Expected a subnet id, like subnet-0abc123def456789."}
+            },
+            "assign_public_ip": {"type": "boolean"}
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,426 @@
+/* Links page. Deliberately plain: this screen is read to make a deployment
+   decision, so density and legibility matter more than decoration. */
+.lk { padding: 24px 28px; color: #1f2933; }
+.lk-head h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+.lk-head p { margin: 0 0 18px; max-width: 760px; color: #52606d;
+             font-size: 13px; line-height: 1.55; }
+
+.lk-apierror { background: #fff4f4; border: 1px solid #f0b3b3; color: #8a1f1f;
+               padding: 10px 12px; border-radius: 6px; font-size: 13px;
+               margin-bottom: 14px; }
+
+.lk-split { display: grid; grid-template-columns: minmax(420px, 1fr) 1fr;
+            gap: 18px; align-items: start; }
+@media (max-width: 1100px) { .lk-split { grid-template-columns: 1fr; } }
+
+.lk-pane { background: #fff; border: 1px solid #e1e6eb; border-radius: 8px;
+           padding: 14px; }
+.lk-panehead { display: flex; justify-content: space-between;
+               align-items: center; margin-bottom: 8px;
+               font-size: 12px; text-transform: uppercase;
+               letter-spacing: 0.4px; color: #7b8794; }
+
+.lk-editor { width: 100%; min-height: 380px; box-sizing: border-box;
+             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+             font-size: 12.5px; line-height: 1.5; padding: 12px;
+             border: 1px solid #dfe3e8; border-radius: 6px; resize: vertical;
+             background: #fbfcfd; color: #1f2933; }
+.lk-editor:focus { outline: none; border-color: #7aa7d9;
+                   box-shadow: 0 0 0 3px rgba(122, 167, 217, 0.18); }
+
+.lk-status { margin: 10px 0 4px; font-size: 13px; }
+.lk-good { color: #1e7a45; }
+.lk-bad { color: #a12626; }
+.lk-muted { color: #7b8794; font-size: 12px; }
+.lk-hint { color: #52606d; font-size: 12px; margin-top: 4px; }
+
+.lk-problems { list-style: none; margin: 6px 0 0; padding: 0;
+               font-size: 12.5px; }
+.lk-problems li { display: flex; gap: 8px; padding: 4px 0;
+                  border-top: 1px solid #f0f2f4; }
+.lk-problems code { color: #8a1f1f; white-space: nowrap; }
+
+.lk-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+              margin-top: 14px; }
+.lk-actions button { padding: 7px 14px; font-size: 13px; cursor: pointer;
+                     border: 1px solid #cbd2d9; border-radius: 6px;
+                     background: #f5f7f9; color: #1f2933; }
+.lk-actions button:hover:not(:disabled) { background: #eaeef2; }
+.lk-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
+.lk-actions button.lk-danger { background: #b3261e; border-color: #8a1f1f;
+                               color: #fff; }
+.lk-mini { padding: 3px 8px; font-size: 11px; cursor: pointer;
+           border: 1px solid #cbd2d9; border-radius: 4px; background: #f5f7f9; }
+.lk-confirm { font-size: 12px; color: #b3261e; font-weight: 600;
+              align-self: center; }
+
+.lk-results section { margin-bottom: 22px; }
+.lk-results h2 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
+.lk-results h3 { font-size: 12px; text-transform: uppercase;
+                 letter-spacing: 0.4px; color: #7b8794; margin: 16px 0 6px; }
+
+.lk-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.lk-table th { text-align: left; font-weight: 500; color: #7b8794;
+               padding: 5px 10px 5px 0; white-space: nowrap;
+               vertical-align: top; width: 150px; }
+.lk-table td { padding: 5px 0; word-break: break-all; }
+.lk-tables th { width: auto; }
+.lk-tables thead th { color: #52606d; border-bottom: 1px solid #e1e6eb; }
+.lk-table code { font-size: 11.5px; background: #f5f7f9; padding: 1px 4px;
+                 border-radius: 3px; }
+
+/* Egress is called out because it decides whether tasks get a public IP, and
+   that decision has silently broken a deployment before. */
+.lk-egress { margin: 12px 0; padding: 9px 11px; border-radius: 6px;
+             font-size: 12.5px; border: 1px solid; }
+.lk-egress-nat, .lk-egress-endpoints { background: #f1f8f3;
+                                       border-color: #b7dcc4; color: #1e5c37; }
+.lk-egress-igw { background: #fdf6e9; border-color: #ecd39a; color: #7a5a12; }
+.lk-egress-none { background: #fff4f4; border-color: #f0b3b3; color: #8a1f1f; }
+.lk-egress-unknown { background: #f5f7f9; border-color: #dfe3e8; color: #52606d; }
+
+.lk-warnings { margin-top: 12px; font-size: 12.5px; color: #7a5a12;
+               background: #fdf6e9; border: 1px solid #ecd39a;
+               border-radius: 6px; padding: 9px 11px; line-height: 1.5; }
+.lk-notes { margin-top: 10px; font-size: 12.5px; color: #52606d;
+            line-height: 1.5; }
+
+.lk-steps { margin: 8px 0 0; padding-left: 20px; font-size: 12.5px; }
+.lk-steps li { margin-bottom: 9px; }
+.lk-steps code { font-size: 11.5px; background: #f5f7f9; padding: 1px 5px;
+                 border-radius: 3px; margin-left: 6px; }
+.lk-kind { display: inline-block; font-size: 10px; text-transform: uppercase;
+           letter-spacing: 0.4px; color: #7b8794; border: 1px solid #dfe3e8;
+           border-radius: 3px; padding: 0 4px; margin-right: 6px; }
+.lk-wire { color: #7b8794; font-size: 11.5px; margin-top: 3px; }
+
+.lk-progress { list-style: none; padding-left: 0; }
+.lk-progress li { display: flex; align-items: center; gap: 8px;
+                  color: #7b8794; }
+.lk-dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd2d9;
+          flex: none; }
+.lk-progress li.done { color: #1e7a45; }
+.lk-progress li.done .lk-dot { background: #1e7a45; }
+.lk-progress li.failed { color: #a12626; }
+.lk-progress li.failed .lk-dot { background: #a12626; }
+
+.lk-events { margin-top: 12px; font-size: 12px; }
+.lk-events summary { cursor: pointer; color: #52606d; }
+.lk-events pre { background: #f5f7f9; border: 1px solid #e1e6eb;
+                 border-radius: 6px; padding: 10px; overflow: auto;
+                 max-height: 260px; font-size: 11.5px; line-height: 1.5; }
+
+.lk-empty { color: #7b8794; font-size: 13px; line-height: 1.6; }
+
+/* ── day-2: changing a link that is already running ───────────────────── */
+.lk-day2 { margin-top: 16px; padding-top: 14px; border-top: 1px solid #eef1f4; }
+.lk-day2 p { margin: 8px 0; font-size: 12.5px; line-height: 1.5; }
+.lk-editor-small { min-height: 150px; }
+.lk-day2-title { margin: 0 0 4px; font-size: 14px; color: #35414e; }
+.lk-editexisting { margin-top: 0; padding-top: 0; border-top: none; }
+
+/* ── create / edit mode selector ──────────────────────────────────────── */
+.lk-modetabs { display: flex; gap: 6px; margin: 10px 0 4px; }
+.lk-modetabs button {
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  background: #f0f3f6; color: #48545f; border: 1px solid #d5dce3;
+  border-radius: 6px; padding: 7px 16px;
+}
+.lk-modetabs button:hover { background: #e7ecf1; }
+.lk-modetabs button.is-on {
+  background: #0a58ca; color: #fff; border-color: #0a58ca;
+}
+.lk-panetitle { font-size: 12.5px; font-weight: 600; color: #35414e; }
+.lk-loadrow { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px;
+              flex-wrap: wrap; }
+.lk-loadrow .lk-muted { font-size: 12px; }
+.lk-loadpipe { display: flex; align-items: center; gap: 8px; margin: 6px 0 4px;
+               flex-wrap: wrap; }
+.lk-loadpipe .lk-muted { font-size: 12px; }
+.lk-pipe-select {
+  font: inherit; font-size: 13px; padding: 6px 10px; cursor: pointer;
+  border: 1px solid #cbd2d9; border-radius: 6px; background: #fff; color: #1f2933;
+  min-width: 220px;
+}
+.lk-loadwarn { margin: 4px 0 8px; font-size: 12px; color: #7a5a12;
+               background: #fdf6e3; border: 1px solid #f0e2b8;
+               border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
+.lk-day2-title-sep { margin-top: 14px; padding-top: 12px;
+                     border-top: 1px solid #eef1f4; }
+
+/* ── pipeline editor (on the Deployments page) ────────────────────────── */
+.lk-editor-panel { display: flex; flex-direction: column; gap: 10px; }
+.lk-editor-panel .lk-editor { min-height: 300px; }
+.lk-repair-result { margin-top: 6px; border-top: 1px solid #eef1f4;
+                    padding-top: 10px; }
+/* Editor first, then the example as a full-width code block below it, so long
+   lines are readable rather than squeezed into a side column. */
+.lk-edit-grid { display: flex; flex-direction: column; gap: 16px; }
+.lk-edit-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.lk-examples {
+  border: 1px solid #e2e7ec; border-radius: 6px; padding: 12px; background: #fafbfc;
+}
+.lk-examples h3 { margin: 0 0 8px; font-size: 14px; color: #1d2733; }
+.lk-examples pre {
+  background: #0f1720; color: #e6edf3; padding: 12px 14px; border-radius: 6px;
+  font-size: 12.5px; line-height: 1.55; overflow-x: auto; margin: 0;
+  white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* A highlighted mini button, for the primary action in a detail header. */
+.lk-primary-mini { background: #0a58ca; border-color: #0a58ca; color: #fff; }
+.lk-primary-mini:hover { background: #0949a8; }
+
+.lk-sevline { display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
+              font-size: 12.5px; }
+.lk-sev { display: inline-block; font-size: 10px; text-transform: uppercase;
+          letter-spacing: 0.4px; padding: 1px 6px; border-radius: 3px;
+          border: 1px solid; margin-right: 6px; }
+.lk-sev-none     { background: #f1f8f3; border-color: #b7dcc4; color: #1e5c37; }
+.lk-sev-deploy   { background: #eef4fb; border-color: #b6cde8; color: #1c4a7a; }
+.lk-sev-backfill { background: #fdf6e9; border-color: #ecd39a; color: #7a5a12; }
+.lk-sev-cleanup  { background: #fbf0e6; border-color: #e6bd94; color: #7a4212; }
+.lk-sev-recreate { background: #fff4f4; border-color: #f0b3b3; color: #8a1f1f; }
+
+.lk-changes { list-style: none; margin: 10px 0 0; padding: 0; font-size: 12.5px; }
+.lk-changes li { padding: 9px 0; border-top: 1px solid #f0f2f4; }
+.lk-changes code { font-size: 11.5px; background: #f5f7f9; padding: 1px 5px;
+                   border-radius: 3px; margin-left: 6px; }
+/* The consequence is the point of the whole screen: what a plain redeploy would
+   silently get wrong. */
+.lk-why { margin: 4px 0 2px; color: #1f2933; line-height: 1.5; }
+
+.lk-blocked { margin: 10px 0; padding: 10px 12px; border-radius: 6px;
+              background: #fff4f4; border: 1px solid #f0b3b3; line-height: 1.5; }
+.lk-applied { margin: 12px 0; padding: 9px 11px; border-radius: 6px;
+              background: #f1f8f3; border: 1px solid #b7dcc4; font-size: 12.5px; }
+.lk-needsconfirm { font-size: 10px; text-transform: uppercase;
+                   letter-spacing: 0.4px; color: #7a4212; background: #fbf0e6;
+                   border: 1px solid #e6bd94; border-radius: 3px;
+                   padding: 0 5px; margin-left: 8px; }
+
+.lk-outstanding { margin: 10px 0; padding: 10px 12px; border-radius: 6px;
+                  background: #fbfcfd; border: 1px solid #e1e6eb;
+                  font-size: 12.5px; line-height: 1.5; }
+.lk-outstanding pre { margin: 8px 0 0; background: #f5f7f9;
+                      border: 1px solid #e1e6eb; border-radius: 5px;
+                      padding: 9px; overflow: auto; font-size: 11.5px;
+                      white-space: pre-wrap; word-break: break-all; }
+
+/* ── deployments list ─────────────────────────────────────────────────── */
+.lk-deprow { display: block; width: 100%; text-align: left; cursor: pointer;
+             background: #fff; border: 1px solid #e1e6eb; border-radius: 6px;
+             padding: 9px 11px; margin-bottom: 7px; font-size: 12.5px;
+             color: #1f2933; }
+.lk-deprow:hover { background: #fbfcfd; }
+.lk-deprow.active { border-color: #7aa7d9;
+                    box-shadow: 0 0 0 2px rgba(122, 167, 217, 0.16); }
+.lk-deprow-top { display: flex; justify-content: space-between;
+                 align-items: center; gap: 8px; margin-bottom: 3px; }
+
+.lk-chip { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px;
+           padding: 1px 6px; border-radius: 3px; border: 1px solid; flex: none; }
+.lk-chip-running   { background: #eef4fb; border-color: #b6cde8; color: #1c4a7a; }
+.lk-chip-succeeded { background: #f1f8f3; border-color: #b7dcc4; color: #1e5c37; }
+.lk-chip-failed    { background: #fff4f4; border-color: #f0b3b3; color: #8a1f1f; }
+.lk-chip-unknown   { background: #f5f7f9; border-color: #dfe3e8; color: #52606d; }
+
+/* ── sidebar: the superseded group ────────────────────────────────────── */
+.group-title-legacy { font-size: 11px; text-transform: uppercase;
+                      letter-spacing: 0.5px; opacity: 0.75; }
+.sidebar-note { font-size: 11px; line-height: 1.5; opacity: 0.7;
+                margin: 4px 10px 8px; }
+
+/* ── view tabs: Guided | File ───────────────────────────────────────────────
+   Deliberately tabs rather than two menu entries. They are two views of one
+   link, and presenting them as separate destinations is how a UI ends up with
+   two ways to make the same thing. */
+.lk-viewtabs { display: flex; gap: 2px; }
+.lk-viewtabs button {
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  background: transparent; color: #6b7784; border: 1px solid transparent;
+  border-radius: 5px; padding: 4px 12px;
+}
+.lk-viewtabs button:hover { color: #35414e; background: #eef1f4; }
+.lk-viewtabs button.is-on {
+  background: #fff; color: #0a58ca; border-color: #cfe2ff;
+  box-shadow: 0 0 0 1px #cfe2ff inset;
+}
+
+/* The day-2 panel's own errors belong to the day-2 panel. A YAML parser message at
+   the top of the page reads as the page having broken, when the actual situation is
+   "that text area expects a config and got something else". */
+.lk-comparehint {
+  margin-top: 6px; padding: 8px 10px; border-radius: 5px;
+  background: #fff8e6; border: 1px solid #f0d9a0; color: #6b5312;
+  font-size: 12.5px; line-height: 1.45;
+}
+
+/* ── run history ────────────────────────────────────────────────────────────
+   One row per run, newest first. Replaces one panel per KIND of result, which
+   always showed the latest of each and so put a ten-minute-old Resolve directly
+   above a fresh Deployment with nothing to distinguish them. */
+.lk-runshead {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: #6b7784; padding-bottom: 6px;
+  border-bottom: 1px solid #e2e7ec; margin-bottom: 8px;
+}
+
+.lk-runs { display: flex; flex-direction: column; gap: 6px; }
+
+.lk-run { border: 1px solid #d8dee6; border-radius: 6px; background: #fff; }
+.lk-run-running { border-color: #9fc0e8; }
+.lk-run-bad { border-color: #f0c0bb; }
+/* Older runs recede rather than disappear: still readable, clearly not current. */
+.lk-run.is-stale { background: #fcfcfd; }
+.lk-run.is-stale .lk-runkind,
+.lk-run.is-stale .lk-runlink { color: #7b8794; }
+
+.lk-runhead {
+  display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;
+  font: inherit; cursor: pointer; background: none; border: 0;
+  padding: 8px 11px;
+}
+.lk-runhead:hover { background: #fbfdff; }
+.lk-runmark { color: #6b7784; font-size: 11px; }
+.lk-runkind {
+  font-weight: 700; font-size: 12px; color: #1d2733; min-width: 58px;
+}
+.lk-runlink {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  color: #35414e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 34%;
+}
+.lk-runstatus { flex: 1; font-size: 12px; color: #5a6672; }
+.lk-runstatus-ok { color: #1f5a2d; }
+.lk-runstatus-bad { color: #8a2a20; }
+.lk-runstatus-running { color: #17457f; }
+.lk-runtime { font-size: 11px; color: #8b959f; flex: 0 0 auto; }
+
+.lk-stalenote {
+  margin: 0 11px 8px; padding: 7px 9px; border-radius: 5px;
+  background: #fff8e6; border: 1px solid #f0d9a0; color: #6b5312;
+  font-size: 12px; line-height: 1.45;
+}
+
+.lk-runbody { padding: 0 11px 12px; border-top: 1px solid #eef1f4; }
+.lk-runbody > section { padding-top: 10px; }
+.lk-runbody h2 { font-size: 14px; margin: 0 0 8px; }
+
+/* ── deployment steps ───────────────────────────────────────────────────────
+   Four states, not two. Marking steps only done/not-done meant a deployment in
+   flight showed six identical rows, so there was nothing to distinguish working
+   from stuck. */
+.lk-progress li {
+  display: grid; grid-template-columns: 14px 1fr auto; gap: 8px;
+  align-items: baseline; padding: 5px 0;
+}
+.lk-stepname {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+}
+.lk-stepstate { font-size: 11.5px; color: #8b959f; }
+.lk-stepdetail {
+  grid-column: 2 / 4; font-size: 11.5px; color: #17457f; line-height: 1.45;
+  word-break: break-word;
+}
+
+.lk-progress li.done .lk-dot { background: #1f7a35; border-color: #1f7a35; }
+.lk-progress li.done .lk-stepstate { color: #1f5a2d; }
+.lk-progress li.failed .lk-dot { background: #b3261e; border-color: #b3261e; }
+.lk-progress li.failed .lk-stepstate { color: #8a2a20; font-weight: 600; }
+.lk-progress li.pending .lk-dot { background: #fff; border-color: #cfd6de; }
+.lk-progress li.pending .lk-stepname { color: #8b959f; }
+
+/* The step in progress is the one worth looking at, so it is the only one that
+   moves. */
+.lk-progress li.running .lk-dot {
+  background: #0a58ca; border-color: #0a58ca;
+  animation: lk-pulse 1.4s ease-in-out infinite;
+}
+.lk-progress li.running .lk-stepstate { color: #0a58ca; font-weight: 600; }
+@keyframes lk-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lk-progress li.running .lk-dot { animation: none; }
+}
+
+/* ── deployment detail: header actions, output values ──────────────────────
+   Added with the deploy-to-monitor handoff. The outputs used to render as a
+   comma-joined list of key NAMES, which is why they needed their own block. */
+.lk-detailhead {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.lk-detailhead h2 { margin: 0; flex: 1 1 auto; }
+
+.lk-outblock { margin-bottom: 10px; }
+.lk-outblock h4 {
+  margin: 8px 0 4px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: .3px; color: #7f8c8d;
+}
+.lk-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; word-break: break-all;
+}
+
+/* Re-deploy confirmation. Not an error (it is not red): the pipeline exists and
+   the question is whether to update it in place. */
+.lk-redeploy {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px; margin: 10px 0;
+  background: #fdf6e9; border: 1px solid #e6c07b; border-left: 3px solid #e0a94d;
+  border-radius: 6px;
+}
+.lk-redeploy strong { color: #8a6d3b; font-size: 14px; }
+.lk-redeploy span { color: #6b5a34; font-size: 13px; }
+.lk-redeploy-actions { display: flex; gap: 8px; margin-top: 4px; }
+
+/* ── Wiring / components view ────────────────────────────────────────────
+   The topology a link is deployed with: source -> broker -> target, the
+   streams, and the live service counts. Built from the CDC stack parameters. */
+.lk-wiring { margin: 10px 0; }
+
+/* The at-a-glance flow. Nodes sit in a row with arrows between; wraps on
+   narrow panes rather than overflowing. */
+.lk-flow {
+  display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap;
+  margin: 6px 0 12px;
+}
+.lk-flow-node {
+  flex: 1 1 180px; min-width: 160px;
+  padding: 8px 10px; border: 1px solid #e1e6eb; border-radius: 6px;
+  background: #fbfcfd;
+}
+.lk-flow-role {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .4px;
+  color: #9aa5b1;
+}
+.lk-flow-name { font-size: 13px; font-weight: 600; color: #323f4b; margin: 1px 0 2px; }
+.lk-flow-arrow {
+  display: flex; align-items: center; color: #9aa5b1; font-size: 18px;
+}
+
+/* source / broker / target detail tables, three across, wrapping as needed. */
+.lk-wiring-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px; margin-bottom: 6px;
+}
+
+.lk-findings { list-style: none; padding: 0; margin: 8px 0; }
+.lk-finding { display: flex; gap: 6px; align-items: baseline; padding: 4px 6px;
+              border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+.lk-finding-block { background: #fdecea; color: #8a1f1f; }
+.lk-finding-warn { background: #fff4e0; color: #7a4d00; }
+
+.lk-mini.lk-danger-mini { color: #b3261e; border-color: #e3b4b0; margin-left: auto; }
+.lk-delete .lk-table { margin: 8px 0; }
+.lk-followups { margin: 4px 0 12px 18px; font-size: 13px; }
+.lk-followups li { margin-bottom: 4px; }
+.lk-deleteconfirm { margin-top: 12px; display: flex; flex-direction: column; gap: 6px;
+                    max-width: 360px; }
+
+.lk-showdeleted { margin-top: 8px; }
+.lk-linkbtn { background: none; border: none; padding: 0; color: #1f5fbf;
+              cursor: pointer; text-decoration: underline; font: inherit; }

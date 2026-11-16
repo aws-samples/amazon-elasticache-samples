@@ -1,0 +1,304 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  ECDL CDC broker (self-contained) — single-shard, cluster-mode DISABLED, Multi-AZ
+  ElastiCache for Valkey, with its own subnet group, security group, parameter
+  group and generated auth token. Used by the quickstart `cdc` subcommand as the
+  durable Streams buffer between Debezium and the Go sink.
+
+  Cluster-mode disabled is a requirement, not a default: Debezium's Redis sink is
+  single-connection and not cluster aware, and a single Valkey stream lives in one
+  hash slot, so sharding the broker would achieve nothing.
+
+  This cluster carries full before-and-after row images from the customer's
+  database while they are in flight. It used to be created with in-transit
+  encryption off and no credential, reachable by anything in the VPC CIDR — which
+  was acceptable for an internal benchmark setup and is not acceptable for a
+  customer whose tables hold personal or payment data. TLS is now on, an auth
+  token is generated into Secrets Manager at deploy time, and the CIDR rule is
+  optional.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Default: ecdl-demo-broker-cache
+    Description: ReplicationGroupId for the broker cache.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least 2 subnets in different AZs.
+  AllowedCIDR:
+    Type: String
+    Default: ''
+    Description: >
+      Optional CIDR allowed to reach the broker on 6379, in addition to the
+      pipeline's own security group which the CDC stack grants. The control plane
+      needs this to read stream and consumer-group state for the dashboard, since
+      it does not run in the pipeline's security group. With the auth token in
+      place, reaching the port no longer means being able to read the data --
+      which is the point of the token. Leave empty for the most restrictive setup and
+      pass MonitorSecurityGroupId instead, which is narrower than any CIDR.
+  MonitorSecurityGroupId:
+    Type: String
+    Default: ''
+    Description: >
+      Security group allowed to reach the broker on 6379, for the control plane
+      that reads the dashboard. This is the narrow version of AllowedCIDR and is
+      the preferred one.
+
+      Not optional in practice if you want observability. The CDC stack grants the
+      pipeline's own task security group, and nothing else, so without this the
+      control plane cannot open a socket to the broker -- and the broker is where
+      stream depth, consumer-group lag, pending entries, DLQ length and Debezium's
+      committed offset all live. The symptom is specific and misleading: ECS
+      reports the tasks healthy, so Debezium and Sink show "1/1 tasks" while every
+      broker-derived number stays blank and delivery integrity reads "unknown".
+  NodeType:
+    Type: String
+    Default: cache.t4g.small
+    Description: >
+      The broker's job is absorbing bursts, so its memory ceiling is what matters.
+      cache.t4g.small is ~1.3 GB, and a CDC event is roughly 1.0-1.2 KB, so it
+      holds on the order of a million queued events. Use a larger node type if the sink may fall
+      far behind.
+  EngineVersion:
+    Type: String
+    Default: '9.0'
+  ParameterGroupFamily:
+    Type: String
+    Default: valkey9
+    Description: >
+      Must match EngineVersion. Cluster-mode-disabled families have no
+      ".cluster.on" suffix.
+
+  SnapshotRetentionLimit:
+    Type: Number
+    Default: 3
+    MinValue: 0
+    MaxValue: 35
+    Description: >
+      Days of automatic daily snapshots. The broker holds Debezium's committed
+      offset and the captured schema history for every link on it; with no
+      snapshot, losing both nodes means re-snapshotting the source. A restored
+      snapshot holds an OLDER offset, so Debezium replays from it (duplicates,
+      which the sink applies idempotently) as long as the source still retains
+      that log position. 0 disables snapshots.
+
+Conditions:
+  HasAllowedCIDR: !Not [!Equals [!Ref AllowedCIDR, '']]
+  HasMonitorSG: !Not [!Equals [!Ref MonitorSecurityGroupId, '']]
+
+Resources:
+  # ═══════════════════════════════════════════════════════════════
+  # Auth token, generated at deploy time so nobody ever chooses or
+  # handles it. ElastiCache requires 16-128 printable ASCII characters and
+  # forbids '/', '"', '@' and spaces, hence the exclusions below.
+  # ═══════════════════════════════════════════════════════════════
+  # Customer-managed key for the auth secret and the broker log group. About
+  # $1/month.
+  #
+  # The key policy delegates to IAM; each secret reader is granted kms:Decrypt
+  # in its own role, limited to Secrets Manager and to this secret's ARN (the
+  # encryption context Secrets Manager supplies): the CDC tasks' execution role
+  # (ecdl-cdc-ecs.yaml) and the control plane, which also lets CloudFormation
+  # resolve AuthToken below.
+  BrokerKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Description: !Sub 'Encrypts the ${ClusterName} broker auth secret and logs'
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccountAdministersThroughIam
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: CloudWatchLogsForThisStacksLogGroup
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action: [kms:Encrypt*, kms:Decrypt*, kms:ReEncrypt*, kms:GenerateDataKey*, kms:Describe*]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${AWS::StackName}/*'
+      Tags:
+        # The control plane's IAM policy scopes key management to this tag.
+        - Key: ecdl:stack
+          Value: !Ref AWS::StackName
+  BrokerAuthSecret:
+    Type: AWS::SecretsManager::Secret
+    Metadata:
+      guard:
+        # Not rotated automatically yet. Rotating this token means changing it
+        # on ElastiCache in two steps (ROTATE, then SET) and restarting the
+        # Debezium and sink tasks in between; a rotation schedule without that
+        # function would lock the pipeline out. The manual, no-outage procedure
+        # is in docs/operations.md ("Rotating credentials").
+        SuppressedRules:
+          - SECRETSMANAGER_ROTATION_ENABLED_CHECK
+    Properties:
+      # Deliberately unnamed. A fixed name plus Secrets Manager's recovery window
+      # means a teardown followed by a redeploy fails with "already scheduled for
+      # deletion" for up to 30 days. Consumers are given the ARN via the stack
+      # output, so a generated name has no downside.
+      Description: !Sub 'Auth token for the ECDL broker ${ClusterName}'
+      KmsKeyId: !Ref BrokerKey
+      GenerateSecretString:
+        # A plaintext secret, not JSON: that is the shape both the Go sink and
+        # the Python loader read as "this is an auth token".
+        PasswordLength: 64
+        # Alphanumerics only. ElastiCache is far stricter about auth tokens than
+        # Secrets Manager is about passwords: the ONLY punctuation it accepts is
+        # ! & # $ ^ < > and -. An earlier version excluded a handful of characters
+        # and allowed the rest, so roughly any generated token containing % * ( )
+        # + = { } [ ] : ; , . ? | or ~ was rejected at create time with nothing
+        # more helpful than "Invalid AuthToken provided", after the stack had
+        # already built its secret, parameter group and subnet group.
+        #
+        # Excluding all punctuation rather than allowing the eight legal specials:
+        # 64 alphanumeric characters is ~381 bits, so a wider character set adds no
+        # useful strength, and a token that cannot be quoted wrongly in a shell
+        # or a properties file is more valuable than the extra entropy.
+        ExcludePunctuation: true
+        IncludeSpace: false
+      Tags:
+        - Key: Project
+          Value: ECDL
+        - Key: Role
+          Value: broker-auth
+
+  BrokerParameterGroup:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      CacheParameterGroupFamily: !Ref ParameterGroupFamily
+      Description: !Sub '${ClusterName} broker parameters'
+      Properties:
+        # No broker template used to set this at all, so the broker ran on
+        # whatever the ElastiCache default happened to be. It matters: stream
+        # entries carry no TTL, so an evicting policy has nothing it is allowed
+        # to free and would either evict nothing or start discarding data.
+        # noeviction makes a full broker return an error to Debezium, which
+        # retries, instead of losing events.
+        maxmemory-policy: noeviction
+
+  BrokerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${ClusterName} broker access'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: !If
+        - HasAllowedCIDR
+        - - IpProtocol: tcp
+            FromPort: 6379
+            ToPort: 6379
+            CidrIp: !Ref AllowedCIDR
+            Description: Broker client access (in-VPC, optional)
+        - !Ref 'AWS::NoValue'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-sg'
+
+  # Kept as its own resource rather than folded into SecurityGroupIngress above,
+  # because that property is already an !If on AllowedCIDR and nesting a second
+  # optional entry inside one list is hard to read. A separate conditional resource
+  # is also purely additive to stacks that already exist.
+  BrokerMonitorIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasMonitorSG
+    Properties:
+      GroupId: !Ref BrokerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 6379
+      ToPort: 6379
+      SourceSecurityGroupId: !Ref MonitorSecurityGroupId
+      Description: Control plane reading stream and consumer-group state
+
+  BrokerSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: !Sub '${ClusterName} broker subnets (Multi-AZ)'
+      SubnetIds: !Ref SubnetIds
+
+  BrokerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      # Under /ecs/<prefix>-... so the control plane's log grants already cover it.
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/broker'
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt BrokerKey.Arn
+
+  Broker:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupId: !Ref ClusterName
+      ReplicationGroupDescription: ECDL CDC broker (single shard, cluster-mode disabled, Multi-AZ)
+      Engine: valkey
+      EngineVersion: !Ref EngineVersion
+      CacheNodeType: !Ref NodeType
+      CacheParameterGroupName: !Ref BrokerParameterGroup
+      NumCacheClusters: 2            # 1 primary + 1 replica (cluster mode disabled)
+      AutomaticFailoverEnabled: true
+      MultiAZEnabled: true
+      CacheSubnetGroupName: !Ref BrokerSubnetGroup
+      SecurityGroupIds:
+        - !Ref BrokerSecurityGroup
+      # TLS and the auth token go together: ElastiCache will not accept an auth
+      # token without in-transit encryption, which is the right constraint --
+      # sending a credential over a plaintext connection would be pointless.
+      TransitEncryptionEnabled: true
+      AtRestEncryptionEnabled: true
+      AuthToken: !Sub '{{resolve:secretsmanager:${BrokerAuthSecret}:SecretString}}'
+      Port: 6379
+      SnapshotRetentionLimit: !Ref SnapshotRetentionLimit
+      # Engine and slow logs to CloudWatch, so a broker problem (OOM rejections,
+      # failovers, slow commands) can be investigated after the fact.
+      LogDeliveryConfigurations:
+        - DestinationType: cloudwatch-logs
+          LogFormat: json
+          LogType: slow-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref BrokerLogGroup
+        - DestinationType: cloudwatch-logs
+          LogFormat: json
+          LogType: engine-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref BrokerLogGroup
+      Tags:
+        - Key: Project
+          Value: ECDL
+        - Key: Role
+          Value: broker-cdc
+
+Outputs:
+  PrimaryEndpoint:
+    Description: Primary endpoint host for the Debezium sink + Go sink.
+    Value: !GetAtt Broker.PrimaryEndPoint.Address
+  Port:
+    Value: !GetAtt Broker.PrimaryEndPoint.Port
+  SecurityGroupId:
+    Description: Broker security group (pipeline tasks are granted ingress to it).
+    Value: !Ref BrokerSecurityGroup
+  AuthSecretArn:
+    Description: >
+      Secrets Manager ARN holding the broker auth token. Pass this to the CDC
+      stack as BrokerSecretArn; both Debezium and the sink read it at runtime.
+    Value: !Ref BrokerAuthSecret
+  TransitEncryption:
+    Description: Pass to the CDC stack as BrokerSSL.
+    Value: 'true'
+  ReplicationGroupId:
+    Description: >
+      Pass to the CDC stack as BrokerReplicationGroupId, which alarms on the
+      broker's memory (a full broker refuses Debezium's writes).
+    Value: !Ref Broker
+  LogGroupName:
+    Value: !Ref BrokerLogGroup

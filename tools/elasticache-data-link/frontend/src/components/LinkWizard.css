@@ -1,0 +1,254 @@
+/* LinkWizard — the guided path to a link. Shares the palette of Links.css so
+   switching between the form and the editor does not look like two products. */
+
+.wz { display: flex; flex-direction: column; gap: 16px; }
+
+/* ── step rail ─────────────────────────────────────────────────────────── */
+.wz-steps {
+  display: flex; gap: 8px; list-style: none; margin: 0; padding: 0;
+  flex-wrap: wrap;
+}
+.wz-steps li { flex: 1 1 140px; }
+.wz-steps button {
+  width: 100%; text-align: left; background: #fff; cursor: pointer;
+  border: 1px solid #d8dee6; border-radius: 6px; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 2px; font: inherit;
+}
+.wz-steps button:disabled { cursor: default; opacity: 0.55; }
+.wz-steps li.is-current button { border-color: #0a58ca; box-shadow: 0 0 0 2px #cfe2ff; }
+.wz-steps li.is-done button { background: #f2f8f4; border-color: #bcd9c6; }
+.wz-stepnum {
+  font-size: 11px; font-weight: 700; color: #5a6672; letter-spacing: 0.04em;
+}
+.wz-steplabel { font-weight: 600; font-size: 14px; color: #1d2733; }
+.wz-stephint { font-size: 11px; color: #6b7784; }
+
+/* ── banners ───────────────────────────────────────────────────────────── */
+.wz-banner {
+  border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.45;
+  border: 1px solid transparent;
+}
+.wz-banner-warn { background: #fff8e6; border-color: #f0d9a0; color: #6b5312; }
+.wz-banner-bad { background: #fdecea; border-color: #f5c2bd; color: #7a231b; }
+
+/* ── body ──────────────────────────────────────────────────────────────── */
+.wz-body > section { display: flex; flex-direction: column; gap: 14px; }
+.wz-body h2 { margin: 0; font-size: 17px; color: #1d2733; }
+.wz-body h3 { margin: 8px 0 0; font-size: 14px; color: #35414e; }
+.wz-muted { color: #6b7784; font-size: 12.5px; margin: 0; line-height: 1.5; }
+.wz-selected { font-size: 13px; color: #24572f; margin: 0; }
+
+.wz-field { display: flex; flex-direction: column; gap: 4px; }
+.wz-label { font-weight: 600; font-size: 13px; color: #35414e; }
+.wz-hint { font-size: 11.5px; color: #6b7784; line-height: 1.45; }
+.wz-err { font-size: 12px; color: #b3261e; }
+
+.wz-input {
+  font: inherit; font-size: 13px; padding: 7px 9px; border: 1px solid #cfd6de;
+  border-radius: 5px; background: #fff; color: #1d2733; min-width: 0;
+}
+.wz-input:focus { outline: 2px solid #cfe2ff; border-color: #0a58ca; }
+.wz-textarea { min-height: 90px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wz-select { cursor: pointer; }
+.wz-op { max-width: 80px; }
+
+.wz-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.wz-row .wz-input { flex: 1 1 120px; }
+.wz-from { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+.wz-arrow { color: #6b7784; }
+
+/* ── choices ───────────────────────────────────────────────────────────── */
+.wz-list, .wz-modes { display: flex; flex-direction: column; gap: 6px; }
+.wz-choice {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left;
+  font: inherit; cursor: pointer; background: #fff; color: #1d2733;
+  border: 1px solid #d8dee6; border-radius: 6px; padding: 9px 11px;
+}
+.wz-choice:hover:not(.is-disabled) { border-color: #9fb3c8; background: #fbfdff; }
+.wz-choice.is-selected { border-color: #0a58ca; box-shadow: 0 0 0 2px #cfe2ff; background: #f7fbff; }
+/* Unusable entries stay readable rather than being hidden: the reason they
+   cannot be used is the useful part. */
+.wz-choice.is-disabled { cursor: not-allowed; opacity: 0.7; background: #fafbfc; }
+.wz-choice-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.wz-choice-title { font-weight: 600; font-size: 13.5px; word-break: break-all; }
+.wz-choice-right { flex: 0 0 auto; }
+.wz-choice-line {
+  font-size: 12px; color: #5a6672; word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.wz-choice-note { font-size: 12px; color: #7a5a12; line-height: 1.45; }
+
+.wz-chip {
+  display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+  border-radius: 10px; white-space: nowrap;
+}
+.wz-chip-ok { background: #e4f2e8; color: #1f5a2d; }
+.wz-chip-bad { background: #fdecea; color: #8a2a20; }
+.wz-chip-warn { background: #fff4d6; color: #6b5312; }
+.wz-chip-info { background: #e7f0fb; color: #17457f; }
+.wz-chip-plain { background: #eef1f4; color: #4b5764; }
+
+/* ── prerequisites ─────────────────────────────────────────────────────── */
+.wz-prereq {
+  border: 1px solid #d8dee6; border-radius: 6px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 5px; font-size: 12.5px;
+  background: #fbfcfd;
+}
+.wz-prereq > div { display: flex; gap: 7px; align-items: baseline; flex-wrap: wrap; }
+.wz-prereq .is-bad { color: #7a231b; }
+.wz-fix { flex-basis: 100%; font-size: 12px; color: #6b5312; line-height: 1.45; }
+
+/* ── transforms ────────────────────────────────────────────────────────── */
+.wz-tf {
+  border: 1px solid #e2e7ec; border-radius: 6px; padding: 12px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.wz-tf h3 { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wz-cols { display: flex; flex-wrap: wrap; gap: 5px; }
+.wz-pill {
+  font: inherit; font-size: 12px; cursor: pointer; padding: 3px 9px;
+  border-radius: 12px; border: 1px solid #cfd6de; background: #fff; color: #4b5764;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.wz-pill.is-on { background: #0a58ca; border-color: #0a58ca; color: #fff; }
+
+/* ── denormalize rule ──────────────────────────────────────────────────── */
+.wz-denorm {
+  border: 1px solid #e2e7ec; border-radius: 6px; padding: 10px;
+  display: flex; flex-direction: column; gap: 8px; background: #fafbfc;
+}
+.wz-denorm-warn { color: #7a5a12; }
+.wz-editnote {
+  padding: 10px 12px; border: 1px solid #cfe2ff; background: #f2f7ff;
+  border-radius: 6px; color: #35414e;
+}
+
+/* ── "how do I…?" examples ────────────────────────────────────────────── */
+.wz-help {
+  border: 1px solid #e2e7ec; border-radius: 6px; background: #fafbfc;
+  padding: 8px 12px;
+}
+.wz-help summary {
+  cursor: pointer; font-size: 13px; font-weight: 600; color: #0a58ca;
+}
+.wz-help-list { margin: 10px 0 2px; padding-left: 18px; }
+.wz-help-list li { font-size: 12.5px; color: #35414e; line-height: 1.6;
+                   margin-bottom: 6px; }
+.wz-help-list code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  background: #eef1f4; padding: 1px 5px; border-radius: 4px; color: #1f2933;
+}
+
+/* ── review ────────────────────────────────────────────────────────────── */
+.wz-summary { border-collapse: collapse; font-size: 13px; }
+.wz-summary th {
+  text-align: left; padding: 4px 12px 4px 0; color: #6b7784; font-weight: 600;
+  vertical-align: top; white-space: nowrap;
+}
+.wz-summary td { padding: 4px 0; color: #1d2733; word-break: break-word; }
+
+/* ── nav ───────────────────────────────────────────────────────────────── */
+.wz-nav {
+  display: flex; align-items: center; gap: 12px; border-top: 1px solid #e2e7ec;
+  padding-top: 12px;
+}
+.wz-blocked { flex: 1; font-size: 12.5px; color: #7a5a12; }
+.wz-primary {
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  background: #0a58ca; color: #fff; border: 1px solid #0a58ca;
+  border-radius: 5px; padding: 7px 16px;
+}
+.wz-primary:disabled { background: #aebfd4; border-color: #aebfd4; cursor: not-allowed; }
+.wz-mini {
+  font: inherit; font-size: 12px; cursor: pointer; background: #fff;
+  border: 1px solid #cfd6de; border-radius: 5px; padding: 5px 11px; color: #35414e;
+}
+.wz-mini:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Fields that appear once a source is chosen. Set apart so it reads as "and now
+   these", not as more of the list above. */
+.wz-after {
+  display: flex; flex-direction: column; gap: 14px;
+  border-top: 1px solid #e2e7ec; padding-top: 14px; margin-top: 4px;
+}
+.wz-after h3 { margin: 0; }
+
+/* A field the Next button is waiting on. The blocker message names it; this is
+   what makes it findable without reading the message twice. */
+.wz-input.is-needed { border-color: #d9a63a; background: #fffdf7; }
+.wz-input.is-needed:focus { outline: 2px solid #f5e3b8; border-color: #d9a63a; }
+
+.wz-blocked:not(:empty)::before { content: '↑ '; }
+
+/* ── review actions ────────────────────────────────────────────────────── */
+.wz-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.wz-deploy { border-top: 1px solid #e2e7ec; padding-top: 14px; }
+
+.wz-danger {
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  background: #b3261e; color: #fff; border: 1px solid #b3261e;
+  border-radius: 5px; padding: 7px 16px;
+}
+.wz-danger:disabled { background: #d6a5a1; border-color: #d6a5a1; cursor: not-allowed; }
+
+/* Not a modal. A modal is something you dismiss; this is something to read. */
+.wz-confirm {
+  display: flex; flex-direction: column; gap: 9px;
+  border: 1px solid #f5c2bd; background: #fdf3f2; border-radius: 6px;
+  padding: 12px 14px;
+}
+.wz-confirm strong { color: #7a231b; font-size: 13.5px; }
+.wz-confirm span { color: #6b4b47; font-size: 12.5px; line-height: 1.5; }
+.wz-confirm code { font-size: 12px; }
+
+/* ── pickers ────────────────────────────────────────────────────────────────
+   A dropdown plus a typed-ARN fallback, replacing a list of cards that spent
+   three lines per resource on an identifier, an engine, a status and a full
+   endpoint. Six databases came to eighteen lines of scrolling before reaching the
+   fields underneath, and the one thing worth seeing -- which you had picked -- was
+   the hardest to find. */
+.wz-arn {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+}
+
+/* A text button for the mode switch. Not styled as a button: it is a change of
+   input method, not an action on the link. */
+.wz-link {
+  align-self: flex-start; background: none; border: 0; padding: 2px 0;
+  font: inherit; font-size: 12px; color: #0a58ca; cursor: pointer;
+  text-decoration: underline;
+}
+.wz-link:hover { color: #073d8c; }
+
+/* Detail of the CHOSEN item, below the control that chose it. */
+.wz-chosen {
+  margin-top: 2px; padding: 7px 9px; border-radius: 5px; background: #f7f9fb;
+  border: 1px solid #e2e7ec; display: flex; flex-direction: column; gap: 3px;
+}
+.wz-chosen-line {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  color: #5a6672; word-break: break-all;
+}
+.wz-chosen-note { font-size: 12px; color: #7a5a12; line-height: 1.45; }
+
+/* Typing names, always available rather than only on failure. */
+.wz-manual { font-size: 12.5px; }
+.wz-manual > summary {
+  cursor: pointer; color: #0a58ca; padding: 4px 0; width: fit-content;
+}
+.wz-manual[open] > summary { margin-bottom: 8px; }
+.wz-addcol { margin-bottom: 6px; }
+.wz-addcol .wz-input { max-width: 220px; flex: 0 1 220px; }
+
+/* Source-kind toggle (AWS vs self-managed) reuses .wz-modes for the two cards;
+   this only adds a little breathing room above the picker that follows. */
+.wz-kind { margin-bottom: 12px; }
+
+/* The "connect over TLS" checkbox row on an external source. A plain inline
+   checkbox + label, aligned, not a full .wz-field. */
+.wz-check {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: #24343f; margin: 8px 0 2px; cursor: pointer;
+}
+.wz-check input { width: 15px; height: 15px; cursor: pointer; }

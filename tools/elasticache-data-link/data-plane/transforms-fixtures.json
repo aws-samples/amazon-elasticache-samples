@@ -1,0 +1,49 @@
+{
+  "_doc": "Golden fixtures. Both the Go and Python transform engines must produce these exact results for the spec in transforms.json. keep=false means the row is dropped (loader skips it; sink DELETEs the key).",
+  "cases": [
+    {
+      "name": "kept-basic",
+      "table": "orders",
+      "pk": "id",
+      "row": { "id": "7", "category": "food", "amount": "12.50" },
+      "keep": true,
+      "key": "orders:7",
+      "fields": { "id": "7", "cat": "food", "amount": "12.50", "amount_cents": "1250" }
+    },
+    {
+      "name": "kept-integer-amount",
+      "table": "orders",
+      "pk": "id",
+      "row": { "id": "42", "category": "toys", "amount": "3" },
+      "keep": true,
+      "key": "orders:42",
+      "fields": { "id": "42", "cat": "toys", "amount": "3", "amount_cents": "300" }
+    },
+    {
+      "name": "kept-fractional-cents",
+      "table": "orders",
+      "pk": "id",
+      "row": { "id": "9", "category": "misc", "amount": "0.015" },
+      "keep": true,
+      "key": "orders:9",
+      "fields": { "id": "9", "cat": "misc", "amount": "0.015", "amount_cents": "1.5" }
+    },
+    {
+      "name": "dropped-negative",
+      "table": "orders",
+      "pk": "id",
+      "row": { "id": "8", "category": "x", "amount": "-5" },
+      "keep": false,
+      "key": "orders:8"
+    },
+    {
+      "name": "column-dropped-extra",
+      "table": "orders",
+      "pk": "id",
+      "row": { "id": "11", "category": "a", "amount": "1", "secret": "hide-me" },
+      "keep": true,
+      "key": "orders:11",
+      "fields": { "id": "11", "cat": "a", "amount": "1", "amount_cents": "100" }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+/* TokenBar. Deliberately a thin strip: it is a standing condition, not an alert,
+   and the dashboards below it stay usable while unauthenticated. */
+.tb { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+      padding: 8px 14px; font-size: 12.5px; line-height: 1.5;
+      border-bottom: 1px solid #e1e6eb; }
+.tb strong { font-weight: 600; }
+.tb button { padding: 4px 10px; font-size: 12px; cursor: pointer;
+             border: 1px solid #cbd2d9; border-radius: 5px; background: #fff; }
+.tb button:hover { background: #f5f7f9; }
+.tb form { display: flex; gap: 6px; align-items: center; }
+.tb input { padding: 4px 8px; font-size: 12px; border: 1px solid #cbd2d9;
+            border-radius: 5px; min-width: 240px; }
+.tb-note { color: #7b8794; font-size: 11.5px; }
+
+/* A token is needed. Amber: a condition to resolve, not a failure. */
+.tb-need { background: #fdf6e9; border-bottom-color: #ecd39a; color: #7a5a12; }
+
+/* The SERVER has none configured. Red, because nobody can write and typing a
+   token here will not fix it. */
+.tb-server { background: #fff4f4; border-bottom-color: #f0b3b3; color: #8a1f1f; }
+
+/* Authentication switched off entirely. Loudest of the three: this control plane
+   can create AWS infrastructure. */
+
+.tb-ok { background: #f1f8f3; border-bottom-color: #b7dcc4; color: #1e5c37; }
+.tb-dot { width: 7px; height: 7px; border-radius: 50%; background: #1e7a45; }

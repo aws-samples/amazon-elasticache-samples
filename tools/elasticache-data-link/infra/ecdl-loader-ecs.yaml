@@ -1,0 +1,439 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  ECDL initial load — a run-once Fargate task that reads the current contents of a
+  table straight from the source and writes them into the target cache, bypassing
+  Debezium and the broker entirely.
+
+  WHY THIS EXISTS. `mode: initial_load` had no deployable artifact at all: the
+  parallel loader could only be run as a local python3 process from a laptop or a
+  bastion, so an initial load was never something the control plane could do. It
+  also means a load no longer depends on whoever ran it having source and cache
+  reachability, the right Python packages, and the database password on their
+  machine.
+
+  This stack creates the TASK DEFINITION and its networking; it does not run
+  anything. The control plane calls RunTask once per table, which is what makes it
+  a load rather than a service: the container reads, writes, and exits.
+
+Parameters:
+  PermissionsBoundaryArn:
+    Type: String
+    Default: ''
+    AllowedPattern: '^(arn:aws[a-z-]*:iam::[0-9]{12}:policy/[A-Za-z0-9+=,.@_/-]+)?$'
+    Description: >
+      Permissions boundary for this stack's task roles. The control plane always
+      sets it (its own IAM policy refuses to create a role without it); empty
+      leaves the roles without one.
+
+  ClusterName:
+    Type: String
+    Description: Existing ECS cluster to run the load task in.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  AssignPublicIp:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: >
+      DISABLED by default. This task holds a database credential, and a Fargate
+      task with a public IP is internet-reachable unless a security group says
+      otherwise. ENABLED is only for a subnet with no NAT, where the task would
+      otherwise be unable to reach Secrets Manager.
+
+  # --- Source ---
+  SourceEngine:
+    Type: String
+    AllowedValues: [mysql, postgresql, sqlserver, oracle]
+    Description: >
+      Selects the loader's database adapter. Same engine_family value the CDC
+      stack uses, from ecdl_link/resolve.py.
+  SourceDBHost:
+    Type: String
+  SourceDBPort:
+    Type: String
+    Default: '3306'
+  SourceDBName:
+    Type: String
+  SourceDBUser:
+    Type: String
+  DBSecretArn:
+    Type: String
+    Description: Secrets Manager ARN holding the source DB password (plaintext, or JSON with DBSecretJsonKey).
+  KeyPrefix:
+    Type: String
+    Default: ''
+    AllowedPattern: '^[A-Za-z0-9_.-]*$'
+    Description: >
+      advanced.key_prefix from the link. Keys become <prefix>:<table>:<pk>, so two
+      links writing tables of the same name into one cache do not overwrite each
+      other. Empty = <table>:<pk>.
+  DBSecretJsonKey:
+    Type: String
+    Default: ''
+    AllowedPattern: '^[A-Za-z0-9_]*$'
+    Description: >
+      Key to read from a JSON secret, e.g. `password` for an RDS-managed admin
+      secret ({"username": ..., "password": ...}). Empty = the secret value is
+      the password itself (plaintext). Set by the control plane from the
+      secret's metadata; without it a JSON secret was injected whole and the
+      database refused the login.
+  SourceSecurityGroupId:
+    Type: String
+    Default: ''
+    Description: >
+      Security group on an AWS source; ingress from the load task is added to it.
+      Leave empty for an external (self-managed / on-premises) source, which has
+      no AWS security group -- the operator opens their own firewall over Direct
+      Connect / VPN.
+
+  # --- Target ---
+  TargetHost:
+    Type: String
+  TargetPort:
+    Type: String
+    Default: '6379'
+  TargetSSL:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  TargetCluster:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Read from the target's ARN, never chosen manually. A non-cluster client
+      pointed at a sharded cluster connects and then fails MOVED on most keys, so
+      a wrong value here loses the majority of a load.
+  TargetSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  TargetSecretArn:
+    Type: String
+    Default: ''
+    Description: >
+      Whole Secrets Manager value for the target cache credential; empty when the
+      cache has no auth. Plaintext = auth token, JSON {"username","password"} =
+      RBAC user. The loader reads this exactly as the sink does, on purpose: the
+      two write to the same cache, so a credential that worked for one and not the
+      other would cause a confusing partial failure.
+
+  # --- What to load ---
+  Tables:
+    Type: String
+    Description: >
+      Comma-separated table names. The loader chunks ONE table by primary-key
+      range per run, so the control plane runs the task once per entry.
+  PrimaryKeys:
+    Type: String
+    Default: ''
+    Description: >
+      Comma-separated, positionally matched to Tables. Leave empty to have the
+      loader read each table's primary key from the source, which is the normal
+      case -- the control plane often cannot introspect the database itself. A
+      default of 'id' here was a guess that surfaced as a task failing on
+      "Unknown column 'id'" minutes into a deployment.
+  LoaderWorkers:
+    Type: String
+    Default: '16'
+    Description: >
+      Parallel primary-key range readers. Note the loader splits the PK range into
+      equal chunks, so on a SPARSE key distribution most workers can end up with
+      no rows -- pass explicit bounds for that case.
+  TransformsJson:
+    Type: String
+    Default: ''
+    Description: >
+      Same transform spec the sink uses, so the rows written by the load and the
+      rows written by CDC afterwards have identical shape. A load that ignored the
+      transforms would populate the cache with rows the CDC path would never
+      produce.
+
+  # Empty = this account's own ECR at ImageTag, where `./release.sh push`
+  # publishes (see the same parameters in ecdl-cdc-ecs.yaml). It used to be a
+  # digest in one development account, which no other account could pull.
+  ImageTag:
+    Type: String
+    Default: 0.2.15
+    Description: >
+      Version tag of the default loader image in this account's ECR, as
+      published by ./release.sh push. `./release.sh pin` sets it to
+      VERSION.
+  LoaderImage:
+    Type: String
+    Default: ''
+    Description: >
+      ECDL bulk-loader image. Empty = <this
+      account>.dkr.ecr.<region>/ecdl/ecdl-loader:<ImageTag>.
+  TaskCpu:
+    Type: String
+    Default: '2048'
+    AllowedValues: ['1024', '2048', '4096', '8192', '16384']
+  TaskMemory:
+    Type: String
+    Default: '4096'
+    Description: Must be a valid Fargate pairing for TaskCpu.
+  # Same rule as the CDC stack: the architecture must match the image. Without a
+  # RuntimePlatform Fargate runs X86_64, so an arm64-only build fails with
+  # "exec format error".
+  CpuArchitecture:
+    Type: String
+    Default: X86_64
+    AllowedValues: [X86_64, ARM64]
+    Description: >
+      Fargate CPU architecture for the load task. X86_64 for amd64 or multi-arch
+      images, ARM64 for arm64 or multi-arch images.
+
+Conditions:
+  HasPermissionsBoundary: !Not [!Equals [!Ref PermissionsBoundaryArn, '']]
+  HasDBSecretJsonKey: !Not [!Equals [!Ref DBSecretJsonKey, '']]
+  HasTargetSecret: !Not [!Equals [!Ref TargetSecretArn, '']]
+  # An AWS source supplies its security group so the load task can be granted
+  # ingress; an external source leaves it empty, so the rule is skipped.
+  HasSourceSecurityGroup: !Not [!Equals [!Ref SourceSecurityGroupId, '']]
+  HasLoaderImage: !Not [!Equals [!Ref LoaderImage, '']]
+
+Resources:
+  # ═══════════════════════════════════════════════════════════════
+  # Networking. A dedicated SG for the load task, with ingress added to the
+  # source and the target rather than opening either to a CIDR.
+  # ═══════════════════════════════════════════════════════════════
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      guard:
+        # Egress to 0.0.0.0/0 is limited to TCP 443 (the AWS APIs, which are
+        # public endpoints with no managed prefix list) and, only when the
+        # source's security group is unknown, the source database port.
+        SuppressedRules:
+          - EC2_SECURITY_GROUP_EGRESS_OPEN_TO_WORLD_RULE
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName} ECDL initial-load task SG'
+      VpcId: !Ref VpcId
+      # Only what the load task talks to. DNS, the task metadata endpoint and
+      # IMDS are not filtered by security groups. HTTPS stays open to any
+      # address because the AWS APIs are public endpoints from this subnet.
+      SecurityGroupEgress:
+        - Description: HTTPS to the AWS APIs (ECR, Secrets Manager, CloudWatch Logs)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: The target cache
+          IpProtocol: tcp
+          FromPort: !Ref TargetPort
+          ToPort: !Ref TargetPort
+          DestinationSecurityGroupId: !Ref TargetSecurityGroupId
+        # The source database: its own security group when known, otherwise
+        # its port only.
+        - Description: The source database (initial load)
+          IpProtocol: tcp
+          FromPort: !Ref SourceDBPort
+          ToPort: !Ref SourceDBPort
+          DestinationSecurityGroupId: !If [HasSourceSecurityGroup, !Ref SourceSecurityGroupId, !Ref 'AWS::NoValue']
+          CidrIp: !If [HasSourceSecurityGroup, !Ref 'AWS::NoValue', 0.0.0.0/0]
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-task-sg'
+
+  SourceIngressFromTask:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasSourceSecurityGroup
+    Properties:
+      Description: !Sub 'ECDL ${AWS::StackName} initial load from the source database'
+      GroupId: !Ref SourceSecurityGroupId
+      IpProtocol: tcp
+      FromPort: !Ref SourceDBPort
+      ToPort: !Ref SourceDBPort
+      SourceSecurityGroupId: !Ref TaskSecurityGroup
+
+  TargetIngressFromTask:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: !Sub 'ECDL ${AWS::StackName} initial load to the target cache'
+      GroupId: !Ref TargetSecurityGroupId
+      IpProtocol: tcp
+      # The target's own port. It was hardcoded to 6379, so a target on another
+      # port got an ingress rule the loader could not use.
+      FromPort: !Ref TargetPort
+      ToPort: !Ref TargetPort
+      SourceSecurityGroupId: !Ref TaskSecurityGroup
+
+  # ═══════════════════════════════════════════════════════════════
+  # IAM
+  # ═══════════════════════════════════════════════════════════════
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref 'AWS::NoValue']
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - !Ref ExecutionRolePolicy
+
+  ExecutionRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub '${AWS::StackName} ReadLoadSecrets (was an inline policy on ExecutionRole)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: [secretsmanager:GetSecretValue]
+            Resource: !Ref DBSecretArn
+          # Present only when a cache credential was supplied, so a no-auth
+          # deployment does not carry an unused permission.
+          - !If
+            - HasTargetSecret
+            - Effect: Allow
+              Action: [secretsmanager:GetSecretValue]
+              Resource: !Ref TargetSecretArn
+            - !Ref 'AWS::NoValue'
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref 'AWS::NoValue']
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      # The loader talks to the source and the target and nothing else. It needs
+      # no AWS API access at runtime: the secrets arrive as injected environment
+      # variables, fetched by the EXECUTION role before the container starts.
+      # So it has no policies at all (the control plane may not write inline
+      # role policies).
+
+  # Customer-managed key for the loader's logs; CloudWatch Logs is admitted
+  # only for this stack's log group (encryption-context condition). ~$1/month.
+  LogKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Description: !Sub 'Encrypts the ${AWS::StackName} logs'
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccountAdministersThroughIam
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: CloudWatchLogsForThisStacksLogGroup
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action: [kms:Encrypt*, kms:Decrypt*, kms:ReEncrypt*, kms:GenerateDataKey*, kms:Describe*]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${AWS::StackName}'
+      Tags:
+        - Key: ecdl:stack
+          Value: !Ref AWS::StackName
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}'
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt LogKey.Arn
+
+  # ═══════════════════════════════════════════════════════════════
+  # The task definition. Deliberately not a service: a load runs to completion
+  # and exits, and a service would restart it forever.
+  # ═══════════════════════════════════════════════════════════════
+  LoaderTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform:
+        CpuArchitecture: !Ref CpuArchitecture
+        OperatingSystemFamily: LINUX
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: loader
+          Image: !If
+            - HasLoaderImage
+            - !Ref LoaderImage
+            - !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/ecdl/ecdl-loader:${ImageTag}'
+          Essential: true
+          # TABLE and PRIMARY_KEY are supplied per run as a RunTask container
+          # override, because one run loads one table. Everything else is fixed
+          # for the link and lives here.
+          Environment:
+            - { Name: SOURCE_ENGINE, Value: !Ref SourceEngine }
+            - { Name: SOURCE_DB_HOST, Value: !Ref SourceDBHost }
+            - { Name: SOURCE_DB_PORT, Value: !Ref SourceDBPort }
+            - { Name: SOURCE_DB_NAME, Value: !Ref SourceDBName }
+            - { Name: SOURCE_DB_USER, Value: !Ref SourceDBUser }
+            - { Name: VALKEY_HOST, Value: !Ref TargetHost }
+            - { Name: VALKEY_PORT, Value: !Ref TargetPort }
+            - { Name: VALKEY_SSL, Value: !Ref TargetSSL }
+            - { Name: VALKEY_CLUSTER, Value: !Ref TargetCluster }
+            - { Name: LOADER_WORKERS, Value: !Ref LoaderWorkers }
+            - { Name: TRANSFORMS_JSON, Value: !Ref TransformsJson }
+            - { Name: TABLES, Value: !Ref Tables }
+            - { Name: LINK_KEY_PREFIX, Value: !Ref KeyPrefix }
+            - { Name: PRIMARY_KEYS, Value: !Ref PrimaryKeys }
+          Secrets:
+            - Name: SOURCE_DB_PASSWORD
+              ValueFrom: !If
+                - HasDBSecretJsonKey
+                - !Sub '${DBSecretArn}:${DBSecretJsonKey}::'
+                - !Ref DBSecretArn
+            - !If
+              - HasTargetSecret
+              - Name: VALKEY_SECRET
+                ValueFrom: !Ref TargetSecretArn
+              - !Ref 'AWS::NoValue'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: loader
+
+Outputs:
+  # Everything RunTask needs, so the caller reads the run configuration back from
+  # the stack instead of having to remember what it passed in. SubnetIds and
+  # AssignPublicIp are not used by the task definition itself -- a Fargate task
+  # gets its network at run time, not at definition time -- so they are echoed
+  # here rather than left as write-only parameters.
+  TaskDefinitionArn:
+    Value: !Ref LoaderTaskDef
+    Description: Pass to RunTask, once per table.
+  TaskSecurityGroupId:
+    Value: !Ref TaskSecurityGroup
+  Subnets:
+    Value: !Join [',', !Ref SubnetIds]
+  AssignPublicIp:
+    Value: !Ref AssignPublicIp
+  ClusterName:
+    Value: !Ref ClusterName
+  LogGroup:
+    Value: !Ref LogGroup
+  Tables:
+    Value: !Ref Tables
+    Description: The control plane runs the task once per entry.
+  RunHint:
+    Value: !Sub >-
+      aws ecs run-task --cluster ${ClusterName} --task-definition ${LoaderTaskDef}
+      --launch-type FARGATE --network-configuration
+      "awsvpcConfiguration={subnets=[...],securityGroups=[${TaskSecurityGroup}],assignPublicIp=${AssignPublicIp}}"
+      --overrides '{"containerOverrides":[{"name":"loader","environment":[{"name":"TABLE","value":"<table>"}]}]}'

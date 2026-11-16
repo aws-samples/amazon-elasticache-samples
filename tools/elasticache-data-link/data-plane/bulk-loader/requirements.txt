@@ -1,0 +1,5 @@
+valkey>=6.0.0
+pymysql>=1.1.0
+psycopg2-binary>=2.9.0
+pymssql>=2.3.0         # SQL Server source (bundles FreeTDS; no ODBC packages needed)
+oracledb>=2.0.0        # Oracle source, thin mode (pure Python, no Oracle client)

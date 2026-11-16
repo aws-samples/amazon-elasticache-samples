@@ -1,0 +1,140 @@
+<mxfile host="app.diagrams.net" agent="ECDL">
+  <diagram id="ecdl-aws-arch" name="ECDL AWS Architecture">
+    <mxGraphModel dx="1400" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" parent="1" vertex="1" style="text;html=1;fontSize=20;fontStyle=1;align=center;fontColor=#232F3E;" value="ECDL — AWS Reference Architecture (CDC: RDBMS → ElastiCache for Valkey)">
+          <mxGeometry x="360" y="12" width="900" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== BOUNDARIES ===================== -->
+        <mxCell id="cloud" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=0;pointerEvents=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud_alt;strokeColor=#232F3E;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;dashed=0;" value="AWS Cloud">
+          <mxGeometry x="40" y="56" width="1620" height="912" as="geometry" />
+        </mxCell>
+        <mxCell id="region" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=0;pointerEvents=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;strokeColor=#00A4A6;fillColor=none;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#147EBA;" value="Region: us-east-2">
+          <mxGeometry x="70" y="88" width="1560" height="860" as="geometry" />
+        </mxCell>
+
+        <!-- Regional managed services (outside VPC) -->
+        <mxCell id="sm" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;" value="Secrets Manager&#10;(DB creds)">
+          <mxGeometry x="150" y="120" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ecr" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecr;" value="Amazon ECR&#10;(images)">
+          <mxGeometry x="370" y="120" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cw" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch;" value="CloudWatch&#10;(logs, alarms, dashboard)">
+          <mxGeometry x="590" y="120" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sns" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sns;" value="SNS&#10;(alerts)">
+          <mxGeometry x="810" y="120" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="aas" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_auto_scaling;" value="App Auto Scaling&#10;(sink 1→10)">
+          <mxGeometry x="1010" y="120" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="iam" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;" value="IAM&#10;(exec/task roles)">
+          <mxGeometry x="1230" y="120" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- VPC + AZ lanes -->
+        <mxCell id="vpc" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=0;pointerEvents=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;strokeColor=#8C4FFF;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#8C4FFF;dashed=0;" value="VPC — private subnets (Multi-AZ)">
+          <mxGeometry x="110" y="240" width="1210" height="690" as="geometry" />
+        </mxCell>
+        <mxCell id="aza" parent="1" vertex="1" style="rounded=0;dashed=1;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=12;fontColor=#00A4A6;fontSize=11;html=1;" value="Availability Zone us-east-2a">
+          <mxGeometry x="140" y="290" width="1150" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="azb" parent="1" vertex="1" style="rounded=0;dashed=1;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=12;fontColor=#00A4A6;fontSize=11;html=1;" value="Availability Zone us-east-2b">
+          <mxGeometry x="140" y="490" width="1150" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="azc" parent="1" vertex="1" style="rounded=0;dashed=1;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=12;fontColor=#00A4A6;fontSize=11;html=1;" value="Availability Zone us-east-2c">
+          <mxGeometry x="140" y="690" width="1150" height="190" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== AZ-a: primary data path ===================== -->
+        <mxCell id="aurora" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.aurora;" value="Aurora MySQL&#10;Serverless v2 (writer)&#10;0.5–8 ACU · binlog=ROW">
+          <mxGeometry x="175" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="dbz" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.fargate;" value="Debezium (Fargate)&#10;8 vCPU / 16 GB · ×1">
+          <mxGeometry x="400" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="brokerp" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elasticache;" value="Broker — ElastiCache Valkey&#10;t4g.small · cluster-mode OFF&#10;primary · stream+offsets+DLQ">
+          <mxGeometry x="620" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sinka" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.fargate;" value="Go Sink (Fargate)&#10;1 vCPU / 2 GB · task">
+          <mxGeometry x="850" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="targetp" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elasticache;" value="Target — ElastiCache Valkey&#10;m6g.large · cluster-mode ON · TLS&#10;shard primaries">
+          <mxGeometry x="1080" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== AZ-b: replicas + sink ===================== -->
+        <mxCell id="brokerr" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elasticache;" value="Broker replica&#10;(auto-failover)">
+          <mxGeometry x="620" y="560" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="sinkb" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.fargate;" value="Go Sink task&#10;(same consumer group)">
+          <mxGeometry x="850" y="560" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="targetrb" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elasticache;" value="Target replicas">
+          <mxGeometry x="1080" y="560" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== AZ-c: autoscaled sink + replicas ===================== -->
+        <mxCell id="sinkc" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.fargate;" value="Go Sink tasks&#10;autoscale →10 (CPU 60%)">
+          <mxGeometry x="850" y="760" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="targetrc" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elasticache;" value="Target replicas">
+          <mxGeometry x="1080" y="760" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Application (client, outside VPC) -->
+        <mxCell id="app" parent="1" vertex="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.users;" value="Application&#10;sub-ms reads">
+          <mxGeometry x="1420" y="360" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== DATA EDGES ===================== -->
+        <mxCell id="e1" parent="1" source="aurora" target="dbz" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#232F3E;" value="binlog · 3306">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" parent="1" source="dbz" target="brokerp" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#232F3E;" value="XADD · 6379 (no TLS)">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" parent="1" source="brokerp" target="sinka" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#232F3E;" value="XREADGROUP · 6379">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" parent="1" source="sinka" target="targetp" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#232F3E;" value="HSET/DEL · 6379 · TLS">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" parent="1" source="app" target="targetp" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#232F3E;" value="reads · TLS">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- replication edges -->
+        <mxCell id="e6" parent="1" source="brokerp" target="brokerr" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#8C4FFF;" value="replication">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" parent="1" source="targetp" target="targetrb" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#8C4FFF;" value="replication">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" parent="1" source="targetrb" target="targetrc" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#8C4FFF;" value="">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ===================== CONTROL EDGES ===================== -->
+        <mxCell id="c1" parent="1" source="sm" target="dbz" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#7d8a91;" value="creds (GetSecretValue)">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c2" parent="1" source="ecr" target="dbz" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#7d8a91;" value="image">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c3" parent="1" source="ecr" target="sinka" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#7d8a91;" value="image">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c4" parent="1" source="dbz" target="cw" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#7d8a91;" value="logs">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c5" parent="1" source="sinka" target="cw" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#7d8a91;" value="logs">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c6" parent="1" source="aas" target="sinkc" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#7d8a91;" value="scale 1→10">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c7" parent="1" source="targetp" target="cw" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#7d8a91;" value="metrics">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="c8" parent="1" source="cw" target="sns" edge="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;dashed=1;strokeColor=#7d8a91;" value="alarm → email">
+          <mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- footnote -->
+        <mxCell id="note" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;fontColor=#5a666c;" value="Security groups (least-privilege): task SG → Aurora:3306, Broker:6379, Target:6379 · App → Target:6379.  In transit: Debezium↔Broker plaintext (private, SG-only); Sink↔Target &amp; App↔Target TLS.  At-rest encryption on Aurora + Target.">
+          <mxGeometry x="150" y="900" width="1300" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

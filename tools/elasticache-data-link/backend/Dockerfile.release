@@ -1,0 +1,33 @@
+# Control-plane API image, built by ./release.sh push from the REPOSITORY ROOT:
+#
+#   docker buildx build -f backend/Dockerfile.release .
+#
+# Separate from backend/Dockerfile, which docker-compose builds with backend/ as
+# the context. That one cannot see ecdl_link/ or infra/ (compose mounts them
+# instead), and release.sh used to build it from the root -- where its
+# `COPY requirements.txt` and `python app.py` point at files that do not exist,
+# so `release.sh push` failed at this step and never wrote images.lock.
+#
+# The deploy path needs both directories inside the image: backend/links.py
+# imports ecdl_link, and reads the CloudFormation templates from infra/ at deploy
+# time. Both are looked up next to app.py first, which is where this image copies them.
+# ECR Public mirror of the Docker official image (not Docker Hub).
+FROM public.ecr.aws/docker/library/python:3.11-slim
+
+WORKDIR /app
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ /app/
+COPY ecdl_link/ /app/ecdl_link/
+COPY infra/ /app/infra/
+
+ENV PYTHONUNBUFFERED=1
+# app.py binds loopback by default. Inside the container it has to accept the
+# published port. Who reaches that port is decided by the control plane's
+# AccessMode (a loopback publish in ssm mode, otherwise a security group rule),
+# not by this bind.
+ENV ECDL_BIND_HOST=0.0.0.0
+
+CMD ["python", "app.py"]

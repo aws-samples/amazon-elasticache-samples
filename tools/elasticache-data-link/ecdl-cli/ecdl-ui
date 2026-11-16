@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Open the ECDL control-plane UI through SSM Session Manager.
+#
+#   ecdl-cli/ecdl-ui <control-plane-stack-name> [--region R] [--profile P]
+#
+# For a control plane deployed with AccessMode=ssm (the default). It has no
+# inbound ports: the UI (3000) and API (5000) listen on the instance's loopback
+# address, and this script forwards both to the same ports on this machine.
+# Whoever runs it needs AWS credentials allowed to start an SSM session on the
+# instance (ssm:StartSession with the AWS-StartPortForwardingSession document);
+# docs/getting-started.md has an example IAM policy.
+#
+# Needs the AWS CLI v2 and the Session Manager plugin:
+#   https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+#
+# Press Ctrl-C to close both tunnels.
+set -euo pipefail
+# ${ARR[@]+"${ARR[@]}"} below: macOS ships bash 3.2, where expanding an empty
+# array under `set -u` is an error.
+
+usage() {
+  echo "usage: $0 <control-plane-stack-name> [--region REGION] [--profile PROFILE]" >&2
+  exit 2
+}
+
+STACK=""
+AWS_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --region)  [ $# -ge 2 ] || usage; AWS_ARGS+=(--region "$2"); shift 2 ;;
+    --profile) [ $# -ge 2 ] || usage; AWS_ARGS+=(--profile "$2"); shift 2 ;;
+    -h|--help) usage ;;
+    -*)        echo "unknown option: $1" >&2; usage ;;
+    *)         [ -z "$STACK" ] || usage; STACK="$1"; shift ;;
+  esac
+done
+[ -n "$STACK" ] || usage
+
+for tool in aws session-manager-plugin; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "error: '$tool' is not installed (see the header of this script)." >&2
+    exit 1
+  fi
+done
+
+output() {
+  aws ${AWS_ARGS[@]+"${AWS_ARGS[@]}"} cloudformation describe-stacks --stack-name "$STACK" \
+    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+}
+
+INSTANCE="$(output InstanceId)"
+MODE="$(output AccessMode)"
+if [ -z "$INSTANCE" ] || [ "$INSTANCE" = "None" ]; then
+  echo "error: stack '$STACK' has no InstanceId output. Is it the control-plane stack?" >&2
+  exit 1
+fi
+if [ "$MODE" != "ssm" ]; then
+  echo "error: stack '$STACK' uses AccessMode=$MODE, not ssm. See its OpenUi output." >&2
+  exit 1
+fi
+
+for port in 3000 5000; do
+  # Connecting succeeds only if something already listens on the port.
+  if (: >"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+    echo "error: local port $port is already in use. Close what is using it and retry." >&2
+    exit 1
+  fi
+done
+
+PIDS=()
+cleanup() {
+  for pid in ${PIDS[@]+"${PIDS[@]}"}; do kill "$pid" 2>/dev/null || true; done
+}
+trap cleanup EXIT INT TERM
+
+for port in 3000 5000; do
+  aws ${AWS_ARGS[@]+"${AWS_ARGS[@]}"} ssm start-session --target "$INSTANCE" \
+    --document-name AWS-StartPortForwardingSession \
+    --parameters "portNumber=$port,localPortNumber=$port" >/dev/null &
+  PIDS+=("$!")
+done
+
+echo "Tunnels to $INSTANCE are opening."
+echo "Open http://localhost:3000 in your browser. Press Ctrl-C to close them."
+wait

@@ -1,0 +1,188 @@
+<mxfile host="app.diagrams.net" agent="ECDL">
+  <diagram id="ecdl-aws" name="ECDL AWS Deployment">
+    <mxGraphModel dx="1120" dy="660" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="0" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="660" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" parent="1" vertex="1" style="text;html=1;fontSize=19;fontStyle=1;align=center;fontColor=#232F3E;" value="ECDL — AWS deployment (resources provisioned)">
+          <mxGeometry x="360" y="12" width="400" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- Region -->
+        <mxCell id="region" parent="1" vertex="1" style="points=[];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;container=0;pointerEvents=0;collapsible=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;strokeColor=#E08A00;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#E08A00;dashed=1;" value="AWS Region · us-east-2">
+          <mxGeometry x="20" y="48" width="1080" height="592" as="geometry" />
+        </mxCell>
+
+        <!-- ===== regional services row ===== -->
+        <!-- ECR -->
+        <mxCell id="ecr_card" parent="1" vertex="1" style="rounded=1;arcSize=8;html=1;fillColor=#FBF0E0;strokeColor=#E0913A;shadow=1;" value="">
+          <mxGeometry x="40" y="82" width="300" height="94" as="geometry" />
+        </mxCell>
+        <mxCell id="ecr_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_container_registry;" value="">
+          <mxGeometry x="52" y="90" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="ecr_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#8A5200;" value="Amazon ECR">
+          <mxGeometry x="84" y="88" width="200" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="ecr_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=top;fontColor=#444444;spacingLeft=2;" value="ecdl-debezium-server&#10;ecdl-sink&#10;ecdl-loader   (pinned by digest)">
+          <mxGeometry x="52" y="114" width="264" height="54" as="geometry" />
+        </mxCell>
+
+        <!-- Secrets Manager -->
+        <mxCell id="sec_card" parent="1" vertex="1" style="rounded=1;arcSize=8;html=1;fillColor=#FBE9EC;strokeColor=#D76B7A;shadow=1;" value="">
+          <mxGeometry x="356" y="82" width="228" height="94" as="geometry" />
+        </mxCell>
+        <mxCell id="sec_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#DD344C;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;" value="">
+          <mxGeometry x="368" y="90" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="sec_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#8A3546;" value="Secrets Manager">
+          <mxGeometry x="400" y="88" width="170" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sec_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=top;fontColor=#444444;spacingLeft=2;" value="DB password&#10;broker auth token">
+          <mxGeometry x="368" y="114" width="200" height="54" as="geometry" />
+        </mxCell>
+
+        <!-- CloudWatch -->
+        <mxCell id="cw_card" parent="1" vertex="1" style="rounded=1;arcSize=8;html=1;fillColor=#FBE9F2;strokeColor=#D76BAD;shadow=1;" value="">
+          <mxGeometry x="600" y="82" width="248" height="94" as="geometry" />
+        </mxCell>
+        <mxCell id="cw_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#E7157B;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;" value="">
+          <mxGeometry x="612" y="90" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="cw_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#8A356E;" value="CloudWatch">
+          <mxGeometry x="644" y="88" width="190" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="cw_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=top;fontColor=#444444;spacingLeft=2;" value="Log groups&#10;Metrics">
+          <mxGeometry x="612" y="114" width="220" height="54" as="geometry" />
+        </mxCell>
+
+        <!-- IAM -->
+        <mxCell id="iam_card" parent="1" vertex="1" style="rounded=1;arcSize=8;html=1;fillColor=#EEF0F2;strokeColor=#8A94A0;shadow=1;" value="">
+          <mxGeometry x="864" y="82" width="216" height="94" as="geometry" />
+        </mxCell>
+        <mxCell id="iam_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#DD344C;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;" value="">
+          <mxGeometry x="876" y="90" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="iam_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#3A424C;" value="IAM roles">
+          <mxGeometry x="908" y="88" width="160" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="iam_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=top;fontColor=#444444;spacingLeft=2;" value="Execution role&#10;Task role">
+          <mxGeometry x="876" y="114" width="196" height="54" as="geometry" />
+        </mxCell>
+
+        <!-- ===== VPC / AZ / subnet containment ===== -->
+        <mxCell id="vpc" parent="1" vertex="1" style="points=[];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;container=0;pointerEvents=0;collapsible=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;grStroke=#8C4FFF;strokeColor=#8C4FFF;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#7B3FE4;dashed=1;" value="VPC · 10.0.0.0/16">
+          <mxGeometry x="40" y="200" width="1040" height="416" as="geometry" />
+        </mxCell>
+        <mxCell id="az" parent="1" vertex="1" style="points=[];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;container=0;pointerEvents=0;collapsible=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_availability_zone;grStroke=#00A4A6;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#068A8C;dashed=1;" value="Availability Zone us-east-2a">
+          <mxGeometry x="60" y="234" width="1000" height="326" as="geometry" />
+        </mxCell>
+        <mxCell id="subnet" parent="1" vertex="1" style="points=[];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=11;container=0;pointerEvents=0;collapsible=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=#8A94A0;strokeColor=#8A94A0;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#5B636C;dashed=1;" value="Private subnet · 10.0.1.0/24">
+          <mxGeometry x="80" y="266" width="960" height="282" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ECS cluster ===== -->
+        <mxCell id="ecs_box" parent="1" vertex="1" style="rounded=1;arcSize=6;html=1;fillColor=#FDF6EE;strokeColor=#E0913A;strokeWidth=1.2;verticalAlign=top;" value="">
+          <mxGeometry x="100" y="298" width="540" height="236" as="geometry" />
+        </mxCell>
+        <mxCell id="ecs_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_container_service;" value="">
+          <mxGeometry x="112" y="304" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="ecs_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#8A5200;" value="Amazon ECS cluster · AWS Fargate">
+          <mxGeometry x="142" y="304" width="380" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- debezium service -->
+        <mxCell id="dbz_card" parent="1" vertex="1" style="rounded=1;arcSize=10;html=1;fillColor=#FBF0E0;strokeColor=#E0913A;shadow=1;" value="">
+          <mxGeometry x="118" y="336" width="504" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="dbz_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.fargate;" value="">
+          <mxGeometry x="130" y="349" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="dbz_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#8A5200;" value="ECS service · debezium">
+          <mxGeometry x="168" y="342" width="340" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="dbz_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#555555;" value="image ecdl-debezium-server · 1 task · 2 vCPU / 4 GB">
+          <mxGeometry x="168" y="362" width="440" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- sink service -->
+        <mxCell id="sink_card" parent="1" vertex="1" style="rounded=1;arcSize=10;html=1;fillColor=#FBF0E0;strokeColor=#E0913A;shadow=1;" value="">
+          <mxGeometry x="118" y="404" width="504" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="sink_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.fargate;" value="">
+          <mxGeometry x="130" y="417" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sink_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#8A5200;" value="ECS service · sink">
+          <mxGeometry x="168" y="410" width="340" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="sink_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#555555;" value="image ecdl-sink · 1–N tasks · 1 vCPU / 2 GB">
+          <mxGeometry x="168" y="430" width="440" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- loader task -->
+        <mxCell id="ldr_card" parent="1" vertex="1" style="rounded=1;arcSize=10;html=1;fillColor=#FDF3E6;strokeColor=#E0913A;dashed=1;shadow=1;" value="">
+          <mxGeometry x="118" y="472" width="504" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="ldr_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_container_service;" value="">
+          <mxGeometry x="130" y="485" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ldr_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#8A5200;" value="ECS task · loader">
+          <mxGeometry x="168" y="478" width="340" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="ldr_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#555555;" value="image ecdl-loader · Fargate (run-once)">
+          <mxGeometry x="168" y="498" width="440" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- ===== data stores column ===== -->
+        <!-- broker -->
+        <mxCell id="brk_card" parent="1" vertex="1" style="rounded=1;arcSize=10;html=1;fillColor=#EAF2FB;strokeColor=#4A76A8;shadow=1;" value="">
+          <mxGeometry x="660" y="336" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="brk_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elasticache;" value="">
+          <mxGeometry x="672" y="349" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="brk_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#1B4368;" value="ElastiCache for Valkey · broker">
+          <mxGeometry x="710" y="342" width="300" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="brk_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#555555;" value="1 node · cluster-mode OFF · TLS · 6379">
+          <mxGeometry x="710" y="362" width="300" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- target -->
+        <mxCell id="tgt_card" parent="1" vertex="1" style="rounded=1;arcSize=10;html=1;fillColor=#EAF2FB;strokeColor=#4A76A8;shadow=1;" value="">
+          <mxGeometry x="660" y="404" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="tgt_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elasticache;" value="">
+          <mxGeometry x="672" y="417" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="tgt_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#1B4368;" value="ElastiCache for Valkey · target">
+          <mxGeometry x="710" y="410" width="300" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="tgt_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#555555;" value="cluster optional · TLS · 6379">
+          <mxGeometry x="710" y="430" width="300" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- source -->
+        <mxCell id="src_card" parent="1" vertex="1" style="rounded=1;arcSize=10;html=1;fillColor=#EFEAF9;strokeColor=#7E57C2;shadow=1;" value="">
+          <mxGeometry x="660" y="472" width="360" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="src_ic" parent="1" vertex="1" style="sketch=0;outlineConnect=0;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;html=1;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.aurora;" value="">
+          <mxGeometry x="672" y="485" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="src_t" parent="1" vertex="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=middle;fontColor=#4A2D7A;" value="Amazon Aurora / RDS · source">
+          <mxGeometry x="710" y="478" width="300" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="src_d" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#555555;" value="customer-owned · 3306">
+          <mxGeometry x="710" y="498" width="300" height="16" as="geometry" />
+        </mxCell>
+
+        <!-- footnote -->
+        <mxCell id="note" parent="1" vertex="1" style="text;html=1;fontSize=10;align=left;fontColor=#98A0A8;" value="ECDL provisions the broker + the ECS cluster/services/tasks. The target cache and the source database are yours (referenced by ARN). Single AZ.">
+          <mxGeometry x="40" y="626" width="1040" height="20" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

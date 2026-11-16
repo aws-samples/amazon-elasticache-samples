@@ -1,0 +1,8 @@
+Flask==3.0.0
+Flask-CORS==4.0.0
+boto3>=1.34.0
+requests==2.31.0
+PyYAML>=6.0
+psycopg2-binary>=2.9.0
+pymysql>=1.1.0
+valkey>=5.0.0

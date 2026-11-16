@@ -1,0 +1,90 @@
+# ECDL link — the whole customer-facing configuration surface.
+#
+# Six values are required: a name, a mode, the source ARN, the source database,
+# the source credential secret, and the target ARN, plus the table list.
+# Everything else is either discovered from those ARNs or defaulted:
+#
+#   endpoints, ports, engine and engine version   from source.arn / target.arn
+#   VPC, subnets, security groups                 from source.arn / target.arn
+#   TLS                                           always on, never asked
+#   cluster mode                                  detected from target.arn
+#   target auth mode (none / token / RBAC)        detected from target.arn
+#   connector class, snapshot behaviour           from the engine and 'mode'
+#   broker, offsets, consumer groups, key naming  managed by ECDL
+#
+# Validate before deploying:  ecdl validate ./link.yaml
+
+name: checkout-cache
+
+# initial_load          one-time snapshot, then done. No broker, no Debezium,
+#                       no sink -- the loader runs once and exits.
+# cdc                   stream changes from now on. Does not backfill.
+# initial_load_and_cdc  snapshot, then stream from the log position captured
+#                       before the snapshot began, so nothing is missed.
+mode: initial_load_and_cdc
+
+source:
+  arn: arn:aws:rds:us-east-2:111122223333:cluster:my-aurora-cluster
+  # Required: RDS reports DatabaseName as null on most Aurora clusters, so this
+  # is the one connection detail an ARN cannot give us.
+  database: Inventory
+  # The password is read by the pipeline's task role at runtime. It never enters
+  # this file, a CloudFormation parameter, or a log.
+  secret_arn: arn:aws:secretsmanager:us-east-2:111122223333:secret:shop-db-a1b2c3
+  # Optional. Taken from the secret when it is an RDS-managed JSON secret.
+  # username: admin
+  # Optional. Defaults to 'public' for PostgreSQL, 'dbo' for SQL Server, the
+  # uppercased username for Oracle. Unused for MySQL.
+  # schema: public
+
+target:
+  arn: arn:aws:elasticache:us-east-2:111122223333:replicationgroup:my-valkey
+  # Only needed if the cache has an auth token or RBAC enabled, which ECDL
+  # detects for you. A plaintext secret is used as an AUTH token; a JSON secret
+  # with username and password is used as an RBAC login.
+  # secret_arn: arn:aws:secretsmanager:us-east-2:111122223333:secret:cache-AbCdEf
+
+# One Debezium reader and one sink service serve every table listed here.
+# Bare names are qualified during resolution using the engine and source.schema.
+tables:
+  - products
+  - orders
+  - customers
+
+# Optional. Applied identically by the initial loader and the CDC sink, so a row
+# is shaped the same however it arrived. Order per row: filter, then computed,
+# then column selection, then rename.
+transforms:
+  tables:
+    products:
+      # Only active products are cached. A row that stops matching is DELETED
+      # from the cache, not left behind to go stale.
+      filter: {field: status, op: "=", value: active}
+      computed:
+        - {name: price_cents, expr: price * 100}
+
+    orders:
+      # Embed a few customer fields onto each cached order so a read does not
+      # need a second lookup. The parent must be one of this link's tables so it
+      # is materialised in the cache.
+      denormalize:
+        - parent_table: customers
+          join_field: customer_id
+          fields: [name, tier]
+          prefix: cust_
+          on_parent_delete: "null"
+
+# Everything below has a working default. Setting one means you have a reason.
+#
+# advanced:
+#   key_prefix: live               # keys become live:products:42
+#   sink:
+#     batch_size: 500              # smaller bounds how long a customer read can
+#                                  # queue behind a write batch on a shard's
+#                                  # single command thread
+#     max_count: 10
+#   debezium:
+#     snapshot_mode: initial       # fall back to Debezium doing the snapshot
+#                                  # itself instead of the parallel loader
+#   network:
+#     subnet_ids: [subnet-0abc123, subnet-0def456]
