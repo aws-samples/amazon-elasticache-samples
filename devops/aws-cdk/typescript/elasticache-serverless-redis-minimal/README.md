@@ -1,4 +1,4 @@
-# Amazon ElastiCache Serverless for Redis [Minimal CDK]
+# Amazon ElastiCache Serverless for Valkey [Minimal CDK]
 
 Pre-requisites
 - [Git](https://git-scm.com/)
@@ -21,7 +21,7 @@ npm install
 cdk bootstrap
 ```
 
-Deploy Amazon ElastiCache for Redis Cluster Mode Disabled
+Deploy Amazon ElastiCache Serverless for Valkey
 ```bash
 cdk synth; cdk deploy --require-approval never
 ```
@@ -36,9 +36,9 @@ cdk destroy -f
 Snippet from `src/elasticache-serverless-minimal-stack.ts`
 
 ```typescript
-const elastiCacheServerlessName = "ElastiCacheServerlessRedis";
+const elastiCacheServerlessName = "ElastiCacheServerlessValkey";
 new ElastiCache.CfnServerlessCache(this, "ServerlessCache", {
-    engine: "redis",
+    engine: "valkey",
     serverlessCacheName: elastiCacheServerlessName.toLowerCase(),
 });
 ```

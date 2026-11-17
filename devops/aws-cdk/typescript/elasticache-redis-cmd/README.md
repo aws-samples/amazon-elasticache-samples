@@ -1,4 +1,4 @@
-# Amazon ElastiCache for Redis Cluster Mode Disabled [CDK Stack]
+# Amazon ElastiCache for Valkey Cluster Mode Disabled [CDK Stack]
 
 Pre-requisites
 - [Git](https://git-scm.com/)
@@ -21,7 +21,7 @@ npm install
 cdk bootstrap
 ```
 
-Deploy Amazon ElastiCache for Redis Cluster Mode Disabled
+Deploy Amazon ElastiCache for Valkey Cluster Mode Disabled
 ```bash
 cdk synth; cdk deploy --require-approval never
 ```
@@ -40,10 +40,11 @@ const elastiCacheRedisCMD = new ElastiCache.CfnReplicationGroup(
     this,
     elastiCacheRedisCMDName.toLowerCase(),
     {
-        replicationGroupDescription: "ElastiCache for Redis Cluster Mode Enabled CDK",
+        replicationGroupDescription: "ElastiCache for Valkey Cluster Mode Disabled CDK",
         numCacheClusters: 2,
         automaticFailoverEnabled: true,
-        engine: "redis",
+        engine: "valkey",
+        transitEncryptionEnabled: true,
         cacheNodeType: "cache.t4g.micro",
         cacheSubnetGroupName: elastiCacheSubnetGroup.ref,
         securityGroupIds: [elastiCacheSecurityGroup.securityGroupId]
