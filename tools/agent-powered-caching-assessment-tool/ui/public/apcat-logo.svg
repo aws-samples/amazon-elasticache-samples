@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 64 64" role="img" aria-label="Agent Powered Caching Assessment Tool">
+  <title>Agent Powered Caching Assessment Tool</title>
+  <defs>
+    <linearGradient id="apcat-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="0.55" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="apcat-tier" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#C7F9FF"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded tile -->
+  <rect width="64" height="64" rx="16" fill="url(#apcat-bg)"/>
+  <!-- An "A" whose legs and crossbar are cache tiers: hot data on top, sitting on the database -->
+  <path d="M32 11 L50.5 51 H42.3 L32 28 L21.7 51 H13.5 Z" fill="#FFFFFF"/>
+  <rect x="23.5" y="37" width="17" height="5.5" rx="2.75" fill="url(#apcat-tier)"/>
+  <rect x="11" y="53.5" width="42" height="3" rx="1.5" fill="#FFFFFF" opacity="0.55"/>
+  <!-- The agent: a spark -->
+  <path d="M51 7.5 L52.9 12.1 L57.5 14 L52.9 15.9 L51 20.5 L49.1 15.9 L44.5 14 L49.1 12.1 Z" fill="#FDE68A"/>
+</svg>

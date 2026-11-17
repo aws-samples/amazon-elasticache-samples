@@ -1,0 +1,293 @@
+{
+  "job_id": "fixture-none",
+  "_purpose": "Negative fixture. Every table must be ruled out. Exercises: write-dominated traffic (hard exclusion), healthy buffer hit ratio (no pressure evidence), low traffic (hard exclusion), lock contention (disqualifier), and a comfortable host (no capacity relief available).",
+  "metadata": {
+    "collection_timestamp": "2026-09-18T10:00:00Z",
+    "collector_version": "0.1.0",
+    "collection_duration_seconds": 30.5,
+    "source_database": {
+      "engine": "postgresql",
+      "version": "15.4",
+      "hostname": "10.0.2.60",
+      "database_name": "ledger",
+      "database_size_gb": 12.0,
+      "deployment_type": "self_managed"
+    }
+  },
+  "pg_stat_statements_probe": {
+    "available": true,
+    "in_preload": true,
+    "extension_installed": true,
+    "reason": null
+  },
+  "database_schema": {
+    "tables": [
+      {
+        "table_id": "public.transactions",
+        "table_name": "transactions",
+        "schema_name": "public",
+        "row_count": 4200000,
+        "size_mb": 3100.0,
+        "full_table_scans": 3,
+        "index_scans": 890000,
+        "columns": [],
+        "primary_key": [
+          "txn_id"
+        ]
+      },
+      {
+        "table_id": "public.audit_archive",
+        "table_name": "audit_archive",
+        "schema_name": "public",
+        "row_count": 500000,
+        "size_mb": 420.0,
+        "full_table_scans": 2,
+        "index_scans": 40,
+        "columns": [],
+        "primary_key": [
+          "audit_id"
+        ]
+      },
+      {
+        "table_id": "public.config_flags",
+        "table_name": "config_flags",
+        "schema_name": "public",
+        "row_count": 45,
+        "size_mb": 0.1,
+        "full_table_scans": 900,
+        "index_scans": 10,
+        "columns": [],
+        "primary_key": [
+          "flag_key"
+        ]
+      }
+    ]
+  },
+  "queries": {
+    "query_patterns": [
+      {
+        "query_id": "q-txn-insert",
+        "query_text": "INSERT INTO transactions (account_id, amount, created_at) VALUES ($1, $2, $3)",
+        "query_type": "INSERT",
+        "calls_per_second": 240.0,
+        "frequency_per_hour": 864000,
+        "tables_accessed": [
+          "public.transactions"
+        ],
+        "execution_time_ms_avg": 3.2,
+        "rows_returned_avg": 0,
+        "cache_hit_ratio_pct": 99.7,
+        "temp_blocks_written": 0,
+        "total_time_ms": 76800.0
+      },
+      {
+        "query_id": "q-txn-update",
+        "query_text": "UPDATE transactions SET status = $1 WHERE txn_id = $2",
+        "query_type": "UPDATE",
+        "calls_per_second": 95.0,
+        "frequency_per_hour": 342000,
+        "tables_accessed": [
+          "public.transactions"
+        ],
+        "execution_time_ms_avg": 4.0,
+        "rows_returned_avg": 0,
+        "cache_hit_ratio_pct": 99.5,
+        "temp_blocks_written": 0,
+        "total_time_ms": 38000.0
+      },
+      {
+        "query_id": "q-txn-read",
+        "query_text": "SELECT * FROM transactions WHERE txn_id = $1",
+        "query_type": "SELECT",
+        "calls_per_second": 60.0,
+        "frequency_per_hour": 216000,
+        "tables_accessed": [
+          "public.transactions"
+        ],
+        "execution_time_ms_avg": 1.1,
+        "rows_returned_avg": 1,
+        "cache_hit_ratio_pct": 99.8,
+        "io_read_time_ms": 120.0,
+        "temp_blocks_written": 0,
+        "total_time_ms": 66000.0
+      },
+      {
+        "query_id": "q-audit-rare",
+        "query_text": "SELECT * FROM audit_archive WHERE audit_id = $1",
+        "query_type": "SELECT",
+        "calls_per_second": 0.002,
+        "frequency_per_hour": 7,
+        "tables_accessed": [
+          "public.audit_archive"
+        ],
+        "execution_time_ms_avg": 15.0,
+        "rows_returned_avg": 1,
+        "cache_hit_ratio_pct": 96.0,
+        "temp_blocks_written": 0,
+        "total_time_ms": 105.0
+      },
+      {
+        "query_id": "q-flags-read",
+        "query_text": "SELECT flag_key, enabled FROM config_flags",
+        "query_type": "SELECT",
+        "calls_per_second": 12.0,
+        "frequency_per_hour": 43200,
+        "tables_accessed": [
+          "public.config_flags"
+        ],
+        "execution_time_ms_avg": 0.4,
+        "rows_returned_avg": 45,
+        "cache_hit_ratio_pct": 99.9,
+        "io_read_time_ms": 2.0,
+        "temp_blocks_written": 0,
+        "total_time_ms": 4800.0
+      }
+    ],
+    "total_queries_analyzed": 5,
+    "query_log_source": "pg_stat_statements"
+  },
+  "metrics": {
+    "global_stats": {
+      "cache_hit_ratio_pct": 99.6,
+      "buffer_pool_hits": 9900000,
+      "buffer_pool_reads_from_disk": 40000,
+      "tmp_disk_tables": 0,
+      "active_connections": 22,
+      "total_transactions": 12000000
+    },
+    "bgwriter": {
+      "checkpoints_timed": 500,
+      "checkpoints_req": 4,
+      "buffers_checkpoint": 400000,
+      "buffers_clean": 20000,
+      "buffers_backend": 9000,
+      "buffers_backend_pct": 2.1,
+      "requested_checkpoint_pct": 0.8
+    },
+    "wait_events": [
+      {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "state": "active",
+        "session_count": 6
+      },
+      {
+        "wait_event_type": "None",
+        "wait_event": "None",
+        "state": "idle",
+        "session_count": 16
+      }
+    ],
+    "lock_contention": [
+      {
+        "blocked_pid": 4411,
+        "blocked_query": "UPDATE transactions SET status = $1 WHERE txn_id = $2",
+        "blocking_pid": 4390,
+        "blocking_query": "UPDATE transactions SET amount = $1 WHERE txn_id = $2",
+        "locktype": "transactionid",
+        "blocked_mode": "ShareLock"
+      }
+    ],
+    "table_churn": [
+      {
+        "schema_name": "public",
+        "table_name": "transactions",
+        "n_live_tup": 4200000,
+        "n_dead_tup": 980000,
+        "n_tup_ins": 8600000,
+        "n_tup_upd": 3400000,
+        "n_tup_del": 12000,
+        "seq_scan": 3,
+        "seq_tup_read": 900,
+        "idx_scan": 890000,
+        "idx_tup_fetch": 1200000
+      },
+      {
+        "schema_name": "public",
+        "table_name": "audit_archive",
+        "n_live_tup": 500000,
+        "n_dead_tup": 100,
+        "n_tup_ins": 500000,
+        "n_tup_upd": 0,
+        "n_tup_del": 0,
+        "seq_scan": 2,
+        "seq_tup_read": 40,
+        "idx_scan": 40,
+        "idx_tup_fetch": 40
+      },
+      {
+        "schema_name": "public",
+        "table_name": "config_flags",
+        "n_live_tup": 45,
+        "n_dead_tup": 1,
+        "n_tup_ins": 45,
+        "n_tup_upd": 12,
+        "n_tup_del": 0,
+        "seq_scan": 900,
+        "seq_tup_read": 40500,
+        "idx_scan": 10,
+        "idx_tup_fetch": 10
+      }
+    ],
+    "configuration": {
+      "shared_buffers": {
+        "setting": "1048576",
+        "unit": "8kB"
+      },
+      "effective_cache_size": {
+        "setting": "3145728",
+        "unit": "8kB"
+      },
+      "work_mem": {
+        "setting": "16384",
+        "unit": "kB"
+      }
+    }
+  },
+  "host_metrics": {
+    "collection_method": "ssm_run_command",
+    "sysstat_available": false,
+    "cpu": {
+      "vcpu_count": 16,
+      "utilization_pct": 21.0,
+      "iowait_pct": 0.8,
+      "system_pct": 4.0,
+      "user_pct": 16.2,
+      "steal_pct": 0.0,
+      "sample_interval_sec": 5
+    },
+    "memory": {
+      "total_gb": 64.0,
+      "available_gb": 38.0,
+      "used_pct": 40.6,
+      "page_cache_gb": 22.0,
+      "dirty_mb": 30.0
+    },
+    "load_average": {
+      "load_1m": 2.1,
+      "load_5m": 1.9,
+      "load_15m": 1.7
+    },
+    "swap": {
+      "total_gb": 8.0,
+      "used_gb": 0.0,
+      "used_pct": 0.0,
+      "swap_configured": true
+    },
+    "disk": {
+      "filesystems": [
+        {
+          "device": "/dev/nvme0n1p1",
+          "size_gb": 500.0,
+          "used_gb": 90.0,
+          "avail_gb": 410.0,
+          "used_pct": 18.0,
+          "mount": "/"
+        }
+      ]
+    },
+    "collection_warnings": [
+      "sysstat not installed \u2014 per-device I/O latency and utilization unavailable; disk pressure scored from /proc/diskstats only"
+    ]
+  }
+}

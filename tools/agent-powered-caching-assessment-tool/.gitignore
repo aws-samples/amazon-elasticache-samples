@@ -1,0 +1,37 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node (the console also has ui/.gitignore)
+node_modules/
+
+# Editors and the OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local configuration
+.env
+.env.*
+
+# Assessments, saved databases and the audit log (the default ARTIFACT_ROOT).
+# Collections and reports hold query text, which can contain literal values.
+artifacts/
+*.log
+
+# Files your own coding agent setup may write here (apcat agent install --project .)
+.kiro/
+.claude/
+AGENTS.md
+
+# The AWS ElastiCache skill handoff (apcat handoff)
+.elasticache/
