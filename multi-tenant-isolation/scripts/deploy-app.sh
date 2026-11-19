@@ -56,7 +56,6 @@ done
 info "VPC=$VPC_ID  redis=$REDIS_HOST  tenants=$TENANT_COUNT"
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-ECR_REPO="${ECR_REPO:-${STACK_NAME}-app}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 IMAGE_URI="${REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
@@ -74,29 +73,38 @@ fi
 info "Flask secret: $FLASK_SECRET_ARN"
 
 # --- Package + upload the rotation Lambda ----------------------------------
+# The code bucket is created by the base stack with a CloudFormation-generated
+# name, so it already exists and belongs to this account. Never derive a
+# bucket name here: S3 names are global, and a predictable name can be
+# registered first by another account, which would then control the Lambda's
+# code. Every S3 call passes --expected-bucket-owner, so it fails if the bucket
+# belongs to anyone else.
 step "Packaging the secret-rotation Lambda"
-CODE_BUCKET="${STACK_NAME}-lambda-${ACCOUNT_ID}-${AWS_REGION}"
-if ! aws s3api head-bucket --bucket "$CODE_BUCKET" >/dev/null 2>&1; then
-  info "Creating code bucket $CODE_BUCKET"
-  if [ "$AWS_REGION" = "us-east-1" ]; then
-    aws s3api create-bucket --bucket "$CODE_BUCKET" >/dev/null
-  else
-    aws s3api create-bucket --bucket "$CODE_BUCKET" \
-      --create-bucket-configuration "LocationConstraint=$AWS_REGION" >/dev/null
-  fi
-  aws s3api put-public-access-block --bucket "$CODE_BUCKET" \
-    --public-access-block-configuration \
-    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" >/dev/null
-  aws s3api put-bucket-encryption --bucket "$CODE_BUCKET" \
-    --server-side-encryption-configuration \
-    '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"aws:kms"}}]}' >/dev/null
+CODE_BUCKET="$(stack_output RotationCodeBucketName)"
+if [ -z "$CODE_BUCKET" ] || [ "$CODE_BUCKET" = "None" ]; then
+  err "Base stack '$STACK_NAME' has no RotationCodeBucketName output."
+  err "Re-run ./scripts/deploy.sh to update the base stack, then retry."
+  exit 1
 fi
-TMPZIP="$(mktemp -d)/rotation.zip"
+if ! aws s3api head-bucket --bucket "$CODE_BUCKET" \
+     --expected-bucket-owner "$ACCOUNT_ID" >/dev/null 2>&1; then
+  err "Code bucket '$CODE_BUCKET' is not accessible as a bucket owned by account $ACCOUNT_ID. Refusing to upload."
+  exit 1
+fi
+TMPDIR_ZIP="$(mktemp -d)"
+TMPZIP="$TMPDIR_ZIP/rotation.zip"
 ( cd "$REPO_ROOT/app/rotation" && zip -q -r "$TMPZIP" handler.py )
 ROTATION_KEY="rotation/$(shasum -a 256 "$TMPZIP" | cut -c1-16).zip"
-aws s3 cp "$TMPZIP" "s3://$CODE_BUCKET/$ROTATION_KEY" >/dev/null
-rm -rf "$(dirname "$TMPZIP")"
-info "Rotation code: s3://$CODE_BUCKET/$ROTATION_KEY"
+ROTATION_VERSION="$(aws s3api put-object \
+  --bucket "$CODE_BUCKET" --key "$ROTATION_KEY" --body "$TMPZIP" \
+  --expected-bucket-owner "$ACCOUNT_ID" \
+  --query VersionId --output text)"
+rm -rf "$TMPDIR_ZIP"
+if [ -z "$ROTATION_VERSION" ] || [ "$ROTATION_VERSION" = "None" ] || [ "$ROTATION_VERSION" = "null" ]; then
+  err "Upload to '$CODE_BUCKET' returned no object version (is versioning enabled?). Refusing to deploy."
+  exit 1
+fi
+info "Rotation code: s3://$CODE_BUCKET/$ROTATION_KEY (version $ROTATION_VERSION)"
 
 # --- Build and push the container image ------------------------------------
 step "Ensuring ECR repository '$ECR_REPO'"
@@ -131,7 +139,8 @@ aws cloudformation deploy \
       FlaskSecretArn="$FLASK_SECRET_ARN" \
       LogKmsKeyArn="$KMS_KEY_ARN" \
       RotationCodeBucket="$CODE_BUCKET" \
-      RotationCodeKey="$ROTATION_KEY"
+      RotationCodeKey="$ROTATION_KEY" \
+      RotationCodeVersion="$ROTATION_VERSION"
 
 ok "App stack deployed."
 

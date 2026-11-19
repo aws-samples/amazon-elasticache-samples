@@ -68,11 +68,19 @@ Parameters:
 
   RotationCodeBucket:
     Type: String
-    Description: S3 bucket holding the rotation Lambda zip (uploaded by deploy-app.sh).
+    Description: >
+      Account-owned bucket holding the rotation Lambda zip (base output
+      RotationCodeBucketName; uploaded by deploy-app.sh).
 
   RotationCodeKey:
     Type: String
     Description: S3 key of the rotation Lambda zip.
+
+  RotationCodeVersion:
+    Type: String
+    Description: >
+      S3 object version of the rotation Lambda zip that deploy-app.sh uploaded.
+      Pins the function to that exact object.
 
 Resources:
   # Internal ALB ingress (HTTPS from the EC2 client only) is defined in the base
@@ -247,6 +255,7 @@ Resources:
       Code:
         S3Bucket: !Ref RotationCodeBucket
         S3Key: !Ref RotationCodeKey
+        S3ObjectVersion: !Ref RotationCodeVersion
       VpcConfig:
         SubnetIds: !Ref AppSubnetIds
         SecurityGroupIds: [!Ref AppSecurityGroupId]
