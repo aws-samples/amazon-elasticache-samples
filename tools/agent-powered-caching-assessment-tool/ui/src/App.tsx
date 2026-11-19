@@ -20,6 +20,9 @@ import { follow, href, navigate, useRoute, type Route } from "./router";
 import { setMode, type ColorMode } from "./theme";
 
 
+/** Routes at the top of the navigation. They show no breadcrumbs, only their page title. */
+const TOP_LEVEL: ReadonlySet<Route["name"]> = new Set(["home", "start", "databases", "history", "chat"]);
+
 /**
  * The breadcrumbs for a route.
  * @param route The route on screen.
@@ -31,8 +34,6 @@ function crumbs(route: Route, dbLabel: string | null): BreadcrumbGroupProps.Item
   const assessments = { text: "Assessments", href: href({ name: "history" }) };
   const dbCrumb = (id: string) => ({ text: dbLabel ?? id, href: href({ name: "database", id }) });
   switch (route.name) {
-    case "start": return [{ text: "Get started", href: href(route) }];
-    case "databases": return [databases];
     case "database": return [databases, dbCrumb(route.id)];
     case "connect":
       return route.databaseId
@@ -43,8 +44,8 @@ function crumbs(route: Route, dbLabel: string | null): BreadcrumbGroupProps.Item
         ? [databases, dbCrumb(route.databaseId), { text: route.id, href: href(route) }]
         : [assessments, { text: route.id, href: href(route) }];
     case "new": return [assessments, { text: "New assessment", href: href(route) }];
-    case "chat": return [{ text: "Assistant", href: href(route) }];
-    case "home": return [];
+    // Top-level pages have no trail: a single crumb would only repeat the page title.
+    case "home": case "start": case "databases": case "history": case "chat": return [];
     default: return [assessments];
   }
 }
@@ -164,7 +165,7 @@ export function App({ initialMode }: { initialMode: ColorMode }) {
               items={navItems(running.data ?? 0)}
             />
           }
-          breadcrumbs={route.name === "home" ? undefined
+          breadcrumbs={TOP_LEVEL.has(route.name) ? undefined
             : <BreadcrumbGroup items={crumbs(route, dbLabel)} ariaLabel="Breadcrumbs" onFollow={(e) => follow(e)} />}
           notifications={bar}
           tools={<ChatPage variant="drawer" />}
