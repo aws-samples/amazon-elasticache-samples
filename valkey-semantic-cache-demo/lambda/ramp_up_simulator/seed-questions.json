@@ -1,0 +1,809 @@
+{
+  "version": "1.0",
+  "description": "Retail support desk seed questions for semantic caching demo",
+  "similarity_threshold": 0.85,
+  "demo_order_ids": ["ORD-2025-001", "ORD-2025-002", "ORD-2025-003", "ORD-2025-004", "ORD-2025-005", "ORD-2025-006", "ORD-2025-007", "ORD-2025-008", "ORD-2025-009", "ORD-2025-010"],
+  "demo_tracking_numbers": ["1Z999AA10123456784", "1Z999AA10123456785", "1Z999AA10123456786", "1Z999AA10123456787", "1Z999AA10123456788", "1Z999AA10123456789", "1Z999AA10123456790", "1Z999AA10123456791", "1Z999AA10123456792", "1Z999AA10123456793"],
+  "scenarios": [
+    {
+      "id": "order_tracking_01",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-001?",
+      "variations": [
+        "I need to track my order ORD-2025-001",
+        "What's the status of order ORD-2025-001?",
+        "Can you tell me where order ORD-2025-001 is?",
+        "I want to know the status of ORD-2025-001",
+        "Track order ORD-2025-001 please",
+        "Order ORD-2025-001 - where is it?",
+        "I'm trying to find out about order ORD-2025-001",
+        "What happened to my order ORD-2025-001?",
+        "Can I get an update on order ORD-2025-001?"
+      ]
+    },
+    {
+      "id": "order_tracking_02",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-002?",
+      "variations": [
+        "I need to track my order ORD-2025-002",
+        "What's the status of order ORD-2025-002?",
+        "Can you tell me where order ORD-2025-002 is?",
+        "I want to know the status of ORD-2025-002",
+        "Track order ORD-2025-002 please",
+        "Order ORD-2025-002 - where is it?",
+        "I'm trying to find out about order ORD-2025-002",
+        "What happened to my order ORD-2025-002?",
+        "Can I get an update on order ORD-2025-002?"
+      ]
+    },
+    {
+      "id": "order_tracking_03",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-003?",
+      "variations": [
+        "I need to track my order ORD-2025-003",
+        "What's the status of order ORD-2025-003?",
+        "Can you tell me where order ORD-2025-003 is?",
+        "I want to know the status of ORD-2025-003",
+        "Track order ORD-2025-003 please",
+        "Order ORD-2025-003 - where is it?",
+        "I'm trying to find out about order ORD-2025-003",
+        "What happened to my order ORD-2025-003?",
+        "Can I get an update on order ORD-2025-003?"
+      ]
+    },
+    {
+      "id": "order_tracking_04",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-004?",
+      "variations": [
+        "I need to track my order ORD-2025-004",
+        "What's the status of order ORD-2025-004?",
+        "Can you tell me where order ORD-2025-004 is?",
+        "I want to know the status of ORD-2025-004",
+        "Track order ORD-2025-004 please",
+        "Order ORD-2025-004 - where is it?",
+        "I'm trying to find out about order ORD-2025-004",
+        "What happened to my order ORD-2025-004?",
+        "Can I get an update on order ORD-2025-004?"
+      ]
+    },
+    {
+      "id": "order_tracking_05",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-005?",
+      "variations": [
+        "I need to track my order ORD-2025-005",
+        "What's the status of order ORD-2025-005?",
+        "Can you tell me where order ORD-2025-005 is?",
+        "I want to know the status of ORD-2025-005",
+        "Track order ORD-2025-005 please",
+        "Order ORD-2025-005 - where is it?",
+        "I'm trying to find out about order ORD-2025-005",
+        "What happened to my order ORD-2025-005?",
+        "Can I get an update on order ORD-2025-005?"
+      ]
+    },
+    {
+      "id": "order_tracking_06",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-006?",
+      "variations": [
+        "I need to track my order ORD-2025-006",
+        "What's the status of order ORD-2025-006?",
+        "Can you tell me where order ORD-2025-006 is?",
+        "I want to know the status of ORD-2025-006",
+        "Track order ORD-2025-006 please",
+        "Order ORD-2025-006 - where is it?",
+        "I'm trying to find out about order ORD-2025-006",
+        "What happened to my order ORD-2025-006?",
+        "Can I get an update on order ORD-2025-006?"
+      ]
+    },
+    {
+      "id": "order_tracking_07",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-007?",
+      "variations": [
+        "I need to track my order ORD-2025-007",
+        "What's the status of order ORD-2025-007?",
+        "Can you tell me where order ORD-2025-007 is?",
+        "I want to know the status of ORD-2025-007",
+        "Track order ORD-2025-007 please",
+        "Order ORD-2025-007 - where is it?",
+        "I'm trying to find out about order ORD-2025-007",
+        "What happened to my order ORD-2025-007?",
+        "Can I get an update on order ORD-2025-007?"
+      ]
+    },
+    {
+      "id": "order_tracking_08",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-008?",
+      "variations": [
+        "I need to track my order ORD-2025-008",
+        "What's the status of order ORD-2025-008?",
+        "Can you tell me where order ORD-2025-008 is?",
+        "I want to know the status of ORD-2025-008",
+        "Track order ORD-2025-008 please",
+        "Order ORD-2025-008 - where is it?",
+        "I'm trying to find out about order ORD-2025-008",
+        "What happened to my order ORD-2025-008?",
+        "Can I get an update on order ORD-2025-008?"
+      ]
+    },
+    {
+      "id": "order_tracking_09",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-009?",
+      "variations": [
+        "I need to track my order ORD-2025-009",
+        "What's the status of order ORD-2025-009?",
+        "Can you tell me where order ORD-2025-009 is?",
+        "I want to know the status of ORD-2025-009",
+        "Track order ORD-2025-009 please",
+        "Order ORD-2025-009 - where is it?",
+        "I'm trying to find out about order ORD-2025-009",
+        "What happened to my order ORD-2025-009?",
+        "Can I get an update on order ORD-2025-009?"
+      ]
+    },
+    {
+      "id": "order_tracking_10",
+      "category": "order_tracking",
+      "base_question": "Where is my order ORD-2025-010?",
+      "variations": [
+        "I need to track my order ORD-2025-010",
+        "What's the status of order ORD-2025-010?",
+        "Can you tell me where order ORD-2025-010 is?",
+        "I want to know the status of ORD-2025-010",
+        "Track order ORD-2025-010 please",
+        "Order ORD-2025-010 - where is it?",
+        "I'm trying to find out about order ORD-2025-010",
+        "What happened to my order ORD-2025-010?",
+        "Can I get an update on order ORD-2025-010?"
+      ]
+    },
+    {
+      "id": "shipping_delay_01",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-001 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-001 taking so long?",
+        "Order ORD-2025-001 hasn't arrived yet",
+        "ORD-2025-001 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-001",
+        "Order ORD-2025-001 is delayed",
+        "When will my delayed order ORD-2025-001 arrive?",
+        "Still waiting on order ORD-2025-001",
+        "Order ORD-2025-001 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-001?"
+      ]
+    },
+    {
+      "id": "shipping_delay_02",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-002 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-002 taking so long?",
+        "Order ORD-2025-002 hasn't arrived yet",
+        "ORD-2025-002 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-002",
+        "Order ORD-2025-002 is delayed",
+        "When will my delayed order ORD-2025-002 arrive?",
+        "Still waiting on order ORD-2025-002",
+        "Order ORD-2025-002 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-002?"
+      ]
+    },
+    {
+      "id": "shipping_delay_03",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-003 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-003 taking so long?",
+        "Order ORD-2025-003 hasn't arrived yet",
+        "ORD-2025-003 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-003",
+        "Order ORD-2025-003 is delayed",
+        "When will my delayed order ORD-2025-003 arrive?",
+        "Still waiting on order ORD-2025-003",
+        "Order ORD-2025-003 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-003?"
+      ]
+    },
+    {
+      "id": "shipping_delay_04",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-004 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-004 taking so long?",
+        "Order ORD-2025-004 hasn't arrived yet",
+        "ORD-2025-004 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-004",
+        "Order ORD-2025-004 is delayed",
+        "When will my delayed order ORD-2025-004 arrive?",
+        "Still waiting on order ORD-2025-004",
+        "Order ORD-2025-004 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-004?"
+      ]
+    },
+    {
+      "id": "shipping_delay_05",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-005 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-005 taking so long?",
+        "Order ORD-2025-005 hasn't arrived yet",
+        "ORD-2025-005 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-005",
+        "Order ORD-2025-005 is delayed",
+        "When will my delayed order ORD-2025-005 arrive?",
+        "Still waiting on order ORD-2025-005",
+        "Order ORD-2025-005 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-005?"
+      ]
+    },
+    {
+      "id": "shipping_delay_06",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-006 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-006 taking so long?",
+        "Order ORD-2025-006 hasn't arrived yet",
+        "ORD-2025-006 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-006",
+        "Order ORD-2025-006 is delayed",
+        "When will my delayed order ORD-2025-006 arrive?",
+        "Still waiting on order ORD-2025-006",
+        "Order ORD-2025-006 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-006?"
+      ]
+    },
+    {
+      "id": "shipping_delay_07",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-007 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-007 taking so long?",
+        "Order ORD-2025-007 hasn't arrived yet",
+        "ORD-2025-007 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-007",
+        "Order ORD-2025-007 is delayed",
+        "When will my delayed order ORD-2025-007 arrive?",
+        "Still waiting on order ORD-2025-007",
+        "Order ORD-2025-007 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-007?"
+      ]
+    },
+    {
+      "id": "shipping_delay_08",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-008 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-008 taking so long?",
+        "Order ORD-2025-008 hasn't arrived yet",
+        "ORD-2025-008 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-008",
+        "Order ORD-2025-008 is delayed",
+        "When will my delayed order ORD-2025-008 arrive?",
+        "Still waiting on order ORD-2025-008",
+        "Order ORD-2025-008 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-008?"
+      ]
+    },
+    {
+      "id": "shipping_delay_09",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-009 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-009 taking so long?",
+        "Order ORD-2025-009 hasn't arrived yet",
+        "ORD-2025-009 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-009",
+        "Order ORD-2025-009 is delayed",
+        "When will my delayed order ORD-2025-009 arrive?",
+        "Still waiting on order ORD-2025-009",
+        "Order ORD-2025-009 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-009?"
+      ]
+    },
+    {
+      "id": "shipping_delay_10",
+      "category": "shipping_delay",
+      "base_question": "My order ORD-2025-010 is delayed, what's going on?",
+      "variations": [
+        "Why is order ORD-2025-010 taking so long?",
+        "Order ORD-2025-010 hasn't arrived yet",
+        "ORD-2025-010 is late, can you help?",
+        "I've been waiting forever for order ORD-2025-010",
+        "Order ORD-2025-010 is delayed",
+        "When will my delayed order ORD-2025-010 arrive?",
+        "Still waiting on order ORD-2025-010",
+        "Order ORD-2025-010 hasn't shipped yet, it's been days",
+        "Why is shipping taking so long for ORD-2025-010?"
+      ]
+    },
+    {
+      "id": "return_policy_01",
+      "category": "return_policy",
+      "base_question": "What is your return policy?",
+      "variations": [
+        "How do I return an item?",
+        "Can I return something I bought?",
+        "What's the process for returns?",
+        "I need to know about your return policy",
+        "How does returning items work?",
+        "Tell me about your return policy",
+        "What are the rules for returns?",
+        "Can you explain your return process?",
+        "I want to understand your return policy"
+      ]
+    },
+    {
+      "id": "return_policy_02",
+      "category": "return_policy",
+      "base_question": "How long do I have to return an item?",
+      "variations": [
+        "What's the return window?",
+        "How many days for returns?",
+        "What's the deadline for returning items?",
+        "Return period - how long is it?",
+        "How much time do I have to return something?",
+        "When does the return period expire?",
+        "What's the time limit on returns?",
+        "How long before I can't return anymore?",
+        "Days allowed for returns?"
+      ]
+    },
+    {
+      "id": "return_policy_03",
+      "category": "return_policy",
+      "base_question": "Do I need a receipt to return an item?",
+      "variations": [
+        "Can I return without a receipt?",
+        "Is a receipt required for returns?",
+        "What if I lost my receipt?",
+        "Return without proof of purchase?",
+        "Do you need the receipt for a return?",
+        "Can I still return if I don't have the receipt?",
+        "No receipt - can I return?",
+        "Receipt required for returning items?",
+        "What happens if I can't find my receipt?"
+      ]
+    },
+    {
+      "id": "return_policy_04",
+      "category": "return_policy",
+      "base_question": "Can I get a refund or only store credit?",
+      "variations": [
+        "Do you give cash refunds?",
+        "Will I get my money back or store credit?",
+        "Refund or exchange only?",
+        "Can I get a full refund?",
+        "Is store credit the only option?",
+        "What are my refund options?",
+        "Money back or credit?",
+        "Do you offer full refunds?",
+        "Can I choose between refund and credit?"
+      ]
+    },
+    {
+      "id": "return_policy_05",
+      "category": "return_policy",
+      "base_question": "Are sale items returnable?",
+      "variations": [
+        "Can I return clearance items?",
+        "Do you accept returns on discounted items?",
+        "Return policy for sale merchandise?",
+        "Can discounted items be returned?",
+        "What about returning items on sale?",
+        "Are final sale items returnable?",
+        "Can I return something I got on sale?",
+        "Clearance return policy?",
+        "Do sale items have different return rules?"
+      ]
+    },
+    {
+      "id": "return_policy_06",
+      "category": "return_policy",
+      "base_question": "How do I start a return online?",
+      "variations": [
+        "Can I initiate a return on the website?",
+        "Online return process?",
+        "How to return an online order?",
+        "Where do I go to start a return?",
+        "Steps to return something online?",
+        "Return online purchase - how?",
+        "Website return instructions?",
+        "Can I do returns through my account?",
+        "Online return initiation process?"
+      ]
+    },
+    {
+      "id": "return_policy_07",
+      "category": "return_policy",
+      "base_question": "Do I have to pay for return shipping?",
+      "variations": [
+        "Is return shipping free?",
+        "Who pays for return shipping?",
+        "Return shipping cost - who covers it?",
+        "Free return shipping?",
+        "Do I need to pay to ship back returns?",
+        "Return postage - is it free?",
+        "Cost of return shipping?",
+        "Will you pay for return shipping?",
+        "Shipping fees for returns?"
+      ]
+    },
+    {
+      "id": "return_policy_08",
+      "category": "return_policy",
+      "base_question": "Can I return an item to a store instead of shipping?",
+      "variations": [
+        "In-store returns available?",
+        "Can I drop off my return at a store?",
+        "Return to physical store location?",
+        "Do you accept in-person returns?",
+        "Can I bring my return to a store?",
+        "Store return instead of mail?",
+        "Return at retail location?",
+        "Physical store return option?",
+        "Can I avoid shipping by returning in store?"
+      ]
+    },
+    {
+      "id": "shipping_info_01",
+      "category": "shipping_info",
+      "base_question": "How long does shipping take?",
+      "variations": [
+        "What are your delivery times?",
+        "When will my order arrive?",
+        "How many days for delivery?",
+        "Shipping duration?",
+        "How fast do you ship?",
+        "Expected delivery time?",
+        "How long until I get my order?",
+        "Delivery timeframe?",
+        "Standard shipping time?"
+      ]
+    },
+    {
+      "id": "shipping_info_02",
+      "category": "shipping_info",
+      "base_question": "Do you offer free shipping?",
+      "variations": [
+        "Is shipping free?",
+        "Any free shipping options?",
+        "How do I get free shipping?",
+        "Free delivery available?",
+        "What's the free shipping threshold?",
+        "Do you have free shipping promotions?",
+        "Can I qualify for free shipping?",
+        "Free shipping minimum order?",
+        "Is there a way to avoid shipping fees?"
+      ]
+    },
+    {
+      "id": "shipping_info_03",
+      "category": "shipping_info",
+      "base_question": "Do you ship internationally?",
+      "variations": [
+        "Can you deliver outside the US?",
+        "International shipping available?",
+        "Do you ship to Canada?",
+        "Overseas delivery options?",
+        "Can I order from another country?",
+        "Do you deliver worldwide?",
+        "International orders accepted?",
+        "Ship to other countries?",
+        "Global shipping options?"
+      ]
+    },
+    {
+      "id": "shipping_info_04",
+      "category": "shipping_info",
+      "base_question": "What shipping carriers do you use?",
+      "variations": [
+        "Who delivers your packages?",
+        "Which courier do you use?",
+        "UPS or FedEx?",
+        "What delivery service do you use?",
+        "Who ships your orders?",
+        "Shipping carrier options?",
+        "Do you use USPS?",
+        "Which shipping company?",
+        "Delivery carrier information?"
+      ]
+    },
+    {
+      "id": "shipping_info_05",
+      "category": "shipping_info",
+      "base_question": "Can I change my shipping address?",
+      "variations": [
+        "How do I update delivery address?",
+        "Change address on my order?",
+        "Wrong address - can I fix it?",
+        "Update shipping information?",
+        "Modify delivery address?",
+        "I entered the wrong address",
+        "Can I redirect my package?",
+        "Change where my order is going?",
+        "Address correction for order?"
+      ]
+    },
+    {
+      "id": "shipping_info_06",
+      "category": "shipping_info",
+      "base_question": "Do you offer express shipping?",
+      "variations": [
+        "Can I get faster delivery?",
+        "Expedited shipping available?",
+        "Rush delivery options?",
+        "How to get my order faster?",
+        "Next day delivery available?",
+        "Priority shipping options?",
+        "Faster shipping methods?",
+        "Can I pay for quicker shipping?",
+        "Express delivery cost?"
+      ]
+    },
+    {
+      "id": "shipping_info_07",
+      "category": "shipping_info",
+      "base_question": "My package was marked delivered but I didn't receive it",
+      "variations": [
+        "Says delivered but no package",
+        "Tracking shows delivered but it's not here",
+        "Package marked delivered but not received",
+        "Where is my delivered package?",
+        "Delivery confirmation but no package",
+        "It says delivered but I don't have it",
+        "Missing package marked as delivered",
+        "Package not here but tracking says delivered",
+        "Delivered status but nothing arrived"
+      ]
+    },
+    {
+      "id": "payment_01",
+      "category": "payment",
+      "base_question": "What payment methods do you accept?",
+      "variations": [
+        "How can I pay?",
+        "Which credit cards do you take?",
+        "Payment options available?",
+        "Do you accept PayPal?",
+        "Can I pay with Apple Pay?",
+        "Accepted payment types?",
+        "What forms of payment?",
+        "Do you take debit cards?",
+        "Payment methods supported?"
+      ]
+    },
+    {
+      "id": "payment_02",
+      "category": "payment",
+      "base_question": "Is my payment information secure?",
+      "variations": [
+        "Is it safe to enter my credit card?",
+        "How do you protect my payment data?",
+        "Payment security measures?",
+        "Is your checkout secure?",
+        "Will my card info be safe?",
+        "Do you use secure payment?",
+        "How is my payment protected?",
+        "Credit card safety on your site?",
+        "Is the payment process encrypted?"
+      ]
+    },
+    {
+      "id": "payment_03",
+      "category": "payment",
+      "base_question": "Why was my payment declined?",
+      "variations": [
+        "My card was rejected",
+        "Payment not going through",
+        "Card declined - why?",
+        "Transaction failed, what happened?",
+        "Payment error on checkout",
+        "Can't complete payment",
+        "My payment won't process",
+        "Order failed due to payment",
+        "Credit card not accepted?"
+      ]
+    },
+    {
+      "id": "payment_04",
+      "category": "payment",
+      "base_question": "Do you offer payment plans?",
+      "variations": [
+        "Can I pay in installments?",
+        "Buy now pay later options?",
+        "Do you have financing?",
+        "Can I split payments?",
+        "Installment payment available?",
+        "Payment plan options?",
+        "Can I pay over time?",
+        "Do you offer Klarna or Afterpay?",
+        "Monthly payment options?"
+      ]
+    },
+    {
+      "id": "payment_05",
+      "category": "payment",
+      "base_question": "When will I be charged for my order?",
+      "variations": [
+        "When does payment process?",
+        "Will I be charged immediately?",
+        "When do you charge my card?",
+        "Payment timing?",
+        "Charged at checkout or shipping?",
+        "When is my card billed?",
+        "Do you charge when order ships?",
+        "Billing timing for orders?",
+        "When will the charge appear?"
+      ]
+    },
+    {
+      "id": "general_support_01",
+      "category": "general_support",
+      "base_question": "How do I contact customer service?",
+      "variations": [
+        "What's your customer service number?",
+        "How can I reach support?",
+        "Contact information?",
+        "How to talk to a representative?",
+        "Customer support contact?",
+        "Can I call customer service?",
+        "Support phone number?",
+        "How do I get help?",
+        "Ways to contact you?"
+      ]
+    },
+    {
+      "id": "general_support_02",
+      "category": "general_support",
+      "base_question": "What are your business hours?",
+      "variations": [
+        "When are you open?",
+        "Customer service hours?",
+        "What time do you close?",
+        "Operating hours?",
+        "When can I call support?",
+        "Hours of operation?",
+        "What time does support open?",
+        "Business operating hours?",
+        "When is customer service available?"
+      ]
+    },
+    {
+      "id": "general_support_03",
+      "category": "general_support",
+      "base_question": "How do I create an account?",
+      "variations": [
+        "How to sign up?",
+        "Account registration process?",
+        "Can I make an account?",
+        "How to register on your site?",
+        "Creating a new account?",
+        "Sign up instructions?",
+        "How do I become a member?",
+        "Account creation help?",
+        "Register for an account?"
+      ]
+    },
+    {
+      "id": "general_support_04",
+      "category": "general_support",
+      "base_question": "I forgot my password, how do I reset it?",
+      "variations": [
+        "Password reset help",
+        "Can't remember my password",
+        "How to recover my account?",
+        "Reset password instructions?",
+        "Forgot login credentials",
+        "How do I change my password?",
+        "Password recovery process?",
+        "Can't log in - forgot password",
+        "Reset my account password?"
+      ]
+    },
+    {
+      "id": "general_support_05",
+      "category": "general_support",
+      "base_question": "How do I cancel my order?",
+      "variations": [
+        "Can I cancel my purchase?",
+        "Order cancellation process?",
+        "I want to cancel my order",
+        "How to stop my order?",
+        "Cancel order request",
+        "Can I cancel before shipping?",
+        "Cancelling an order - how?",
+        "I changed my mind, cancel order?",
+        "Order cancellation help?"
+      ]
+    },
+    {
+      "id": "general_support_06",
+      "category": "general_support",
+      "base_question": "Can I modify my order after placing it?",
+      "variations": [
+        "Change my order?",
+        "Edit order after checkout?",
+        "Can I update my order?",
+        "Modify order request",
+        "Change items in my order?",
+        "Order modification possible?",
+        "Can I add to my order?",
+        "Update order details?",
+        "Make changes to existing order?"
+      ]
+    },
+    {
+      "id": "general_support_07",
+      "category": "general_support",
+      "base_question": "Do you have a loyalty program?",
+      "variations": [
+        "Rewards program available?",
+        "How do I earn points?",
+        "Do you have a rewards program?",
+        "Member benefits?",
+        "Loyalty rewards information?",
+        "Can I earn rewards on purchases?",
+        "Points program?",
+        "Customer loyalty benefits?",
+        "How does your rewards program work?"
+      ]
+    },
+    {
+      "id": "general_support_08",
+      "category": "general_support",
+      "base_question": "How do I use a promo code?",
+      "variations": [
+        "Where do I enter a coupon?",
+        "Apply discount code?",
+        "Promo code not working",
+        "How to redeem coupon?",
+        "Where's the promo code field?",
+        "Apply coupon to order?",
+        "Discount code instructions?",
+        "Using promotional codes?",
+        "How to add promo code at checkout?"
+      ]
+    },
+    {
+      "id": "general_support_09",
+      "category": "general_support",
+      "base_question": "Is this item in stock?",
+      "variations": [
+        "Do you have this available?",
+        "Check stock availability?",
+        "Is this product available?",
+        "When will this be back in stock?",
+        "Out of stock - when available?",
+        "Product availability check?",
+        "Do you have inventory?",
+        "Is this item available now?",
+        "Stock status for item?"
+      ]
+    },
+    {
+      "id": "general_support_10",
+      "category": "general_support",
+      "base_question": "Can I get a price match?",
+      "variations": [
+        "Do you price match competitors?",
+        "Price matching policy?",
+        "Will you match a lower price?",
+        "Found it cheaper elsewhere",
+        "Price match guarantee?",
+        "Can you beat this price?",
+        "Competitor price match?",
+        "Do you honor lower prices?",
+        "Price adjustment request?"
+      ]
+    }
+  ]
+}

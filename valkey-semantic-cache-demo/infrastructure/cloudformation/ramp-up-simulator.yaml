@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Traffic ramp-up simulator Lambda for semantic caching demo'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: "semantic-cache-demo"
+    Description: "Project name prefix for resources"
+  
+  AgentCoreRuntimeARN:
+    Type: String
+    Description: "ARN of the deployed AgentCore runtime"
+  
+  SeedQuestionsBucket:
+    Type: String
+    Description: "S3 bucket containing seed-questions.json"
+  
+  SeedQuestionsKey:
+    Type: String
+    Default: "seed-questions.json"
+    Description: "S3 key for seed questions file"
+
+Resources:
+  RampUpSimulatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-ramp-up-simulator"
+      CodeUri: ../../lambda/ramp_up_simulator/
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures:
+        - arm64
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          AGENTCORE_RUNTIME_ARN: !Ref AgentCoreRuntimeARN
+          SEED_QUESTIONS_BUCKET: !Ref SeedQuestionsBucket
+          SEED_QUESTIONS_KEY: !Ref SeedQuestionsKey
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            # Bedrock AgentCore invocation
+            - Effect: Allow
+              Action:
+                - bedrock-agentcore:InvokeAgentRuntime
+              Resource: 
+                - !Ref AgentCoreRuntimeARN
+                - !Sub "${AgentCoreRuntimeARN}/*"
+            
+            # S3 read access for seed questions
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "arn:aws:s3:::${SeedQuestionsBucket}/${SeedQuestionsKey}"
+            
+            # CloudWatch Logs
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource:
+                - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-ramp-up-simulator:*"
+
+Outputs:
+  RampUpSimulatorFunctionArn:
+    Description: "ARN of the ramp-up simulator Lambda function"
+    Value: !GetAtt RampUpSimulatorFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionArn"
+  
+  RampUpSimulatorFunctionName:
+    Description: "Name of the ramp-up simulator Lambda function"
+    Value: !Ref RampUpSimulatorFunction
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionName"
