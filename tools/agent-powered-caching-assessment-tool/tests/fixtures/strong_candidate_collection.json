@@ -1,0 +1,244 @@
+{
+  "job_id": "fixture-strong",
+  "metadata": {
+    "collection_timestamp": "2026-09-18T10:00:00Z",
+    "collector_version": "0.1.0",
+    "collection_duration_seconds": 42.1,
+    "source_database": {
+      "engine": "postgresql",
+      "version": "15.4",
+      "hostname": "10.0.1.50",
+      "database_name": "production",
+      "database_size_gb": 48.2,
+      "deployment_type": "self_managed"
+    }
+  },
+  "pg_stat_statements_probe": {
+    "available": true,
+    "in_preload": true,
+    "extension_installed": true,
+    "reason": null
+  },
+  "database_schema": {
+    "tables": [
+      {
+        "table_id": "public.product_catalog",
+        "table_name": "product_catalog",
+        "schema_name": "public",
+        "row_count": 85000,
+        "size_mb": 62.5,
+        "full_table_scans": 4200,
+        "index_scans": 1900,
+        "columns": [],
+        "primary_key": [
+          "product_id"
+        ]
+      },
+      {
+        "table_id": "public.event_log",
+        "table_name": "event_log",
+        "schema_name": "public",
+        "row_count": 9500000,
+        "size_mb": 8800.0,
+        "full_table_scans": 12,
+        "index_scans": 240000,
+        "columns": [],
+        "primary_key": [
+          "event_id"
+        ]
+      }
+    ]
+  },
+  "queries": {
+    "query_patterns": [
+      {
+        "query_id": "q-catalog-read",
+        "query_text": "SELECT * FROM product_catalog WHERE product_id = $1",
+        "query_type": "SELECT",
+        "calls_per_second": 180.0,
+        "frequency_per_hour": 648000,
+        "tables_accessed": [
+          "public.product_catalog"
+        ],
+        "execution_time_ms_avg": 68.0,
+        "rows_returned_avg": 1,
+        "cache_hit_ratio_pct": 72.4,
+        "shared_blks_hit": 1400000,
+        "shared_blks_read": 533000,
+        "io_read_time_ms": 41000.0,
+        "temp_blocks_written": 0,
+        "total_time_ms": 95000.0
+      },
+      {
+        "query_id": "q-catalog-list",
+        "query_text": "SELECT product_id, name, price FROM product_catalog WHERE category_id = $1 ORDER BY rank LIMIT 20",
+        "query_type": "SELECT",
+        "calls_per_second": 45.0,
+        "frequency_per_hour": 162000,
+        "tables_accessed": [
+          "public.product_catalog"
+        ],
+        "execution_time_ms_avg": 120.0,
+        "rows_returned_avg": 20,
+        "cache_hit_ratio_pct": 65.0,
+        "shared_blks_hit": 300000,
+        "shared_blks_read": 161000,
+        "io_read_time_ms": 22000.0,
+        "temp_blocks_written": 480,
+        "total_time_ms": 52000.0
+      },
+      {
+        "query_id": "q-catalog-update",
+        "query_text": "UPDATE product_catalog SET price = $1 WHERE product_id = $2",
+        "query_type": "UPDATE",
+        "calls_per_second": 0.4,
+        "frequency_per_hour": 1440,
+        "tables_accessed": [
+          "public.product_catalog"
+        ],
+        "execution_time_ms_avg": 8.0,
+        "rows_returned_avg": 0,
+        "cache_hit_ratio_pct": 99.1,
+        "temp_blocks_written": 0,
+        "total_time_ms": 1200.0
+      },
+      {
+        "query_id": "q-event-insert",
+        "query_text": "INSERT INTO event_log (event_type, payload, created_at) VALUES ($1, $2, $3)",
+        "query_type": "INSERT",
+        "calls_per_second": 320.0,
+        "frequency_per_hour": 1152000,
+        "tables_accessed": [
+          "public.event_log"
+        ],
+        "execution_time_ms_avg": 2.1,
+        "rows_returned_avg": 0,
+        "cache_hit_ratio_pct": 99.6,
+        "temp_blocks_written": 0,
+        "total_time_ms": 24000.0
+      }
+    ],
+    "total_queries_analyzed": 4,
+    "query_log_source": "pg_stat_statements"
+  },
+  "metrics": {
+    "global_stats": {
+      "cache_hit_ratio_pct": 81.3,
+      "buffer_pool_hits": 4100000,
+      "buffer_pool_reads_from_disk": 943000,
+      "tmp_disk_tables": 62,
+      "active_connections": 180,
+      "total_transactions": 9800000
+    },
+    "bgwriter": {
+      "checkpoints_timed": 400,
+      "checkpoints_req": 210,
+      "buffers_checkpoint": 900000,
+      "buffers_clean": 120000,
+      "buffers_backend": 780000,
+      "buffers_backend_pct": 43.3,
+      "requested_checkpoint_pct": 34.4
+    },
+    "wait_events": [
+      {
+        "wait_event_type": "IO",
+        "wait_event": "DataFileRead",
+        "state": "active",
+        "session_count": 14
+      },
+      {
+        "wait_event_type": "None",
+        "wait_event": "None",
+        "state": "idle",
+        "session_count": 90
+      }
+    ],
+    "lock_contention": [],
+    "table_churn": [
+      {
+        "schema_name": "public",
+        "table_name": "product_catalog",
+        "n_live_tup": 85000,
+        "n_dead_tup": 2100,
+        "n_tup_ins": 400,
+        "n_tup_upd": 5200,
+        "n_tup_del": 20,
+        "seq_scan": 4200,
+        "seq_tup_read": 180000000,
+        "idx_scan": 1900,
+        "idx_tup_fetch": 640000
+      },
+      {
+        "schema_name": "public",
+        "table_name": "event_log",
+        "n_live_tup": 9500000,
+        "n_dead_tup": 12000,
+        "n_tup_ins": 4200000,
+        "n_tup_upd": 0,
+        "n_tup_del": 100000,
+        "seq_scan": 12,
+        "seq_tup_read": 4000,
+        "idx_scan": 240000,
+        "idx_tup_fetch": 480000
+      }
+    ],
+    "configuration": {
+      "shared_buffers": {
+        "setting": "16384",
+        "unit": "8kB"
+      },
+      "effective_cache_size": {
+        "setting": "524288",
+        "unit": "8kB"
+      },
+      "work_mem": {
+        "setting": "4096",
+        "unit": "kB"
+      }
+    }
+  },
+  "host_metrics": {
+    "collection_method": "ssm_run_command",
+    "sysstat_available": true,
+    "cpu": {
+      "vcpu_count": 8,
+      "utilization_pct": 78.4,
+      "iowait_pct": 18.2,
+      "system_pct": 12.0,
+      "user_pct": 48.2,
+      "steal_pct": 0.0,
+      "sample_interval_sec": 5
+    },
+    "memory": {
+      "total_gb": 32.0,
+      "available_gb": 3.1,
+      "used_pct": 90.3,
+      "page_cache_gb": 6.2,
+      "dirty_mb": 410.0
+    },
+    "load_average": {
+      "load_1m": 9.8,
+      "load_5m": 8.4,
+      "load_15m": 7.1
+    },
+    "swap": {
+      "total_gb": 4.0,
+      "used_gb": 0.9,
+      "used_pct": 22.5,
+      "swap_configured": true
+    },
+    "disk": {
+      "filesystems": [
+        {
+          "device": "/dev/nvme0n1p1",
+          "size_gb": 200.0,
+          "used_gb": 142.0,
+          "avail_gb": 58.0,
+          "used_pct": 71.0,
+          "mount": "/"
+        }
+      ]
+    },
+    "collection_warnings": []
+  }
+}

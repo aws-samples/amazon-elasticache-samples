@@ -1,0 +1,37 @@
+{
+  "name": "apcat-ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agent Powered Caching Assessment Tool console: launch and monitor assessments, read the report, ask about it",
+  "type": "module",
+  "engines": {
+    "node": "^22.12.0 || >=24.0.0"
+  },
+  "scripts": {
+    "gen:api": "openapi-typescript ${APCAT_API:-http://127.0.0.1:8000}/openapi.json --default-non-nullable false -o src/api/schema.d.ts",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cloudscape-design/chat-components": "1.0.182",
+    "@cloudscape-design/components": "3.0.1404",
+    "@cloudscape-design/design-tokens": "3.0.116",
+    "@cloudscape-design/global-styles": "1.0.71",
+    "@tanstack/react-query": "5.104.5",
+    "openapi-fetch": "0.17.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}
