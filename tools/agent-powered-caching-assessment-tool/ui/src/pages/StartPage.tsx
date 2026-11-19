@@ -61,14 +61,14 @@ export function StartPage() {
           selectedItems={selected}
           onSelectionChange={({ detail }) => setSelected(detail.selectedItems)}
           ariaLabels={{
-            selectionGroupLabel: "Databases",
+            selectionGroupLabel: "Detected databases",
             itemSelectionLabel: (_s, i) => `Select ${i.label}`,
-            tableLabel: "Databases",
+            tableLabel: "Detected databases",
           }}
           header={
             <Header
               counter={disc.data ? `(${databases.length})` : undefined}
-              description="Databases found by probing a host below, when the SSH user can run sudo as postgres, and PostgreSQL instances on this machine or in pg_service.conf. Pick one to add it."
+              description="PostgreSQL instances on this machine or in pg_service.conf, and the databases on any host you probe below (listed when the SSH user can run sudo as postgres). Pick one to add it."
               actions={
                 <SpaceBetween direction="horizontal" size="xs">
                   <Button iconName="refresh" loading={disc.isFetching} onClick={() => void disc.refetch()}>Look again</Button>
@@ -78,13 +78,13 @@ export function StartPage() {
                 </SpaceBetween>
               }
             >
-              Databases
+              Detected databases
             </Header>
           }
           empty={
             <Box textAlign="center" color="inherit">
               <SpaceBetween size="xxs">
-                <Box variant="strong">No databases found</Box>
+                <Box variant="strong">No databases detected</Box>
                 <Box color="text-body-secondary">Probe the database host below to look for PostgreSQL on it.</Box>
               </SpaceBetween>
             </Box>
@@ -107,7 +107,7 @@ export function StartPage() {
 
         <Box color="text-body-secondary">
           Not listed?{" "}
-          <Link href={href({ name: "connect" })} onFollow={(e) => follow(e)}>Add a database by hand</Link>
+          <Link href={href({ name: "connect" })} onFollow={(e) => follow(e)}>Enter the connection details yourself</Link>
         </Box>
       </SpaceBetween>
     </ContentLayout>

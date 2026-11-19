@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Box, Button, ContentLayout, Header, Link, SpaceBetween, StatusIndicator, Table, TextFilter,
+  Box, Button, Header, Link, SpaceBetween, StatusIndicator, Table, TextFilter,
 } from "@cloudscape-design/components";
 import { useDatabases } from "../api/hooks";
 import type { DatabaseView } from "../api/types";
@@ -31,7 +31,8 @@ export function DatabasesPage() {
   const selBusy = (sel?.running ?? 0) > 0;
 
   return (
-    <ContentLayout header={<Header variant="h1" description="Saved database connections, newest first. Open one to check it or run an assessment.">Databases</Header>}>
+    // The table's header is the page title (h1), so the page has no separate header.
+    <>
       <SpaceBetween size="l">
         {dbs.error ? <ErrorAlert error={dbs.error} header="The databases could not be loaded" onRetry={() => void dbs.refetch()} /> : null}
         <Table<DatabaseView>
@@ -60,6 +61,8 @@ export function DatabasesPage() {
                   <Button variant="primary" href={href({ name: "connect" })} onFollow={(e) => follow(e)}>Add a database</Button>
                 </SpaceBetween>
               }
+              variant="awsui-h1-sticky"
+              description="Saved database connections, newest first. Open one to check it or run an assessment."
             >
               Databases
             </Header>
@@ -104,6 +107,6 @@ export function DatabasesPage() {
       {deleting && (
         <DeleteDatabaseModal db={deleting} stay onClose={() => { setDeleting(null); setSelected([]); }} />
       )}
-    </ContentLayout>
+    </>
   );
 }
