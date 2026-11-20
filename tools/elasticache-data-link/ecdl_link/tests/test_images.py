@@ -125,6 +125,25 @@ class RuntimeImagesTest(unittest.TestCase):
             self.assertIn('node:22-alpine@sha256:', _read(rel), rel)
 
 
+class CaBundleTest(unittest.TestCase):
+    """The RDS CA bundles the loader image and the table listing need are
+    files in the repository, and .gitignore's *.pem rule does not drop them:
+    a plain `git add` of a fresh copy once left both out, and the loader
+    image could not build."""
+    BUNDLES = ('ecdl_link/rds-ca-bundle.pem', 'data-plane/bulk-loader/rds-ca-bundle.pem')
+
+    def test_the_bundles_exist(self):
+        for rel in self.BUNDLES:
+            self.assertIn('BEGIN CERTIFICATE', _read(rel), rel)
+            self.assertNotIn('PRIVATE KEY', _read(rel), rel)
+
+    def test_gitignore_keeps_them(self):
+        lines = [l.strip() for l in _read('.gitignore').splitlines()]
+        pem = lines.index('*.pem')
+        for rel in self.BUNDLES:
+            self.assertIn('!' + rel, lines[pem:], rel)
+
+
 class LockFilesTest(unittest.TestCase):
     """Jira story F181 (hashed lock files) and Jira story F185 (pinned versions)."""
 

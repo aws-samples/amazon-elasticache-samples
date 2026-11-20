@@ -16,6 +16,10 @@ venv/
 
 # Keys and credentials
 *.pem
+# Amazon RDS's public CA bundle (no private key): the loader and the
+# table listing verify the source's TLS certificate with it.
+!ecdl_link/rds-ca-bundle.pem
+!data-plane/bulk-loader/rds-ca-bundle.pem
 
 # Infrastructure files
 ec2-userdata*.sh
