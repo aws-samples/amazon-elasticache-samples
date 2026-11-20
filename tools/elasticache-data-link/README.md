@@ -4,24 +4,39 @@
 > security and legal teams to meet your organizational security, regulatory and
 > compliance requirements before deployment.
 
-**For** teams whose apps read the same database rows far more often than they
-change them, and want those reads served from Amazon ElastiCache for Valkey.
+ECDL keeps an Amazon ElastiCache for Valkey cache in sync with your MySQL or
+PostgreSQL database. It loads your tables into the cache once, then applies
+every committed insert, update and delete, usually within a second, so your
+application can read those rows from the cache instead of the database.
 
-**The problem:** keeping a cache in sync with the database is hard to get right.
-Writing to both, or expiring entries on a timer, still serves stale data, and
-building a reliable sync is work each team does alone.
+**The problem it solves.** Many applications read the same rows (products,
+prices, customers, settings) far more often than those rows change. Serving
+those reads from a cache takes load off the database and answers in under a
+millisecond, but keeping the cache correct is hard. Writing to both the
+database and the cache, or expiring cache entries on a timer, still serves
+stale or missing data, and building a reliable sync from the database's change
+log is work each team ends up doing alone.
 
-**ECDL** reads every committed change from the database log and applies it to
-the cache, usually within a second, with no change to the app's write code.
+- It reads the database's change log; your application's write code does not
+  change, and writes still go to the database.
+- The database stays the system of record. The cache is a read copy that
+  trails it by the time a change takes to arrive.
+- It runs in your AWS account. Your source database and your cache stay yours;
+  ECDL creates the pipeline between them (a broker, the capture and write
+  tasks, and their alarms).
+- Optional transforms on the way: row filters, computed fields, column
+  selection, renames and denormalization.
+- A web console and the `ecdl` command-line tool do the same things: plan,
+  deploy, monitor and remove a pipeline.
+
 More in the [one-pager](docs/one-pager.md).
 
-**Status:** release 0.2.29 (`VERSION`). Tested live on Aurora MySQL 3 with an
+**Status:** release 0.2.31 (`VERSION`). Tested live on Aurora MySQL 3 with an
 ElastiCache for Valkey cluster: bulk load, inserts, updates and deletes,
 filters, computed fields, renames, denormalize, reload, failovers of the
 broker and the target, and secret rotation. PostgreSQL is covered by the
-automated suites and the benchmark runs, not by a live test of this release.
-SQL Server and Oracle are not tested in this release. See
-[Limitations](#limitations).
+automated suites and the benchmark runs, not by a live test. SQL Server and
+Oracle are not tested in this release. See [Limitations](#limitations).
 
 **Contents:** [What you need](#what-you-need) · [Deploy in five steps](#deploy-in-five-steps) ·
 [Check it offline](#check-it-offline) · [Prepare the database](#prepare-the-database) ·
@@ -31,11 +46,6 @@ SQL Server and Oracle are not tested in this release. See
 [Security](#security) · [What leaves your account](#what-leaves-your-account) ·
 [For developers](#for-developers) · [API reference](#api-reference) · [Uninstall](#uninstall) ·
 [License](#license)
-
-How: a parallel bulk load fills the cache once; change data capture (CDC) then
-applies every committed insert, update and delete, with optional transforms (row
-filters, computed fields, column selection, renames, denormalization) on the
-way. The application reads from the cache; writes still go to the database.
 
 ![ECDL architecture](docs/ecdl-architecture.png)
 
@@ -83,11 +93,8 @@ app.diagrams.net).
 
 ## Deploy in five steps
 
-You need an AWS account, **your own source database and ElastiCache for Valkey
-cache** (ECDL creates neither), and the source set up as in
-[Prerequisites](docs/prerequisites.md): change capture on, a database user in
-Secrets Manager, and the signalling table. Tools: AWS CLI v2 with the Session
-Manager plugin, Docker with `buildx`, Python 3.9+ with `pyyaml` and `boto3`.
+You need everything in [What you need](#what-you-need), and the source set up
+as in [Prepare the database](#prepare-the-database).
 
 1. **Publish the images into your account** (10–30 min). Nothing is published
    centrally, so this comes first:
