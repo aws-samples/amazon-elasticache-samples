@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+# Open the ECDL control-plane UI through SSM Session Manager.
+#
+#   ecdl-cli/ecdl-ui <control-plane-stack-name> [--region R] [--profile P]
+#                    [--ui-port N] [--api-port N] [--keepalive SECONDS]
+#
+# For a control plane deployed with AccessMode=ssm (the default). It has no
+# inbound ports: the UI (3000) and API (5000) listen on the instance's loopback
+# address. This script forwards the UI to local port 3000 (--ui-port to choose
+# another). The UI forwards /api/* to the API itself, so the browser needs
+# nothing else. --api-port N also forwards the API to local port N, for the
+# `ecdl` CLI.
+#
+# Whoever runs it needs AWS credentials allowed to start an SSM session on the
+# instance (ssm:StartSession with the AWS-StartPortForwardingSession document);
+# docs/getting-started.md has an example IAM policy.
+#
+# Needs the AWS CLI v2 and the Session Manager plugin:
+#   https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+#
+# While it runs it checks the tunnels every few seconds. If one closes (an SSM
+# session ends after a period with no traffic, at its maximum duration, or when
+# the network drops) it says which, closes the others and exits with status 1,
+# so a dead tunnel never looks like a working one. To stop sessions closing
+# when idle it sends a small request through each tunnel every
+# --keepalive seconds (default 240; 0 turns it off). The default SSM idle
+# timeout is 20 minutes.
+#
+# Press Ctrl-C to close the tunnels.
+set -euo pipefail
+# ${ARR[@]+"${ARR[@]}"} below: macOS ships bash 3.2, where expanding an empty
+# array under `set -u` is an error. Bash 3.2 also has no `wait -n`, which is
+# why the tunnels are watched by polling.
+
+usage() {
+  echo "usage: $0 <control-plane-stack-name> [--region REGION] [--profile PROFILE]" >&2
+  echo "          [--ui-port N] [--api-port N] [--keepalive SECONDS]" >&2
+  exit 2
+}
+
+# The ports on the instance. Fixed by the control-plane template.
+REMOTE_UI_PORT=3000
+REMOTE_API_PORT=5000
+# How long a tunnel may take to start accepting connections, and how often the
+# tunnels are checked. Overridable for tests.
+OPEN_TIMEOUT="${ECDL_UI_OPEN_TIMEOUT:-45}"
+POLL_SECONDS="${ECDL_UI_POLL_SECONDS:-2}"
+
+STACK=""
+AWS_ARGS=()
+UI_PORT=3000
+API_PORT=""
+KEEPALIVE=240
+
+port_arg() {
+  # A TCP port number, 1-65535, or usage.
+  case "$1" in ''|*[!0-9]*) echo "error: $2 must be a port number, got '$1'" >&2; usage ;; esac
+  if [ "$1" -lt 1 ] || [ "$1" -gt 65535 ]; then
+    echo "error: $2 must be between 1 and 65535, got '$1'" >&2; usage
+  fi
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --region)    [ $# -ge 2 ] || usage; AWS_ARGS+=(--region "$2"); shift 2 ;;
+    --profile)   [ $# -ge 2 ] || usage; AWS_ARGS+=(--profile "$2"); shift 2 ;;
+    --ui-port)   [ $# -ge 2 ] || usage; port_arg "$2" --ui-port; UI_PORT="$2"; shift 2 ;;
+    --api-port)  [ $# -ge 2 ] || usage; port_arg "$2" --api-port; API_PORT="$2"; shift 2 ;;
+    --keepalive)
+      [ $# -ge 2 ] || usage
+      case "$2" in ''|*[!0-9]*) echo "error: --keepalive must be a number of seconds" >&2; usage ;; esac
+      KEEPALIVE="$2"; shift 2 ;;
+    -h|--help)   usage ;;
+    -*)          echo "unknown option: $1" >&2; usage ;;
+    *)           [ -z "$STACK" ] || usage; STACK="$1"; shift ;;
+  esac
+done
+[ -n "$STACK" ] || usage
+if [ -n "$API_PORT" ] && [ "$API_PORT" = "$UI_PORT" ]; then
+  echo "error: --ui-port and --api-port must differ" >&2
+  usage
+fi
+
+for tool in aws session-manager-plugin; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "error: '$tool' is not installed (see the header of this script)." >&2
+    exit 1
+  fi
+done
+
+# Whether something on this machine accepts connections on 127.0.0.1:$1.
+listening() {
+  (: >"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
+# Why local port $1 is taken, as precisely as this machine can tell.
+port_in_use() {
+  local port="$1" option="$2" who=""
+  if command -v lsof >/dev/null 2>&1; then
+    who="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 {print $1; exit}' || true)"
+  fi
+  echo "error: local port $port is already in use${who:+ (by $who)}." >&2
+  # macOS's AirPlay Receiver listens on 5000 and 7000 (Control Center, which
+  # lsof shows as ControlCe). Nothing in the generic message points at it.
+  if [ "$who" = "ControlCe" ] || { [ -z "$who" ] && [ "$(uname -s 2>/dev/null)" = "Darwin" ] \
+       && { [ "$port" = 5000 ] || [ "$port" = 7000 ]; }; }; then
+    echo "  On macOS this is usually AirPlay Receiver. Turn it off in System Settings >" >&2
+    echo "  General > AirDrop & Handoff > AirPlay Receiver, or pick another port." >&2
+  fi
+  echo "  Close what is using it, or choose another port with $option N." >&2
+  exit 1
+}
+
+output() {
+  aws ${AWS_ARGS[@]+"${AWS_ARGS[@]}"} cloudformation describe-stacks --stack-name "$STACK" \
+    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+}
+
+INSTANCE="$(output InstanceId)"
+MODE="$(output AccessMode)"
+if [ -z "$INSTANCE" ] || [ "$INSTANCE" = "None" ]; then
+  echo "error: stack '$STACK' has no InstanceId output. Is it the control-plane stack?" >&2
+  exit 1
+fi
+if [ "$MODE" != "ssm" ]; then
+  echo "error: stack '$STACK' uses AccessMode=$MODE, not ssm. See its OpenUi output." >&2
+  exit 1
+fi
+
+# Parallel arrays, one entry per tunnel (bash 3.2 has no associative arrays).
+NAMES=(UI)
+LOCAL_PORTS=("$UI_PORT")
+REMOTE_PORTS=("$REMOTE_UI_PORT")
+OPTIONS=(--ui-port)
+PROBES=(/config.js)
+if [ -n "$API_PORT" ]; then
+  NAMES+=(API)
+  LOCAL_PORTS+=("$API_PORT")
+  REMOTE_PORTS+=("$REMOTE_API_PORT")
+  OPTIONS+=(--api-port)
+  PROBES+=(/api/auth/status)
+fi
+
+for i in "${!NAMES[@]}"; do
+  if listening "${LOCAL_PORTS[$i]}"; then
+    port_in_use "${LOCAL_PORTS[$i]}" "${OPTIONS[$i]}"
+  fi
+done
+
+LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/ecdl-ui.XXXXXX")"
+PIDS=()
+cleanup() {
+  for pid in ${PIDS[@]+"${PIDS[@]}"}; do
+    # The AWS CLI runs session-manager-plugin as a child; close both.
+    pkill -P "$pid" 2>/dev/null || true
+    kill "$pid" 2>/dev/null || true
+  done
+  rm -rf "$LOGDIR"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# What a closed tunnel last printed, indented, to say why it closed.
+tunnel_log() {
+  sed -e '/^[[:space:]]*$/d' -e 's/^/    /' "$LOGDIR/$1.log" 2>/dev/null | tail -n 5 >&2 || true
+}
+
+for i in "${!NAMES[@]}"; do
+  aws ${AWS_ARGS[@]+"${AWS_ARGS[@]}"} ssm start-session --target "$INSTANCE" \
+    --document-name AWS-StartPortForwardingSession \
+    --parameters "portNumber=${REMOTE_PORTS[$i]},localPortNumber=${LOCAL_PORTS[$i]}" \
+    >"$LOGDIR/${NAMES[$i]}.log" 2>&1 &
+  PIDS+=("$!")
+done
+echo "Tunnels to $INSTANCE are opening."
+
+# Wait until every tunnel accepts connections, or report the one that did not.
+deadline=$((SECONDS + OPEN_TIMEOUT))
+for i in "${!NAMES[@]}"; do
+  until listening "${LOCAL_PORTS[$i]}"; do
+    if ! kill -0 "${PIDS[$i]}" 2>/dev/null; then
+      echo "error: the ${NAMES[$i]} tunnel (local port ${LOCAL_PORTS[$i]}) closed while opening:" >&2
+      tunnel_log "${NAMES[$i]}"
+      exit 1
+    fi
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      echo "error: the ${NAMES[$i]} tunnel did not open local port ${LOCAL_PORTS[$i]} within ${OPEN_TIMEOUT}s:" >&2
+      tunnel_log "${NAMES[$i]}"
+      exit 1
+    fi
+    sleep 1
+  done
+done
+
+echo "Open http://localhost:$UI_PORT in your browser. Press Ctrl-C to close the tunnels."
+if [ -n "$API_PORT" ]; then
+  echo "API for the ecdl CLI: http://localhost:$API_PORT"
+fi
+
+# One small HTTP request through a tunnel, so SSM sees traffic on it.
+keepalive() {
+  local port="$1" path="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -s -m 10 -o /dev/null "http://127.0.0.1:$port$path"
+  else
+    ( exec 3<>"/dev/tcp/127.0.0.1/$port" \
+      && printf 'GET %s HTTP/1.0\r\nHost: localhost:%s\r\n\r\n' "$path" "$port" >&3 \
+      && cat <&3 >/dev/null ) 2>/dev/null
+  fi
+}
+
+next_keepalive=$((SECONDS + KEEPALIVE))
+while :; do
+  for i in "${!NAMES[@]}"; do
+    if ! kill -0 "${PIDS[$i]}" 2>/dev/null; then
+      echo "" >&2
+      echo "error: the ${NAMES[$i]} tunnel (local port ${LOCAL_PORTS[$i]}) closed. The UI is no longer reachable." >&2
+      tunnel_log "${NAMES[$i]}"
+      echo "  Run $0 again to reopen it." >&2
+      exit 1
+    fi
+  done
+  if [ "$KEEPALIVE" -gt 0 ] && [ "$SECONDS" -ge "$next_keepalive" ]; then
+    for i in "${!NAMES[@]}"; do
+      keepalive "${LOCAL_PORTS[$i]}" "${PROBES[$i]}" || \
+        echo "warning: the ${NAMES[$i]} tunnel is open but did not answer a keep-alive request." >&2
+    done
+    next_keepalive=$((SECONDS + KEEPALIVE))
+  fi
+  sleep "$POLL_SECONDS"
+done

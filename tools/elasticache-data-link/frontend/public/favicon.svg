@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Database cylinder on the left -->
+  <ellipse cx="18" cy="16" rx="12" ry="5" fill="#527FFF" opacity="0.9"/>
+  <rect x="6" y="16" width="24" height="20" fill="#527FFF" opacity="0.8"/>
+  <ellipse cx="18" cy="36" rx="12" ry="5" fill="#3B6BF5"/>
+  <ellipse cx="18" cy="23" rx="12" ry="4" fill="none" stroke="#fff" stroke-width="0.8" opacity="0.5"/>
+  <ellipse cx="18" cy="30" rx="12" ry="4" fill="none" stroke="#fff" stroke-width="0.8" opacity="0.5"/>
+  <!-- Arrow / link from DB to cache -->
+  <line x1="30" y1="26" x2="38" y2="26" stroke="#FF9900" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="36,23 39,26 36,29" fill="none" stroke="#FF9900" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- ElastiCache-style hexagonal node on the right -->
+  <polygon points="50,14 59,19 59,31 50,36 41,31 41,19" fill="#C925D1" opacity="0.9"/>
+  <polygon points="50,17 56,20.5 56,28.5 50,32 44,28.5 44,20.5" fill="#E040FB" opacity="0.6"/>
+  <!-- Lightning bolt inside (cache/speed symbol) -->
+  <polygon points="51,20 48,26 50.5,26 49,32 54,24.5 51.5,24.5 53,20" fill="#fff"/>
+  <!-- Small "ECDL" text at bottom -->
+  <text x="32" y="52" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="bold" fill="#232F3E">ECDL</text>
+  <!-- Subtle connection dots -->
+  <circle cx="18" cy="44" r="1.5" fill="#527FFF" opacity="0.5"/>
+  <circle cx="50" cy="42" r="1.5" fill="#C925D1" opacity="0.5"/>
+  <line x1="18" y1="44" x2="50" y2="42" stroke="#999" stroke-width="0.7" stroke-dasharray="2,2" opacity="0.4"/>
+</svg>

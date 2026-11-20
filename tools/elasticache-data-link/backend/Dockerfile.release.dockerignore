@@ -1,0 +1,13 @@
+# Build context for backend/Dockerfile.release is the repository root, which
+# also holds frontend/node_modules, .git and local data. Send only what the image
+# copies. (BuildKit reads <Dockerfile>.dockerignore next to the Dockerfile, so
+# this does not affect any other build.)
+**
+!backend/**
+!ecdl_link/**
+!infra/**
+**/__pycache__
+**/*.pyc
+backend/tests
+backend/data
+ecdl_link/tests

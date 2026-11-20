@@ -1,0 +1,138 @@
+/* ComponentLogs — per-component log view.
+ * Scoped under .cl so it cannot collide with the monitor's pm-* rules. */
+
+.cl { display: flex; flex-direction: column; gap: 10px; }
+
+.cl-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cl-head h2 { margin: 0; font-size: 15px; }
+.cl-sub { font-size: 12px; color: #7f8c8d; }
+.cl-group { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cl-spacer { flex: 1; }
+.cl-dim { color: #95a5a6; }
+
+.cl-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: #555; user-select: none;
+}
+
+/* ---- component tabs ---- */
+.cl-tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.cl-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border: 1px solid #dfe4e6; border-radius: 6px;
+  background: #fff; cursor: pointer; font-size: 13px; color: #2c3e50;
+}
+.cl-tab:hover { border-color: #b9c4c9; }
+.cl-tab.is-on { border-color: #2c81ba; background: #eaf4fb; font-weight: 600; }
+/* The broker: no container, so no logs. Not clickable, but present and labelled. */
+.cl-tab.is-off {
+  cursor: default; color: #95a5a6; background: #f7f9fa;
+  border-style: dashed; font-size: 12px;
+}
+.cl-tab-age { font-size: 11px; color: #7f8c8d; }
+
+.cl-chip {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .3px;
+  padding: 1px 5px; border-radius: 3px; font-weight: 600;
+}
+.cl-chip-ok { background: #e8f6ee; color: #1e8449; }
+.cl-chip-idle { background: #eef1f2; color: #7f8c8d; }
+.cl-chip-warn { background: #fdf3e3; color: #b9770e; }
+.cl-chip-bad { background: #fdecea; color: #c0392b; }
+
+/* ---- controls ---- */
+.cl-controls {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; background: #f7f9fa; border: 1px solid #eceff0;
+  border-radius: 6px;
+}
+.cl-ranges { display: inline-flex; }
+.cl-range {
+  padding: 4px 9px; border: 1px solid #dfe4e6; background: #fff;
+  cursor: pointer; font-size: 12px; color: #2c3e50;
+}
+.cl-range:first-child { border-radius: 5px 0 0 5px; }
+.cl-range:last-child { border-radius: 0 5px 5px 0; }
+.cl-range + .cl-range { border-left: none; }
+.cl-range.is-on { background: #2c81ba; border-color: #2c81ba; color: #fff; }
+
+.cl-filter { display: inline-flex; gap: 6px; align-items: center; }
+.cl-filter input {
+  padding: 5px 8px; border: 1px solid #dfe4e6; border-radius: 5px;
+  font-size: 13px; min-width: 190px;
+}
+.cl-clear {
+  border: none; background: none; color: #2c81ba; cursor: pointer;
+  font-size: 12px; padding: 2px 4px;
+}
+.cl-clear:disabled { color: #bdc3c7; cursor: default; }
+
+.cl-streampick {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: #555;
+}
+.cl-streampick select {
+  padding: 4px 6px; border: 1px solid #dfe4e6; border-radius: 5px; font-size: 12px;
+}
+
+/* ---- derived activity ---- */
+.cl-activity {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 8px 10px; border: 1px solid #eceff0; border-radius: 6px;
+  background: #fcfdfd;
+}
+.cl-act-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cl-act-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .3px;
+  color: #95a5a6;
+}
+.cl-act-note { font-size: 12px; color: #7f8c8d; }
+.cl-lv { font-size: 12px; color: #7f8c8d; }
+.cl-lv.is-hot { font-weight: 700; }
+.cl-lv-error.is-hot { color: #c0392b; }
+.cl-lv-warn.is-hot { color: #b9770e; }
+.cl-kv { font-size: 12px; color: #2c3e50; }
+.cl-kv b { font-variant-numeric: tabular-nums; }
+.cl-sig {
+  font-size: 11px; padding: 2px 7px; border-radius: 10px;
+  background: #eef4f8; color: #2c3e50; cursor: help;
+}
+.cl-notinlogs { flex-direction: column; align-items: flex-start; gap: 2px; }
+
+/* ---- banners: absent / denied / empty are different situations ---- */
+.cl-banner {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; border-radius: 6px; font-size: 13px;
+  border-left: 3px solid;
+}
+.cl-banner b { font-size: 13px; }
+.cl-banner span { color: #5d6d7e; font-size: 12px; }
+.cl-banner-idle { background: #f7f9fa; border-color: #bdc3c7; color: #566573; }
+.cl-banner-warn { background: #fdf6e9; border-color: #e67e22; color: #935116; }
+.cl-banner-bad { background: #fdecea; border-color: #c0392b; color: #922b21; }
+
+/* ---- log body ---- */
+.cl-body {
+  max-height: 460px; overflow: auto;
+  background: #1b2431; border-radius: 6px; padding: 8px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; line-height: 1.55;
+}
+.cl-line {
+  display: flex; gap: 10px; padding: 1px 12px;
+  white-space: pre; /* preserve the container's own indentation */
+}
+.cl-body.is-wrap .cl-line { white-space: pre-wrap; }
+.cl-body.is-wrap .cl-msg { word-break: break-word; }
+.cl-line:hover { background: rgba(255, 255, 255, .05); }
+.cl-time { color: #6b7c93; flex: 0 0 auto; }
+.cl-task { color: #52739e; flex: 0 0 auto; }
+.cl-msg { color: #d4dae3; flex: 1 1 auto; }
+.cl-sev-warn .cl-msg { color: #f0c05a; }
+.cl-sev-error .cl-msg { color: #ff8a7a; }
+.cl-sev-error { background: rgba(192, 57, 43, .13); }
+
+.cl-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: #7f8c8d;
+}

@@ -1,0 +1,47 @@
+# Control-plane API image, built by ./release.sh push from the REPOSITORY ROOT:
+#
+#   docker buildx build -f backend/Dockerfile.release .
+#
+# Separate from backend/Dockerfile, which docker-compose builds with backend/ as
+# the context. That one cannot see ecdl_link/ or infra/ (compose mounts them
+# instead), and release.sh used to build it from the root -- where its
+# `COPY requirements.txt` and `python app.py` point at files that do not exist,
+# so `release.sh push` failed at this step and never wrote images.lock.
+#
+# The deploy path needs both directories inside the image: backend/links.py
+# imports ecdl_link, and reads the CloudFormation templates from infra/ at deploy
+# time. Both are looked up next to app.py first, which is where this image copies them.
+# ECR Public mirror of the Docker official image (not Docker Hub), pinned by
+# digest (Jira story F181) so a rebuild cannot pick up different bytes under the same tag.
+# To move to a newer image: docker buildx imagetools inspect <image>:<tag>.
+FROM public.ecr.aws/docker/library/python:3.11-alpine3.24@sha256:7fbad8e4652eae0186429a6f26cf5b23e27e8c6fd7ac4d0cfd7a6988cdeea1e1
+# The OS fixes published since the base image was built.
+RUN apk upgrade --no-cache
+
+WORKDIR /app
+
+# requirements.lock pins every package, including transitive ones, with hashes.
+COPY backend/requirements.lock .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
+
+COPY backend/ /app/
+COPY ecdl_link/ /app/ecdl_link/
+COPY infra/ /app/infra/
+
+ENV PYTHONUNBUFFERED=1
+# app.py binds loopback by default. Inside the container it has to accept the
+# published port. Who reaches that port is decided by the control plane's
+# AccessMode (a loopback publish in ssm mode, otherwise a security group rule),
+# not by this bind.
+ENV ECDL_BIND_HOST=0.0.0.0
+
+# Nothing here needs root (Jira story F184). The only directory it writes is /app/data,
+# the instance's /var/lib/ecdl/data, which the control-plane user data gives
+# to this uid.
+RUN adduser -D -H -u 10001 ecdl && mkdir -p /app/data && chown 10001:10001 /app/data
+USER 10001
+# Liveness: the API accepts connections on its port. A TCP connect, not an
+# HTTP request, so the check does not depend on the Host allowlist.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 5000), 3).close()"]
+CMD ["python", "app.py"]

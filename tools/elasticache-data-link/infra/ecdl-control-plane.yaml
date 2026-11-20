@@ -1,0 +1,1857 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  ECDL control plane — the API and UI that plan, deploy and monitor links.
+  Creates the instance, its IAM role and its security group. By default it has
+  no inbound ports and is reached through an SSM Session Manager port forward,
+  so IAM decides who can use it. Deploy this once per account; each link is
+  then created through it rather than by running CloudFormation yourself.
+
+# ═══════════════════════════════════════════════════════════════════════════
+# WHY THIS TEMPLATE EXISTS
+#
+# The control plane was set up manually: an EC2 instance somebody created, a
+# git checkout, docker-compose run over SSM, and IAM policies attached with the
+# CLI one at a time. None of that was written down anywhere, which means it could
+# not be reviewed, reproduced, or torn down cleanly -- and the IAM policies in
+# particular are the ones that let this control plane create infrastructure.
+#
+# WHO CAN USE IT -- AccessMode
+#
+# Anyone who can reach the API can create CloudFormation stacks, ECS services
+# and IAM roles, so how it is reached is the access control. The backend's own
+# API token is switched off (ECDL_AUTH_DISABLED=true); access is decided by one
+# of these, chosen with AccessMode:
+#
+#   ssm (default)   No inbound rule at all. The containers publish on the
+#                   instance's loopback address only, and operators reach them
+#                   through an SSM Session Manager port forward
+#                   (ecdl-cli/ecdl-ui). IAM decides who may start a session on
+#                   this instance, CloudTrail records each one, and the tunnel is
+#                   encrypted. Nothing to configure beyond IAM.
+#   load-balancer   Inbound only from the security group of a load balancer the
+#                   customer runs, typically an HTTPS ALB with built-in
+#                   authentication (OIDC, or Cognito federated to SAML). The
+#                   load balancer, certificate, domain and identity provider are
+#                   the customer's: they differ for every customer, so ECDL does
+#                   not create them. docs/getting-started.md has the steps.
+#   cidr            Inbound from AllowedCIDR, with no login. For a customer who
+#                   decides that network range alone is enough.
+#
+# WHAT THIS DOES NOT DO
+#   * No TLS on the instance itself. In ssm mode the SSM tunnel is encrypted; in
+#     load-balancer mode TLS ends at the load balancer; cidr mode is plain HTTP.
+#   * No high availability: one instance. Deployment records are kept on the
+#     instance's disk (backend/data/deployments.json), so a container restart
+#     keeps them, but replacing the instance does not. The CloudFormation stacks
+#     it creates are the durable record of what exists.
+#   * Flask's development server. Fine for a single-operator control plane, and
+#     called out because it is not a production WSGI setup.
+# ═══════════════════════════════════════════════════════════════════════════
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: {default: Access — who may reach the control plane}
+        Parameters: [AccessMode, LoadBalancerSecurityGroupId, AllowedCIDR, UiHostNames]
+      - Label: {default: Network}
+        Parameters: [VpcId, SubnetId, AssignPublicIp]
+      - Label: {default: Images}
+        Parameters: [ImageTag, BackendImage, FrontendImage]
+      - Label: {default: Instance}
+        Parameters: [InstanceType, LatestAmiId]
+      - Label: {default: Scope of what it may deploy}
+        Parameters: [ManagedResourcePrefix, TemplateBucket, DeployVpcId, MonitorSourceSecretArns, PipelineSecretArns]
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the control-plane instance.
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: >
+      Subnet for the instance. It needs egress to reach ECR, Secrets Manager and
+      the AWS APIs — either a NAT gateway, interface endpoints, or a public
+      subnet with AssignPublicIp=true.
+
+  AccessMode:
+    Type: String
+    Default: ssm
+    AllowedValues: [ssm, load-balancer, cidr]
+    Description: >
+      How people reach the UI and API. ssm (default): no inbound ports; reach it
+      through an SSM Session Manager port forward (ecdl-cli/ecdl-ui), so IAM
+      decides who can use it. load-balancer: inbound only from
+      LoadBalancerSecurityGroupId, for your own HTTPS load balancer with login
+      (for example ALB authentication with OIDC). cidr: inbound from AllowedCIDR,
+      with no login.
+
+  LoadBalancerSecurityGroupId:
+    Type: String
+    Default: ''
+    AllowedPattern: '^(sg-[0-9a-f]{8,17})?$'
+    ConstraintDescription: must be empty or a security group id such as sg-0123456789abcdef0.
+    Description: >
+      AccessMode=load-balancer only. The security group of your load balancer.
+      The instance accepts the UI (3000) and API (5000) ports from this group and
+      nothing else, so requests cannot reach it without passing the load
+      balancer's login.
+
+  AllowedCIDR:
+    Type: String
+    Default: ''
+    Description: >
+      AccessMode=cidr only. The CIDR permitted to reach the UI on port 3000,
+      and the API through it at /api/, with no login. Must not be 0.0.0.0/0:
+      this control plane can create AWS infrastructure.
+    # Java regex, negative lookahead. Rejects 0.0.0.0/0 at stack creation,
+    # because the description alone does not enforce it. Empty is allowed here;
+    # the rule CidrModeNeedsAllowedCIDR requires a value in cidr mode.
+    AllowedPattern: '^((?!0\.0\.0\.0\/0$)((\d{1,3}\.){3}\d{1,3})\/\d{1,2})?$'
+    ConstraintDescription: >
+      must be empty or a CIDR such as 10.0.0.0/8 or 203.0.113.4/32, and must not
+      be 0.0.0.0/0.
+
+  UiHostNames:
+    Type: String
+    Default: ''
+    # Host names with an optional port, comma separated. Characters are limited
+    # because the value is placed in the instance's user data.
+    AllowedPattern: '^([A-Za-z0-9.-]+(:[0-9]{1,5})?(,[A-Za-z0-9.-]+(:[0-9]{1,5})?)*)?$'
+    ConstraintDescription: >
+      must be empty or comma-separated host names such as ecdl.example.com or
+      ecdl.example.com:8443.
+    Description: >
+      load-balancer and cidr modes. Extra host names the UI is opened at, comma
+      separated. The API answers only requests addressed to the instance's own
+      addresses and EC2 DNS names, localhost, and these, so a web page on
+      another domain cannot reach it by pointing that domain at the instance
+      (DNS rebinding). Required in load-balancer mode: the load balancer's
+      domain name. In cidr mode, only for a DNS name of your own.
+  AssignPublicIp:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Give the instance a public IP. Only needed when the subnet's route to the
+      internet is an internet gateway, which cannot be used without one. false
+      means no public IP even if the subnet assigns them by default. It does not
+      open any port: inbound access is decided by AccessMode.
+
+  # Same convention as the pipeline templates: empty image parameters resolve to
+  # THIS account's ECR at ImageTag, which is where `./release.sh push` publishes.
+  # The defaults used to hardcode ":0.1.0" in the user data, so this template
+  # never followed a release and `release.sh pin` could not update it.
+  ImageTag:
+    Type: String
+    Default: 0.2.31
+    Description: >
+      Version tag of the control-plane images in this account's ECR, as
+      published by ./release.sh push. `./release.sh pin` sets it to
+      VERSION.
+
+  BackendImage:
+    Type: String
+    Default: ''
+    Description: >
+      Control-plane API image. Empty = <this account>.dkr.ecr.<region>/
+      ecdl/ecdl-control-plane-api:<ImageTag>. Pin by digest for a deployment
+      that cannot change after it is deployed.
+
+  FrontendImage:
+    Type: String
+    Default: ''
+    Description: Control-plane UI image. Same rules as BackendImage.
+
+  InstanceType:
+    Type: String
+    Default: t3.small
+    Description: >
+      The control plane plans and polls; it does not carry pipeline traffic.
+      t3.small is enough. The data plane runs on Fargate and is sized separately.
+
+  # A plain string, resolved by EC2 when the instance launches (see
+  # InstanceLaunchTemplate), not by CloudFormation. It used to be an
+  # AWS::SSM::Parameter::Value type, which CloudFormation resolves again on
+  # EVERY stack update, so any update made after Amazon published a new AL2023
+  # image changed ImageId and REPLACED the instance: the deployment records on
+  # its disk were deleted, and a load balancer target group still pointed at the
+  # terminated instance. This was seen on an ImageTag-only update.
+  LatestAmiId:
+    Type: String
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    AllowedPattern: '^(/[a-zA-Z0-9_./-]+|ami-[0-9a-f]{8,17})$'
+    ConstraintDescription: an SSM parameter path starting with / or an AMI id (ami-...).
+    Description: >
+      The instance image, as an SSM parameter path (resolved when the instance
+      launches) or an AMI id. Updating the stack does not change the image of a
+      running instance. Changing this value replaces the instance, which deletes
+      what is stored on it (deployment history); the pipelines are not affected.
+
+  # Fixed to `ecdl`. It used to accept any value, but the control plane names
+  # every stack, cluster, log group and broker `ecdl-<link>-...` and the monitor
+  # discovers links by that prefix -- so any other value produced a control
+  # plane whose IAM grants matched none of the resources it tried to create, and
+  # every deploy failed with AccessDenied. Kept as a parameter (rather than
+  # inlined) so the grants below still read as "scoped to the prefix".
+  ManagedResourcePrefix:
+    Type: String
+    Default: ecdl
+    AllowedValues: [ecdl]
+    Description: >
+      The control plane may only create and modify resources whose names start
+      with this. It sets the scope: every grant below is scoped to it, so a
+      bug or a misuse cannot touch anything else in the account. Must be ecdl.
+
+  TemplateBucket:
+    Type: String
+    AllowedPattern: '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+    ConstraintDescription: an S3 bucket name
+    Description: >
+      S3 bucket that release.sh uploaded the link templates to, under
+      templates/<ImageTag>/. Every link stack is created from those objects
+      through the deploy role (ECDLDeploy-<stack>-<region>); the control plane
+      may read them but not write them, so it cannot change what it deploys.
+
+  DeployVpcId:
+    Type: String
+    Default: ''
+    Description: >
+      VPC the control plane may create pipeline security groups in. Leave empty
+      to allow any VPC in the account. Setting it is strongly preferred — it is
+      the difference between "can build a pipeline in our VPC" and "can create
+      security groups anywhere".
+
+  MonitorSourceSecretArns:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: >
+      Optional. Source database secrets the Pipeline Monitor may READ, comma
+      separated. Without them the monitor still shows the broker, sink, target
+      and delivery integrity, but not the source-side panels (Aurora activity,
+      source-vs-cache rows, the "Measure now" lag probe), which log in to the
+      source. Granting one lets anyone who can open the UI see sample rows from
+      that database; the probe also stamps and restores one column of one row.
+      Add a link's source secret here to turn those panels on for it.
+
+  PipelineSecretArns:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: >
+      Optional. The source and target secrets pipeline tasks may read, comma
+      separated (full ARNs; a trailing * is allowed). Applied through the task
+      roles' permissions boundary, so no pipeline task can read any other
+      secret. Empty allows the secrets tagged ecdl:link (any value) instead:
+      tag each source and target secret, or list them here. ECDL's own broker
+      secrets are always allowed.
+
+Rules:
+  # A missing value would otherwise create a control plane that cannot be reached.
+  CidrModeNeedsAllowedCIDR:
+    RuleCondition: !Equals [!Ref AccessMode, cidr]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref AllowedCIDR, '']]
+        AssertDescription: AccessMode=cidr requires AllowedCIDR.
+  LoadBalancerModeNeedsGroup:
+    RuleCondition: !Equals [!Ref AccessMode, load-balancer]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref LoadBalancerSecurityGroupId, '']]
+        AssertDescription: AccessMode=load-balancer requires LoadBalancerSecurityGroupId.
+  # The API refuses requests addressed to a host it does not know, and only the
+  # operator knows the load balancer's domain name.
+  LoadBalancerModeNeedsUiHostNames:
+    RuleCondition: !Equals [!Ref AccessMode, load-balancer]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref UiHostNames, '']]
+        AssertDescription: >
+          AccessMode=load-balancer requires UiHostNames, the domain name of your
+          load balancer.
+
+Conditions:
+  HasPipelineSecretArns: !Not [!Equals [!Join ['', !Ref PipelineSecretArns], '']]
+  AccessSsm: !Equals [!Ref AccessMode, ssm]
+  AccessLoadBalancer: !Equals [!Ref AccessMode, load-balancer]
+  AccessCidr: !Equals [!Ref AccessMode, cidr]
+  CidrWithPublicIp: !And [!Condition AccessCidr, !Condition PublicIp]
+  HasMonitorSourceSecrets: !Not [!Equals [!Join ['', !Ref MonitorSourceSecretArns], '']]
+  HasBackendImage: !Not [!Equals [!Ref BackendImage, '']]
+  HasFrontendImage: !Not [!Equals [!Ref FrontendImage, '']]
+  ScopedToOneVpc: !Not [!Equals [!Ref DeployVpcId, '']]
+  PublicIp: !Equals [!Ref AssignPublicIp, 'true']
+  AmiFromSsm: !Equals [!Select [0, !Split ['/', !Ref LatestAmiId]], '']
+
+Resources:
+
+  # ── Who may reach it ─────────────────────────────────────────────────────
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      guard:
+        # Egress to 0.0.0.0/0 is TCP only, on 443 (AWS APIs) and the default
+        # Valkey and database ports the monitor and preflight connect to. The
+        # pipeline resources it reaches are created later, in other stacks, so
+        # there is no security group or CIDR to name here.
+        SuppressedRules:
+          - EC2_SECURITY_GROUP_EGRESS_OPEN_TO_WORLD_RULE
+      # W1030: cfn-lint checks the empty defaults of LoadBalancerSecurityGroupId
+      # and AllowedCIDR against the ingress properties. Those properties are only
+      # used in their own AccessMode, and the template Rules reject an empty
+      # value in that mode at stack creation, which cfn-lint does not model.
+      cfn-lint:
+        config:
+          ignore_checks: [W1030]
+    Properties:
+      GroupDescription: !Sub 'ECDL control plane (${AWS::StackName})'
+      VpcId: !Ref VpcId
+      # ssm mode has no inbound rule at all. No mode opens SSH: shell access is
+      # via SSM Session Manager, which needs no inbound port, no key pair and
+      # leaves an audit trail.
+      SecurityGroupIngress: !If
+        - AccessLoadBalancer
+        - - Description: Control-plane UI, from the load balancer only
+            IpProtocol: tcp
+            FromPort: 3000
+            ToPort: 3000
+            SourceSecurityGroupId: !Ref LoadBalancerSecurityGroupId
+          - Description: Control-plane API, from the load balancer only
+            IpProtocol: tcp
+            FromPort: 5000
+            ToPort: 5000
+            SourceSecurityGroupId: !Ref LoadBalancerSecurityGroupId
+        # cidr mode opens the UI port only. The UI's nginx forwards /api/* to
+        # the API over the containers' private network, so the page, and any
+        # script, reaches the API at http://<ip>:3000/api/ (Jira story F155). 5000 used
+        # to be open to AllowedCIDR as well, for the page's old cross-origin
+        # calls; nothing outside the instance needs it now.
+        - !If
+          - AccessCidr
+          - - Description: Control-plane UI and, through it, the API
+              IpProtocol: tcp
+              FromPort: 3000
+              ToPort: 3000
+              CidrIp: !Ref AllowedCIDR
+          - !Ref AWS::NoValue
+      # Only the ports it uses. DNS, IMDS and the time service are link-local
+      # and not filtered by security groups. The database and cache rules use
+      # the engines' default ports: a source or cache on a non-default port
+      # needs one more egress rule here for the monitor and preflight to reach
+      # it (deploying still works; the pipeline tasks have their own group).
+      SecurityGroupEgress:
+        - Description: HTTPS to the AWS APIs, ECR, SSM and package repositories
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: Valkey brokers and target caches (Pipeline Monitor)
+          IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          CidrIp: 0.0.0.0/0
+        - Description: MySQL sources (preflight, monitor)
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+        - Description: PostgreSQL sources (preflight, monitor)
+          IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+        - Description: SQL Server sources (preflight, monitor)
+          IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          CidrIp: 0.0.0.0/0
+        - Description: Oracle sources (preflight, monitor)
+          IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - {Key: Name, Value: !Sub '${AWS::StackName}-sg'}
+
+  # ── What it may do ───────────────────────────────────────────────────────
+  # These policies existed only as CLI invocations against one role. Codifying
+  # them is the point: an IAM grant that lets a service create IAM roles should
+  # be reviewable in a diff.
+  # THE CONTROL PLANE'S OWN ROLE AND POLICIES ARE NAMED OUTSIDE ITS SCOPE.
+  #
+  # Its grants cover IAM roles, policies and stacks named ecdl-*. Left to
+  # CloudFormation, these resources were named after the stack, and the
+  # documented stack name is ecdl-control-plane -- so its own policies were
+  # inside that scope, and the instance could CreatePolicyVersion on its own
+  # DeployLinksPolicy to grant itself anything (confirmed with the IAM policy
+  # simulator). They are now named ECDLControlPlane-<stack>-<region>...; IAM
+  # matches ARNs case-sensitively, so policy/ecdl-* does not match them.
+  # SelfProtectionPolicy also denies changing them, and the control plane's own
+  # stack, explicitly, so a later widening of a grant cannot reopen this.
+  #
+  # The role name limit is 64 characters: the stack name can be up to 32
+  # characters in the longest region names.
+  # Jira story F173. Lets CloudWatch Logs' delivery service write the brokers' engine
+  # and slow logs into the link log groups (/ecs/<prefix>-*/broker), so the
+  # deploy role needs no logs:PutResourcePolicy. It is account-level, which
+  # ElastiCache accepts: with a policy already covering the log group it adds
+  # none of its own. Kept when this stack is deleted, like the deploy role,
+  # because running brokers keep delivering through it.
+  LogDeliveryPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PolicyName: !Sub 'ECDLLogDelivery-${AWS::StackName}-${AWS::Region}'
+      PolicyDocument: !Sub >-
+        {"Version":"2012-10-17","Statement":[{"Sid":"EcdlBrokerLogDelivery","Effect":"Allow",
+        "Principal":{"Service":"delivery.logs.amazonaws.com"},
+        "Action":["logs:CreateLogStream","logs:PutLogEvents"],
+        "Resource":"arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ManagedResourcePrefix}-*",
+        "Condition":{"StringEquals":{"aws:SourceAccount":"${AWS::AccountId}"},
+        "ArnLike":{"aws:SourceArn":"arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"}}}]}
+
+  # Jira story F100. The control plane's container output used to stay on the instance
+  # disk (Docker's default driver), so a monitor or deploy-thread error could
+  # only be read by logging in. It now goes to this group with the awslogs
+  # driver. Outside /ecs/<prefix>-*, so the deploy role cannot delete it.
+  # About $1/month for the key.
+  ControlPlaneLogKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Description: !Sub 'Encrypts the ${AWS::StackName} control-plane logs'
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccountAdministersThroughIam
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: CloudWatchLogsForThisLogGroup
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action: [kms:Encrypt*, kms:Decrypt*, kms:ReEncrypt*, kms:GenerateDataKey*, kms:Describe*]
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecdl/control-plane/${AWS::StackName}'
+  ControlPlaneLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecdl/control-plane/${AWS::StackName}'
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt ControlPlaneLogKey.Arn
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ec2.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Session Manager, so there is no inbound SSH port to protect. A copy
+        # of AmazonSSMManagedInstanceCore without its GetParameter grants
+        # (Jira story F175); see SessionManagerPolicy.
+        - !Ref SessionManagerPolicy
+        # Inline policies were converted to the managed policies below so each
+        # grant is a separately reviewable resource.
+        - !Ref PullImagesPolicy
+        - !Ref OwnLogsPolicy
+        - !If [HasMonitorSourceSecrets, !Ref MonitorSourceSecretsPolicy, !Ref 'AWS::NoValue']
+        - !Ref ResolveLinksPolicy
+        - !Ref OperateLinksPolicy
+        - !Ref SelfProtectionPolicy
+
+  # Jira story F175. AmazonSSMManagedInstanceCore, the AWS managed policy this replaces,
+  # also grants ssm:GetParameter and ssm:GetParameters on every parameter in
+  # the account, which includes SecureString values (KMS permitting) that
+  # have nothing to do with ECDL. The control plane reads no parameters: the
+  # AMI path is resolved by EC2 at launch with the caller's permissions. This
+  # is the rest of that policy, unchanged, so Session Manager, Run Command and
+  # the agent's own reporting keep working. Resource '*' as in the AWS
+  # policy (most of these take no resource ARN); limited to this region,
+  # which the AWS policy is not.
+  SessionManagerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}-SessionManager'
+      Description: ECDL control plane - SSM agent and Session Manager, no parameter reads
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SsmAgent
+            Effect: Allow
+            Action:
+              - ssm:DescribeAssociation
+              - ssm:GetDeployablePatchSnapshotForInstance
+              - ssm:GetDocument
+              - ssm:DescribeDocument
+              - ssm:GetManifest
+              - ssm:ListAssociations
+              - ssm:ListInstanceAssociations
+              - ssm:PutInventory
+              - ssm:PutComplianceItems
+              - ssm:PutConfigurePackageResult
+              - ssm:UpdateAssociationStatus
+              - ssm:UpdateInstanceAssociationStatus
+              - ssm:UpdateInstanceInformation
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+          - Sid: SessionManagerChannels
+            Effect: Allow
+            Action:
+              - ssmmessages:CreateControlChannel
+              - ssmmessages:CreateDataChannel
+              - ssmmessages:OpenControlChannel
+              - ssmmessages:OpenDataChannel
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+          - Sid: RunCommandMessages
+            Effect: Allow
+            Action:
+              - ec2messages:AcknowledgeMessage
+              - ec2messages:DeleteMessage
+              - ec2messages:FailMessage
+              - ec2messages:GetEndpoint
+              - ec2messages:GetMessages
+              - ec2messages:SendReply
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+
+  # Jira story F100. The containers' own output, shipped with Docker's awslogs driver.
+  OwnLogsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}-OwnLogs'
+      Description: ECDL control plane - write its own container logs
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ControlPlaneLogGroup}'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ControlPlaneLogGroup}:*'
+  PullImagesPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}-PullImages'
+      Description: ECDL control plane - pull its own images from ECR
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchCheckLayerAvailability
+            # release.sh always publishes under ecdl/.
+            Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/ecdl/*'
+
+  # Everything needed to RESOLVE a link: read the source, the target, the
+  # network and confirm the credential exists. All read-only, and the
+  # secret call is DescribeSecret — the control plane never reads a
+  # database password; the pipeline tasks do, with their own roles.
+  # Opt-in, per secret: the monitor's source-side panels log in to the
+  # source. Everything else keeps to DescribeSecret and never reads one.
+  MonitorSourceSecretsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: HasMonitorSourceSecrets
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}-MonitorSourceSecrets'
+      Description: ECDL control plane - read the chosen source secrets (Pipeline Monitor)
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Ref MonitorSourceSecretArns
+
+  ResolveLinksPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}-ResolveLinks'
+      Description: ECDL control plane - read-only calls to resolve a link
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - rds:DescribeDBClusters
+              - rds:DescribeDBInstances
+              - rds:DescribeDBSubnetGroups
+              - elasticache:DescribeReplicationGroups
+              - elasticache:DescribeCacheClusters
+              - elasticache:DescribeCacheSubnetGroups
+              - ec2:DescribeSubnets
+              - ec2:DescribeVpcs
+              - ec2:DescribeAvailabilityZones
+              - ec2:DescribeRouteTables
+              - ec2:DescribeVpcEndpoints
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeNatGateways
+              - secretsmanager:DescribeSecret
+              # Names and ARNs only, never values: fills the credential
+              # picker. Without it the list was empty and the page said
+              # "not permitted to list secrets".
+              - secretsmanager:ListSecrets
+              # The Deployments page finds links by their ecdl-* stacks.
+              # ListStacks takes no resource, and without it the page could
+              # show only deployments this process had started itself.
+              - cloudformation:ListStacks
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:GetMetricData
+              - cloudwatch:ListMetrics
+              # CloudFormation's own read handlers call these while creating
+              # a log group and a cache parameter group. Without them a fresh
+              # account fails the CDC and broker stacks before they finish, on an
+              # AccessDenied that names neither ECDL resource.
+              - logs:DescribeLogGroups
+              - elasticache:DescribeCacheParameterGroups
+              - elasticache:DescribeCacheParameters
+              - elasticache:DescribeCacheEngineVersions
+              - elasticache:DescribeSnapshots
+            # Describe* APIs largely ignore resource-level constraints, so
+            # the ACTION list is the control here, not the resource.
+            Resource: '*'
+          # Reading the pipeline's own logs, for the per-component log view.
+          #
+          # Split out of the statement above and SCOPED, because unlike the
+          # Describe* APIs these two do honour resource-level constraints --
+          # so there is no reason for the control plane to be able to read
+          # every log group in the account.
+          #
+          # DescribeLogStreams is not optional: it backs the stream picker and
+          # the component tabs, which need to tell "no task has ever started"
+          # apart from "I cannot read this". Without it those two endpoints
+          # return AccessDenied while the log list itself still works, which
+          # is a confusing, partly working state. It was missing here and the
+          # omission was hidden in our own account by the AWS-managed
+          # CloudWatchReadOnlyAccess policy being attached to the instance
+          # role -- so it worked for us and would have failed with HTTP 403 for a customer
+          # deploying this template.
+          - Sid: ReadPipelineLogs
+            Effect: Allow
+            Action:
+              - logs:FilterLogEvents
+              - logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ManagedResourcePrefix}-*:*'
+          # Jira story F105: the Pipeline Monitor warns when a link's alarm topic has no
+          # confirmed subscription, so alarms that reach nobody are visible.
+          # The topics are named <stack>-AlarmTopic-<random>.
+          - Sid: ReadAlarmSubscribers
+            Effect: Allow
+            Action: sns:ListSubscriptionsByTopic
+            Resource: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ManagedResourcePrefix}-*'
+
+  # Explicit denies that keep the control plane off its own role, policies and
+  # stack; see the note above InstanceRole. A separate policy because
+  # DeployLinksPolicy is close to the 6,144-character managed-policy limit.
+  SelfProtectionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}-SelfProtection'
+      Description: ECDL control plane - may not change its own role, policies or stack
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # See the note above InstanceRole. Explicit denies win over any allow,
+          # including one added later by mistake.
+          - Sid: SelfProtectionOwnRoleAndPolicies
+            Effect: Deny
+            NotAction:
+              - iam:Get*
+              - iam:List*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/ECDLControlPlane-${AWS::StackName}-${AWS::Region}'
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/ECDLControlPlane-${AWS::StackName}-${AWS::Region}-*'
+          # The deploy role and its policies: the instance may only pass it.
+          - Sid: SelfProtectionDeployRole
+            Effect: Deny
+            NotAction:
+              - iam:Get*
+              - iam:List*
+              - iam:PassRole
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/ECDLDeploy-${AWS::StackName}-${AWS::Region}'
+          # Its own stack starts ecdl- too. Updating it could change the
+          # AccessMode or the grants; deleting it would remove the control plane.
+          # The operator updates this stack with their own credentials.
+          - Sid: SelfProtectionOwnStack
+            Effect: Deny
+            Action:
+              - cloudformation:UpdateStack
+              - cloudformation:DeleteStack
+              - cloudformation:CreateChangeSet
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:CancelUpdateStack
+              - cloudformation:ContinueUpdateRollback
+              - cloudformation:SetStackPolicy
+              - cloudformation:UpdateTerminationProtection
+              - cloudformation:TagResource
+              - cloudformation:UntagResource
+            Resource: !Ref AWS::StackId
+
+  # Everything needed to DEPLOY a link, scoped by name to the prefix. This
+  # is the grant that matters: it can create IAM roles and pass them to
+  # ECS, so the scoping is what keeps it from being account-wide.
+  DeployLinksPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    # Kept when this stack is deleted, with the role and the boundary: link
+    # stacks still need them to be updated or deleted.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}-DeployLinks'
+      Description: ECDL control plane - create and update link stacks, ECS services and task roles (prefix-scoped)
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: BrokerCaches
+            Effect: Allow
+            Action:
+              - elasticache:CreateReplicationGroup
+              - elasticache:DeleteReplicationGroup
+              - elasticache:ModifyReplicationGroup
+              - elasticache:CreateCacheSubnetGroup
+              - elasticache:DeleteCacheSubnetGroup
+              - elasticache:ModifyCacheSubnetGroup
+              - elasticache:CreateCacheParameterGroup
+              - elasticache:DeleteCacheParameterGroup
+              - elasticache:ModifyCacheParameterGroup
+              - elasticache:AddTagsToResource
+              - elasticache:RemoveTagsFromResource
+              - elasticache:ListTagsForResource
+              # The broker's DeletionPolicy and UpdateReplacePolicy are
+              # Snapshot: CloudFormation deletes it with a final snapshot.
+              - elasticache:CreateSnapshot
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:replicationgroup:${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:subnetgroup:${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:parametergroup:${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:cluster:${ManagedResourcePrefix}-*'
+          # The final snapshot itself. CloudFormation chooses its name, so the
+          # snapshot ARN cannot be scoped by prefix; both calls also need the
+          # replication group (above), so only an ecdl-* broker can be
+          # snapshotted. No DeleteSnapshot: removing a final snapshot is the
+          # operator's decision.
+          - Sid: BrokerFinalSnapshot
+            Effect: Allow
+            Action:
+              - elasticache:CreateSnapshot
+              - elasticache:DeleteReplicationGroup
+            Resource: !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:snapshot:*'
+          # Creating a broker from a snapshot (RestoreSnapshotName) reads the
+          # snapshot: only ECDL's, so no other cache's data can be restored
+          # into a broker the control plane holds the token for.
+          - Sid: RestoreBrokersOnlyFromEcdlSnapshots
+            Effect: Allow
+            Action: elasticache:CreateReplicationGroup
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:snapshot:${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:elasticache:${AWS::Region}:${AWS::AccountId}:snapshot:automatic.${ManagedResourcePrefix}-*'
+          # Read calls CloudFormation makes AS THIS ROLE: typed parameters
+          # (VPC, subnet and security group ids) are validated with
+          # ec2:Describe*, and the resource handlers read back what they
+          # create. Before the deploy role existed the instance role made these
+          # through ResolveLinks; without them every link stack update failed
+          # with "doesn't have permission to call ec2:DescribeSubnets".
+          # Read-only, and these Describe calls take no resource.
+          - Sid: CloudFormationReads
+            Effect: Allow
+            Action:
+              - ec2:DescribeSubnets
+              - ec2:DescribeVpcs
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeSecurityGroupRules
+              - elasticache:DescribeReplicationGroups
+              - elasticache:DescribeCacheClusters
+              - elasticache:DescribeCacheSubnetGroups
+              - elasticache:DescribeCacheParameterGroups
+              - elasticache:DescribeCacheParameters
+              - elasticache:DescribeCacheEngineVersions
+              - elasticache:DescribeSnapshots
+              - logs:DescribeLogGroups
+              - secretsmanager:DescribeSecret
+            Resource: '*'
+          - Sid: PipelineServices
+            Effect: Allow
+            Action:
+              - ecs:CreateCluster
+              - ecs:DeleteCluster
+              - ecs:CreateService
+              - ecs:UpdateService
+              - ecs:DeleteService
+              - ecs:RunTask
+              - ecs:StopTask
+              - ecs:TagResource
+              - ecs:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ManagedResourcePrefix}-*/*'
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${ManagedResourcePrefix}-*/*'
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ManagedResourcePrefix}-*:*'
+          - Sid: EcsCallsWithNoResourceLevelSupport
+            Effect: Allow
+            Action:
+              - ecs:RegisterTaskDefinition
+              - ecs:DeregisterTaskDefinition
+              - ecs:DescribeTaskDefinition
+              - ecs:DescribeServices
+              - ecs:DescribeTasks
+              - ecs:ListTasks
+              - ecs:ListServices
+              - ecs:DescribeClusters
+              - ecs:ListClusters
+            Resource: '*'
+            # These calls cannot be scoped by ARN; at least keep them to the
+            # region this control plane manages.
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+          # ── Task roles: every role this control plane can create or grant
+          # permissions to carries TaskRoleBoundary as its permissions boundary.
+          # A role's effective permissions are the intersection of its policies
+          # and its boundary, so whatever policy is attached to an ecdl-* role,
+          # the role can do no more than TaskRoleBoundary allows: pull images,
+          # write its logs, read pipeline secrets and publish ECDL metrics.
+          # Without this, creating a role and giving it a policy was enough to
+          # get any permission in the account.
+          #
+          # Read, tag and remove: none of these can add a permission.
+          - Sid: TaskRolesReadAndRemove
+            Effect: Allow
+            Action:
+              - iam:GetRole
+              - iam:GetRolePolicy
+              - iam:ListRolePolicies
+              - iam:ListAttachedRolePolicies
+              - iam:TagRole
+              - iam:UntagRole
+              - iam:DetachRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:DeleteRole
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ManagedResourcePrefix}-*'
+          # Create or change a role only when it has (or is being given) the
+          # boundary. iam:PermissionsBoundary is the boundary in the request for
+          # CreateRole and PutRolePermissionsBoundary, and the role's current
+          # boundary for the others -- so an existing ecdl-* role without the
+          # boundary cannot have its trust policy changed and then be assumed.
+          - Sid: TaskRolesOnlyWithTheBoundary
+            Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:PutRolePermissionsBoundary
+              - iam:UpdateRole
+              - iam:UpdateAssumeRolePolicy
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ManagedResourcePrefix}-*'
+            Condition:
+              StringEquals:
+                iam:PermissionsBoundary: !Ref TaskRoleBoundary
+          # Attaching is limited to the link stacks' own managed policies and the
+          # AWS policy the execution roles use, and only to roles that have the
+          # boundary.
+          - Sid: AttachOnlyPipelinePoliciesToBoundedTaskRoles
+            Effect: Allow
+            Action: iam:AttachRolePolicy
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ManagedResourcePrefix}-*'
+            Condition:
+              StringEquals:
+                iam:PermissionsBoundary: !Ref TaskRoleBoundary
+              ArnLike:
+                iam:PolicyARN:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ManagedResourcePrefix}-*'
+                  - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+          # No inline role policies at all (the link templates use managed
+          # policies only), the boundary cannot be removed from any role, and
+          # the boundary policy itself cannot be edited or deleted.
+          - Sid: DenyBoundaryRemovalAndInlinePolicies
+            Effect: Deny
+            Action:
+              - iam:PutRolePolicy
+              - iam:DeleteRolePermissionsBoundary
+            Resource: '*'
+          - Sid: DenyEditingTheBoundary
+            Effect: Deny
+            Action:
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:SetDefaultPolicyVersion
+              - iam:DeletePolicy
+              - iam:TagPolicy
+              - iam:UntagPolicy
+            Resource: !Ref TaskRoleBoundary
+          # The link stacks' managed policies. CloudFormation names them
+          # <stack>-<LogicalId>-<suffix>, and every link stack starts ecdl-.
+          - Sid: PipelineManagedPolicies
+            Effect: Allow
+            Action:
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:GetPolicy
+              - iam:GetPolicyVersion
+              - iam:ListPolicyVersions
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
+              - iam:ListEntitiesForPolicy
+              - iam:TagPolicy
+              - iam:UntagPolicy
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ManagedResourcePrefix}-*'
+          # PassRole is the escalation risk in any deploy grant: it is how a
+          # caller hands a role to a service. Restricted to roles with the
+          # managed prefix AND only to ECS tasks and Lambda, so it cannot be
+          # used to pass an unrelated privileged role to something else.
+          # Lambda is for the CDC stack's restart function (Jira story F134). Every
+          # ecdl-* role carries TaskRoleBoundary, so a function can do no
+          # more than a task, which this role could already run.
+          - Sid: PassOnlyPipelineRolesToEcsTasksAndLambda
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ManagedResourcePrefix}-*'
+            Condition:
+              StringEquals:
+                iam:PassedToService: [ecs-tasks.amazonaws.com, lambda.amazonaws.com]
+          # Jira story F134: the CDC stack's restart function, which forces a new
+          # deployment of a link's service when its secret gets a new value.
+          # CloudFormation names it <stack>-RestartFunction-<random>. The
+          # Get and Put calls are the ones its resource handler makes.
+          - Sid: PipelineRestartFunctions
+            Effect: Allow
+            Action:
+              - lambda:CreateFunction
+              - lambda:DeleteFunction
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:AddPermission
+              - lambda:RemovePermission
+              - lambda:GetPolicy
+              - lambda:TagResource
+              - lambda:UntagResource
+              - lambda:ListTags
+              - lambda:GetRuntimeManagementConfig
+              - lambda:PutRuntimeManagementConfig
+              - lambda:GetFunctionRecursionConfig
+              - lambda:PutFunctionRecursionConfig
+              - lambda:GetFunctionCodeSigningConfig
+            Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ManagedResourcePrefix}-*'
+
+  # The permissions boundary on every pipeline task role (see the task-role
+  # statements in DeployLinksPolicy). It grants nothing by itself; it is the
+  # MOST a task role can do, whatever policies are attached to it. These are
+  # the only AWS calls the pipeline tasks make: the ECS agent pulls images and
+  # writes logs, the execution role reads the pipeline's secrets, and the sink
+  # publishes metrics. The CDC stack's restart function (a Lambda role with
+  # this boundary too) writes its log and restarts the link's services.
+  #
+  # Named outside the ecdl- prefix, so the grants scoped to ecdl-* policies
+  # can never apply to it; DenyEditingTheBoundary also denies editing it.
+  TaskRoleBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLPipelineTaskBoundary-${AWS::StackName}'
+      Description: ECDL control plane - maximum permissions of any pipeline task role it creates
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EcrLogin
+            Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: '*'
+          # Images only from this account's registry: a task role must not
+          # run code from someone else's. The templates also accept only an
+          # ECR image reference (AllowedPattern).
+          - Sid: PullImagesFromThisAccount
+            Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+            Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+          - Sid: WritePipelineLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ManagedResourcePrefix}-*:*'
+          # Pipeline secrets: the source credential, the target credential and
+          # the broker auth token. With PipelineSecretArns set, only those
+          # secrets and ECDL's own. With it empty, ECDL's own and any secret
+          # tagged ecdl:link (a customer's database secret can have any name,
+          # so the tag is what marks it for pipelines). This used to allow
+          # every secret in the account when the list was empty.
+          - Sid: ReadPipelineSecrets
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !If
+              - HasPipelineSecretArns
+              - !Split
+                - ','
+                - !Join
+                  - ','
+                  - - !Join [',', !Ref PipelineSecretArns]
+                    - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ManagedResourcePrefix}-*'
+                    - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:BrokerAuthSecret-*'
+              - - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ManagedResourcePrefix}-*'
+                - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:BrokerAuthSecret-*'
+          # The tag admits a secret only when the list is empty. With a list
+          # this statement is limited to ECDL's own secrets, which the one
+          # above already allows. (A conditional statement would be simpler,
+          # but the policy scanners then skip the whole boundary.)
+          - Sid: ReadSecretsTaggedForEcdl
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !If
+              - HasPipelineSecretArns
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*'
+            Condition:
+              'Null':
+                aws:ResourceTag/ecdl:link: 'false'
+          - Sid: DecryptSecretsThroughSecretsManagerOnly
+            Effect: Allow
+            Action: kms:Decrypt
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+          - Sid: PublishEcdlMetrics
+            Effect: Allow
+            Action: cloudwatch:PutMetricData
+            Resource: '*'
+            Condition:
+              StringLike:
+                cloudwatch:namespace: 'ECDL/*'
+          # The sink reads its link's Debezium desired count, to tell a
+          # planned pause from a stalled capture (capture-stale alarm).
+          - Sid: ReadPipelineServices
+            Effect: Allow
+            Action: ecs:DescribeServices
+            Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ManagedResourcePrefix}-*/${ManagedResourcePrefix}-*'
+          # The CDC stack's restart function forces a new deployment of its
+          # link's services when a secret gets a new value (Jira story F134). Its own
+          # policy names the link's two services.
+          - Sid: RestartPipelineServices
+            Effect: Allow
+            Action: ecs:UpdateService
+            Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ManagedResourcePrefix}-*/${ManagedResourcePrefix}-*'
+
+  # The second half of deploy-links, split for the 6,144-character managed policy limit.
+  DeployLinksSupportPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}-DeployLinksSupport'
+      Description: ECDL control plane - secrets, security groups, logs, alarms, keys and autoscaling for link stacks (prefix-scoped)
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PipelineSecrets
+            Effect: Allow
+            Action:
+              - secretsmanager:CreateSecret
+              - secretsmanager:DeleteSecret
+              - secretsmanager:UpdateSecret
+              - secretsmanager:PutSecretValue
+              - secretsmanager:TagResource
+              - secretsmanager:UntagResource
+              # Needed so CloudFormation can resolve the broker template's
+              # {{resolve:secretsmanager:...}} for the generated auth token.
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:BrokerAuthSecret-*'
+          - Sid: GetRandomPasswordTakesNoResource
+            Effect: Allow
+            Action: secretsmanager:GetRandomPassword
+            Resource: '*'
+          # CreateSecurityGroup is authorised against TWO resources: the new
+          # group and the VPC it goes in. The ec2:Vpc condition key is not
+          # present on the VPC resource, so a single statement with that
+          # condition (which this used to be) DENIED every create once
+          # DeployVpcId was set -- the recommended setting broke deploys.
+          # The VPC is therefore named as a resource here, and the condition
+          # is applied only to the calls on existing groups.
+          - Sid: CreatePipelineSecurityGroups
+            Effect: Allow
+            Action: ec2:CreateSecurityGroup
+            Resource:
+              - !If
+                - ScopedToOneVpc
+                - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${DeployVpcId}'
+                - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*'
+              - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+          - Sid: ModifyPipelineSecurityGroups
+            Effect: Allow
+            Action:
+              - ec2:DeleteSecurityGroup
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:AuthorizeSecurityGroupEgress
+              - ec2:RevokeSecurityGroupIngress
+              - ec2:RevokeSecurityGroupEgress
+              # Every rule the link stacks add carries a description; changing
+              # one on an existing rule (and rolling that back) uses these.
+              - ec2:UpdateSecurityGroupRuleDescriptionsIngress
+              - ec2:UpdateSecurityGroupRuleDescriptionsEgress
+            Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+            # When DeployVpcId is set, changes are confined to groups in that
+            # VPC. Without it the grant is account-wide, which is why setting
+            # it is preferred.
+            Condition: !If
+              - ScopedToOneVpc
+              - StringEquals:
+                  ec2:Vpc: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${DeployVpcId}'
+              - !Ref AWS::NoValue
+          - Sid: TagSecurityGroups
+            Effect: Allow
+            Action: ec2:CreateTags
+            Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+          - Sid: TaskLogGroups
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:DeleteLogGroup
+              - logs:PutRetentionPolicy
+              - logs:DeleteRetentionPolicy
+              # Each link's log groups are encrypted with its own KMS key.
+              - logs:AssociateKmsKey
+              - logs:DisassociateKmsKey
+              # The CDC stack turns ERROR log lines into alarm metrics.
+              - logs:PutMetricFilter
+              - logs:DeleteMetricFilter
+              - logs:DescribeMetricFilters
+              - logs:TagResource
+              - logs:UntagResource
+              - logs:ListTagsForResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ManagedResourcePrefix}-*:*'
+          # The link stacks create CloudWatch alarms (pipeline health) and
+          # target tracking creates its own alarms under the caller's
+          # identity, so both need these. Missing them failed the CDC stack
+          # at the scaling policy in any account where the operator role was
+          # not already broader.
+          #
+          # Jira story F172: changes only to alarms named for a link, not to every alarm
+          # in the account. The CDC stack names its alarms <stack>-...;
+          # target tracking names its own TargetTracking-<resource id>-...,
+          # and the resource id is service/<cluster>/<service>, with the
+          # link's cluster ecdl-<link>. DescribeAlarms stays account-wide: it
+          # only reads, and CloudFormation and target tracking call it with no
+          # alarm name.
+          - Sid: PipelineAlarms
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricAlarm
+              - cloudwatch:DeleteAlarms
+              - cloudwatch:TagResource
+              - cloudwatch:UntagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:TargetTracking-service/${ManagedResourcePrefix}-*'
+          - Sid: ReadAlarms
+            Effect: Allow
+            Action: cloudwatch:DescribeAlarms
+            Resource: !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:*'
+          # The SNS topic each link publishes its alarms to. CloudFormation
+          # names it <stack>-AlarmTopic-<random>, so the prefix scopes it.
+          - Sid: PipelineAlarmTopics
+            Effect: Allow
+            Action:
+              - sns:CreateTopic
+              - sns:DeleteTopic
+              - sns:GetTopicAttributes
+              - sns:SetTopicAttributes
+              - sns:Subscribe
+              - sns:Unsubscribe
+              - sns:ListSubscriptionsByTopic
+              - sns:TagResource
+              - sns:UntagResource
+            Resource: !Sub 'arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${ManagedResourcePrefix}-*'
+          # The CDC stack's broker-events rule (failover, reboot, node removal
+          # on the broker, to the alarm topic). Named <stack>-broker-events.
+          - Sid: PipelineEventRules
+            Effect: Allow
+            Action:
+              - events:PutRule
+              - events:DeleteRule
+              - events:DescribeRule
+              - events:PutTargets
+              - events:RemoveTargets
+              - events:ListTargetsByRule
+              - events:TagResource
+              - events:UntagResource
+              - events:ListTagsForResource
+            Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ManagedResourcePrefix}-*'
+          - Sid: SnsSubscriptionCleanup
+            Effect: Allow
+            Action: sns:GetSubscriptionAttributes
+            Resource: '*'
+          # The per-link KMS keys: the CDC stack's (logs + alarm topic), the
+          # loader's (logs) and the broker's (auth secret + logs). CreateKey
+          # takes no resource ARN, so it is constrained by the tag each
+          # template puts on its key (ecdl:stack = <stack name>); managing an
+          # existing key is constrained by that same tag on the key.
+          - Sid: LinkKeysCreate
+            Effect: Allow
+            Action: [kms:CreateKey, kms:TagResource]
+            Resource: '*'
+            Condition:
+              StringLike:
+                aws:RequestTag/ecdl:stack: !Sub '${ManagedResourcePrefix}-*'
+          # Creating and reading a broker auth secret encrypted with its
+          # broker's key (and CloudFormation resolving it into AuthToken):
+          # only through Secrets Manager, only keys this control plane made.
+          - Sid: LinkKeysUseThroughSecretsManager
+            Effect: Allow
+            Action: [kms:Decrypt, kms:GenerateDataKey]
+            Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+              StringLike:
+                aws:ResourceTag/ecdl:stack: !Sub '${ManagedResourcePrefix}-*'
+          - Sid: LinkKeysManage
+            Effect: Allow
+            Action:
+              - kms:DescribeKey
+              - kms:GetKeyPolicy
+              - kms:PutKeyPolicy
+              - kms:EnableKeyRotation
+              - kms:GetKeyRotationStatus
+              - kms:UpdateKeyDescription
+              - kms:ListResourceTags
+              - kms:TagResource
+              - kms:UntagResource
+              - kms:ScheduleKeyDeletion
+            Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+            Condition:
+              StringLike:
+                aws:ResourceTag/ecdl:stack: !Sub '${ManagedResourcePrefix}-*'
+          # ElastiCache delivers the broker's engine and slow logs to
+          # CloudWatch through a log delivery, which the caller must be
+          # allowed to create. These APIs take no resource ARN.
+          #
+          # Jira story F173: no logs:PutResourcePolicy. It could replace any of the
+          # account's CloudWatch Logs resource policies (who may write to
+          # which log groups). ElastiCache needs it only when no policy admits
+          # the log delivery service to the broker's log group yet;
+          # LogDeliveryPolicy, in this stack, does that once for every
+          # /ecs/<prefix>-* group, so the deploy role never writes one.
+          # DescribeResourcePolicies only reads. The delivery calls only
+          # connect a source the role may already configure (the broker, by
+          # its elasticache grants) to a destination.
+          - Sid: BrokerLogDelivery
+            Effect: Allow
+            Action:
+              - logs:CreateLogDelivery
+              - logs:GetLogDelivery
+              - logs:UpdateLogDelivery
+              - logs:DeleteLogDelivery
+              - logs:ListLogDeliveries
+              - logs:DescribeResourcePolicies
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+          - Sid: SinkAutoscaling
+            Effect: Allow
+            Action:
+              - application-autoscaling:RegisterScalableTarget
+              - application-autoscaling:DeregisterScalableTarget
+              - application-autoscaling:PutScalingPolicy
+              - application-autoscaling:DeleteScalingPolicy
+              - application-autoscaling:DescribeScalableTargets
+              - application-autoscaling:DescribeScalingPolicies
+              - application-autoscaling:TagResource
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+          # These services create their own service-linked role on first use.
+          # Without this the FIRST deployment in a fresh account fails on an
+          # authorisation error that names none of the above.
+          - Sid: ServiceLinkedRolesNeededOnFirstUse
+            Effect: Allow
+            Action: iam:CreateServiceLinkedRole
+            Resource: '*'
+            Condition:
+              StringEquals:
+                iam:AWSServiceName:
+                  - ecs.amazonaws.com
+                  - elasticache.amazonaws.com
+                  - ecs.application-autoscaling.amazonaws.com
+
+  # ── D1: link stacks are built by CloudFormation with this role ───────────
+  # The instance may only pass this role to CloudFormation, and only with the
+  # release's templates in TemplateBucket (OperateLinksPolicy). It holds no IAM,
+  # KMS, security-group or other resource permission itself, so a compromised
+  # instance can create nothing the pinned templates do not describe: no role
+  # trusting another account, no tag on an existing key, no rule on a customer
+  # security group.
+  # Kept when this stack is deleted: existing link stacks are updated and
+  # deleted with it. Named outside the ecdl- prefix, so no grant scoped to
+  # ecdl-* reaches it.
+  DeployRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RoleName: !Sub 'ECDLDeploy-${AWS::StackName}-${AWS::Region}'
+      Description: ECDL - CloudFormation builds and removes link stacks with this role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: cloudformation.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      ManagedPolicyArns:
+        - !Ref DeployLinksPolicy
+        - !Ref DeployLinksSupportPolicy
+
+  # What the instance does itself: start CloudFormation with the deploy role,
+  # pause and resume capture, run and stop the loader, read state.
+  OperateLinksPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}-OperateLinks'
+      Description: ECDL control plane - link stacks only through the deploy role and pinned templates
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Both conditions are required: a call without RoleARN, with another
+          # role, with TemplateBody or with any other URL is denied.
+          - Sid: CreateAndUpdateLinkStacksWithTheDeployRoleAndPinnedTemplates
+            Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+            Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ManagedResourcePrefix}-*/*'
+            Condition:
+              StringEquals:
+                cloudformation:RoleArn: !GetAtt DeployRole.Arn
+              StringLike:
+                cloudformation:TemplateUrl: !Sub 'https://${TemplateBucket}.s3.${AWS::Region}.${AWS::URLSuffix}/templates/*'
+          - Sid: DeleteLinkStacksWithTheDeployRole
+            Effect: Allow
+            Action: cloudformation:DeleteStack
+            Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ManagedResourcePrefix}-*/*'
+            Condition:
+              StringEquals:
+                cloudformation:RoleArn: !GetAtt DeployRole.Arn
+          - Sid: ReadAndTagLinkStacks
+            Effect: Allow
+            Action:
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:GetTemplate
+              - cloudformation:GetTemplateSummary
+              - cloudformation:TagResource
+              - cloudformation:UntagResource
+            Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ManagedResourcePrefix}-*/*'
+          - Sid: ReadThePinnedTemplates
+            Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${TemplateBucket}/templates/*'
+          - Sid: PassOnlyTheDeployRoleAndOnlyToCloudFormation
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !GetAtt DeployRole.Arn
+            Condition:
+              StringEquals:
+                iam:PassedToService: cloudformation.amazonaws.com
+          # RunTask of the loader passes its task and execution roles.
+          - Sid: PassPipelineTaskRolesOnlyToEcs
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ManagedResourcePrefix}-*'
+            Condition:
+              StringEquals:
+                iam:PassedToService: ecs-tasks.amazonaws.com
+          - Sid: OperatePipelineServices
+            Effect: Allow
+            Action:
+              - ecs:CreateCluster
+              - ecs:DeleteCluster
+              - ecs:UpdateService
+              - ecs:StopTask
+              - ecs:TagResource
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ManagedResourcePrefix}-*'
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ManagedResourcePrefix}-*/*'
+              - !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${ManagedResourcePrefix}-*/*'
+          # A link's own task definitions, only in a link's own cluster.
+          - Sid: RunLoaderTasksOnlyInLinkClusters
+            Effect: Allow
+            Action: ecs:RunTask
+            Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ManagedResourcePrefix}-*:*'
+            Condition:
+              ArnLike:
+                ecs:cluster: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ManagedResourcePrefix}-*'
+          - Sid: EcsReadsWithNoResourceLevelSupport
+            Effect: Allow
+            Action:
+              - ecs:DescribeServices
+              - ecs:DescribeTasks
+              - ecs:ListTasks
+              - ecs:ListServices
+              - ecs:DescribeClusters
+              - ecs:ListClusters
+              - ecs:DescribeTaskDefinition
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+          # The broker auth token: the offset check before a load and the
+          # Pipeline Monitor connect to the broker.
+          #
+          # Jira story F176. The broker template leaves its secret unnamed, so it is
+          # BrokerAuthSecret-<random>, a name any stack's secret of that
+          # logical id gets. It is read only when its tags say an ECDL stack
+          # made it: ecdl:stack, which the broker template sets, or the
+          # aws:cloudformation:stack-name tag CloudFormation adds, which no
+          # one can set by hand and which also covers secrets created before
+          # ecdl:stack was added.
+          - Sid: ReadBrokerSecrets
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ManagedResourcePrefix}-*'
+          - Sid: ReadBrokerAuthSecretsOfEcdlStacks
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:BrokerAuthSecret-*'
+            Condition:
+              StringLike:
+                aws:ResourceTag/ecdl:stack: !Sub '${ManagedResourcePrefix}-*'
+          - Sid: ReadBrokerAuthSecretsCreatedByEcdlStacks
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:BrokerAuthSecret-*'
+            Condition:
+              StringLike:
+                aws:ResourceTag/aws:cloudformation:stack-name: !Sub '${ManagedResourcePrefix}-*'
+          - Sid: DecryptBrokerSecretsThroughSecretsManagerOnly
+            Effect: Allow
+            Action: kms:Decrypt
+            Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+              StringLike:
+                aws:ResourceTag/ecdl:stack: !Sub '${ManagedResourcePrefix}-*'
+
+  # Named with the role, so a change of role name also replaces the profile.
+  # EC2 keeps serving credentials for the role a profile had when it was
+  # associated: when only the role inside the profile changed (the rename
+  # above), the running instance kept the old role's credentials, which stop
+  # working once that role is deleted. A new profile is re-associated with the
+  # instance (no interruption), and EC2 issues credentials for the new role.
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub 'ECDLControlPlane-${AWS::StackName}-${AWS::Region}'
+      Roles: [!Ref InstanceRole]
+
+  InstanceLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        # "resolve:ssm:<path>" is resolved by EC2 at launch, once per instance.
+        ImageId: !If [AmiFromSsm, !Sub 'resolve:ssm:${LatestAmiId}', !Ref LatestAmiId]
+        MetadataOptions:
+          HttpTokens: required
+          HttpPutResponseHopLimit: 2
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      guard:
+        SuppressedRules:
+          # The instance IS in the VPC: its subnet is set on the network
+          # interface below. EC2 does not accept a top-level SubnetId together
+          # with NetworkInterfaces, and the rule only looks at the top level.
+          - EC2_INSTANCES_IN_VPC
+          # AssociatePublicIpAddress resolves to false unless the operator sets
+          # AssignPublicIp=true (default false), which is only needed in a subnet
+          # whose internet route is an internet gateway. A public IP opens no
+          # port; inbound access is decided by AccessMode. The rule cannot
+          # evaluate the !If, so it flags the property for being present.
+          - EC2_INSTANCE_NO_PUBLIC_IP
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+    Properties:
+      # The image comes from the launch template, where EC2 resolves the SSM
+      # path at launch. The template text never changes on an update, so an
+      # update keeps this instance (an ImageTag change restarts it in place).
+      LaunchTemplate:
+        LaunchTemplateId: !Ref InstanceLaunchTemplate
+        Version: !GetAtt InstanceLaunchTemplate.LatestVersionNumber
+      InstanceType: !Ref InstanceType
+      # Current-generation types (t3, m5, ...) are EBS-optimized by default;
+      # stated explicitly so the template says what the instance gets.
+      EbsOptimized: true
+      # One-minute EC2 metrics (about $2 a month), so the recovery alarm and an
+      # operator see a failing host within minutes. No interruption to change.
+      Monitoring: true
+      IamInstanceProfile: !Ref InstanceProfile
+      # Declared as a network interface so AssignPublicIp is applied: with plain
+      # SubnetId the subnet's own auto-assign setting decided, and the parameter
+      # had no effect. false now means no public IP even in a public subnet.
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          SubnetId: !Ref SubnetId
+          GroupSet: [!Ref SecurityGroup]
+          AssociatePublicIpAddress: !If [PublicIp, true, false]
+          DeleteOnTermination: true
+      # IMDSv2 only. The v1 endpoint can be reached through a server-side request
+      # forgery in anything running on the instance, and this instance holds a role that can
+      # create IAM roles.
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 2
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - {Key: Name, Value: !Sub '${AWS::StackName}'}
+        - {Key: 'ecdl:component', Value: control-plane}
+      UserData:
+        # cfn-signal below reports whether the API actually answered, so the
+        # CreationPolicy is what turns that into a stack failure rather than a
+        # stack that succeeds while the control plane is not running.
+        #
+        # Two parts. EC2 runs a user-data script only on an instance's FIRST
+        # boot, so changing ImageTag used to restart the instance, leave Docker
+        # restarting the OLD containers, and still report UPDATE_COMPLETE. The
+        # cloud-config part sets scripts-user to "always", so the script runs on
+        # every boot and an update to this user data actually takes effect. The
+        # script is written to be re-run: it removes and recreates both
+        # containers.
+        Fn::Base64: !Sub
+          - |
+            Content-Type: multipart/mixed; boundary="//"
+            MIME-Version: 1.0
+
+            --//
+            Content-Type: text/cloud-config; charset="us-ascii"
+            MIME-Version: 1.0
+            Content-Transfer-Encoding: 7bit
+            Content-Disposition: attachment; filename="cloud-config.txt"
+
+            #cloud-config
+            cloud_final_modules:
+            - [scripts-user, always]
+
+            --//
+            Content-Type: text/x-shellscript; charset="us-ascii"
+            MIME-Version: 1.0
+            Content-Transfer-Encoding: 7bit
+            Content-Disposition: attachment; filename="userdata.txt"
+
+            #!/bin/bash
+            set -euxo pipefail
+            # The wait condition of this release (Jira story F179): the instance
+            # CreationPolicy below gates only the first boot, so an update
+            # with an image that does not start used to report
+            # UPDATE_COMPLETE. Every boot signals this handle too.
+            READY_HANDLE='${ReadyHandle}'
+            # Any failing step signals failure immediately, rather than leaving
+            # the CreationPolicy to time out ten minutes later with no reason.
+            trap '/opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource Instance --region ${AWS::Region} --reason "control-plane user data failed at line $LINENO; see /var/log/cloud-init-output.log" || true; /opt/aws/bin/cfn-signal -e 1 --reason "control-plane user data failed at line $LINENO" "$READY_HANDLE" || true' ERR
+            dnf install -y docker
+            systemctl enable --now docker
+
+            REGION=${AWS::Region}
+
+            # No `|| true`. A failed login used to be ignored, so the next
+            # step failed on "no basic auth credentials" and the log pointed at the
+            # image. With an explicit image from another registry there is
+            # nothing to log in to, so the login is skipped rather than ignored.
+            REGISTRY='${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}'
+            if printf '%s\n%s\n' '${BackendRef}' '${FrontendRef}' | grep -q "^$REGISTRY/"; then
+              aws ecr get-login-password --region "$REGION" \
+                | docker login --username AWS --password-stdin "$REGISTRY"
+            fi
+            docker pull '${BackendRef}'
+            docker pull '${FrontendRef}'
+
+            docker rm -f ecdl-backend ecdl-frontend 2>/dev/null || true
+
+            # Deployment records survive a container restart on this volume. The
+            # API runs as uid 10001 (backend/Dockerfile.release), not root, so
+            # it owns the directory, including files an older version wrote.
+            mkdir -p /var/lib/ecdl/data
+            chown -R 10001:10001 /var/lib/ecdl/data
+            # Jira story F100: container output to CloudWatch Logs when the instance can
+            # reach it; otherwise Docker's default, on the instance, with a
+            # line saying so (a missing logs endpoint must not stop the
+            # control plane). non-blocking: a slow Logs API never stalls the
+            # API. `docker logs` keeps working (Docker's local cache).
+            LOG_GROUP='${ControlPlaneLogGroup}'
+            BACKEND_LOG=''
+            FRONTEND_LOG=''
+            if aws logs describe-log-streams --region "$REGION" --log-group-name "$LOG_GROUP" --max-items 1 >/dev/null 2>&1; then
+              LOG_OPTS="--log-driver awslogs --log-opt awslogs-region=$REGION --log-opt awslogs-group=$LOG_GROUP --log-opt mode=non-blocking"
+              BACKEND_LOG="$LOG_OPTS --log-opt awslogs-stream=backend"
+              FRONTEND_LOG="$LOG_OPTS --log-opt awslogs-stream=frontend"
+            else
+              echo "CloudWatch Logs not reachable: container logs stay on the instance (docker logs)" >&2
+            fi
+            # In ssm mode both ports are published on loopback only, so they are
+            # unreachable from the network even if a security group rule were
+            # added later; the SSM port forward connects to 127.0.0.1 on the
+            # instance. The other modes publish on the instance's interfaces,
+            # and the security group decides who reaches them.
+            # ECDL_AUTH_DISABLED: the backend's own token is off; AccessMode is
+            # the access control (see WHO CAN USE IT above).
+            # BackendAccessEnv limits which requests the API answers
+            # (backend/auth.py). ECDL_ALLOWED_HOSTS is the Host header values it
+            # serves; any other gets 403, which is what stops a web page whose
+            # domain resolves to this instance (DNS rebinding). In ssm mode that
+            # is loopback on any port, because ecdl-ui lets the operator choose
+            # the local ports (a rebinding page cannot send Host: localhost, and
+            # writes from another port are refused by the Origin check). In the
+            # other modes it is loopback
+            # (for the check below), the instance's own addresses and EC2 DNS
+            # names, read from the metadata service here because the template
+            # cannot refer to its own instance, and UiHostNames. Behind a load
+            # balancer, writes are also limited to the load balancer's origin.
+            IMDS=http://169.254.169.254/latest
+            IMDS_TOKEN=$(curl -fsS -m 5 -X PUT "$IMDS/api/token" -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
+            ALLOWED_HOSTS='localhost,127.0.0.1,[::1]'
+            for item in local-ipv4 local-hostname public-ipv4 public-hostname; do
+              # public-* are absent (404) without a public address.
+              value=$(curl -fsS -m 5 -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" "$IMDS/meta-data/$item" 2>/dev/null || true)
+              if [ -n "$value" ]; then ALLOWED_HOSTS="$ALLOWED_HOSTS,$value"; fi
+            done
+            if [ -n '${UiHostNames}' ]; then ALLOWED_HOSTS="$ALLOWED_HOSTS,${UiHostNames}"; fi
+            # A private network for the two containers: the UI's nginx forwards
+            # /api/* to ecdl-backend:5000 over it (frontend/nginx/nginx.conf).
+            docker network create ecdl >/dev/null 2>&1 || true
+            # The API is published on loopback except behind a load balancer,
+            # which forwards /api/* to port 5000: the check below and an SSM
+            # port forward (ecdl-ui --api-port) connect from the instance
+            # itself, and the UI reaches it over the private network.
+            docker run -d --name ecdl-backend --restart unless-stopped \
+              --network ecdl \
+              $BACKEND_LOG \
+              -p ${ApiPublishHost}5000:5000 \
+              -v /var/lib/ecdl/data:/app/data \
+              -e AWS_DEFAULT_REGION="$REGION" \
+              -e ECDL_AUTH_DISABLED=true \
+              -e ECDL_TASK_ROLE_BOUNDARY_ARN='${TaskRoleBoundary}' \
+              -e ECDL_PIPELINE_SECRET_ARNS='${PipelineSecretList}' \
+              -e ECDL_DEPLOY_ROLE_ARN='${DeployRole.Arn}' \
+              -e ECDL_TEMPLATE_URL_BASE='https://${TemplateBucket}.s3.${AWS::Region}.${AWS::URLSuffix}/templates/${ImageTag}/' \
+              ${BackendAccessEnv} \
+              ${BackendRef}
+
+            # The page calls the API on its own origin in every AccessMode: the
+            # UI's nginx forwards /api/* to the backend, so there is no
+            # cross-origin request for CORS to block. In cidr mode the page at
+            # <ip>:3000 used to call <ip>:5000, which the CORS allowlist did not
+            # name, so the browser blocked every call (Jira story F155). Behind a load
+            # balancer that routes /api/* to port 5000 the origin is the same
+            # either way.
+            docker run -d --name ecdl-frontend --restart unless-stopped \
+              --network ecdl \
+              $FRONTEND_LOG \
+              -p ${PublishHost}3000:3000 \
+              -e ECDL_API_UPSTREAM=ecdl-backend:5000 \
+              -e REACT_APP_API_SAME_ORIGIN=true \
+              ${FrontendRef}
+
+            # Confirm the API is running before signalling success. `docker run -d` returns
+            # 0 as soon as the container is CREATED, so an image that cannot start
+            # -- a bad tag, a missing dependency, an unreadable secret -- exits
+            # seconds later and the stack would otherwise report CREATE_COMPLETE
+            # over a control plane that is not running.
+            ok=0
+            for attempt in $(seq 1 30); do
+              if curl -fsS -m 3 http://localhost:5000/api/auth/status >/dev/null 2>&1; then
+                ok=1
+                break
+              fi
+              sleep 5
+            done
+            if [ "$ok" != "1" ]; then
+              echo "control-plane API did not answer on :5000" >&2
+              docker logs ecdl-backend 2>&1 | tail -40 >&2 || true
+            fi
+            # CloudFormation accepts the signal only while it is creating the
+            # instance. On later boots it is refused, which is expected.
+            /opt/aws/bin/cfn-signal -e "$( [ "$ok" = 1 ] && echo 0 || echo 1 )" \
+              --stack ${AWS::StackName} --resource Instance --region "$REGION" \
+              || echo "cfn-signal not accepted (expected on any boot after the first)"
+            # The release's wait condition: on the create, and on the update
+            # that brought this release, a failure here fails the stack
+            # operation and the update rolls back. On a later reboot the
+            # condition is already complete and the signal changes nothing.
+            /opt/aws/bin/cfn-signal -e "$( [ "$ok" = 1 ] && echo 0 || echo 1 )" \
+              --reason "control-plane API $( [ "$ok" = 1 ] && echo answered || echo 'did not answer on :5000' )" \
+              "$READY_HANDLE" \
+              || echo "wait condition signal not accepted (expected once its handle has expired)"
+            [ "$ok" = 1 ]
+            --//--
+          - BackendRef: !If
+              - HasBackendImage
+              - !Ref BackendImage
+              - !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/ecdl/ecdl-control-plane-api:${ImageTag}'
+            FrontendRef: !If
+              - HasFrontendImage
+              - !Ref FrontendImage
+              - !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/ecdl/ecdl-control-plane-ui:${ImageTag}'
+            PublishHost: !If [AccessSsm, '127.0.0.1:', '']
+            ApiPublishHost: !If [AccessLoadBalancer, '', '127.0.0.1:']
+            # For the deploy preflight: which secrets the task-role boundary admits.
+            PipelineSecretList: !Join [',', !Ref PipelineSecretArns]
+            BackendAccessEnv: !If
+              - AccessSsm
+              - '-e "ECDL_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]"'
+              - !If
+                - AccessLoadBalancer
+                - '-e ECDL_ALLOWED_HOSTS="$ALLOWED_HOSTS" -e ECDL_ALLOWED_ORIGINS='
+                - '-e ECDL_ALLOWED_HOSTS="$ALLOWED_HOSTS"'
+            ReadyHandle: !Ref ReadyHandleV0x2x31
+
+  # Jira story F179. A CreationPolicy gates only the instance's creation, and
+  # CloudFormation re-evaluates no wait condition on an update, so an update
+  # with an image that would not start reported UPDATE_COMPLETE. A wait
+  # condition is evaluated when it is CREATED, so each release has its own
+  # pair, named for its ImageTag (`./release.sh pin` renames them;
+  # test_control_plane_ready checks the names match). Updating to a new
+  # release replaces both; the new user data (which carries the new handle)
+  # restarts the instance, and the stack waits for its signal. A failure or
+  # no signal within the timeout rolls the update back, to the previous
+  # images. A parameter-only update of the same release (another
+  # BackendImage, say) is not gated.
+  ReadyHandleV0x2x31:
+    Type: AWS::CloudFormation::WaitConditionHandle
+  ReadyV0x2x31:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn: Instance
+    Properties:
+      Handle: !Ref ReadyHandleV0x2x31
+      Count: 1
+      # The restart, the image pulls and the 150s health check, with room.
+      Timeout: '1200'
+
+  # Jira story F100. A failed system status check (the host's hardware, power or
+  # network) used to leave the control plane down until someone noticed.
+  # EC2 recovers the instance onto other hardware with the same instance id,
+  # addresses and EBS volumes; the pipelines do not depend on it and keep
+  # running. Named outside the ecdl- prefix, so the deploy role cannot change
+  # it.
+  InstanceRecoveryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'ECDLControlPlane-${AWS::StackName}-system-check'
+      AlarmDescription: !Sub >
+        The ${AWS::StackName} control-plane instance failed its EC2 system
+        status check; EC2 recovers it onto healthy hardware. Pipelines keep
+        running. See docs/operations.md#the-control-plane-itself
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions:
+        - {Name: InstanceId, Value: !Ref Instance}
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Sub 'arn:${AWS::Partition}:automate:${AWS::Region}:ec2:recover'
+Outputs:
+  InstanceId:
+    Description: >
+      Shell access is through SSM Session Manager; no SSH port is open. In
+      load-balancer mode, register this instance in your target groups.
+    Value: !Ref Instance
+
+  AccessMode:
+    Description: How the UI is reached. See OpenUi.
+    Value: !Ref AccessMode
+
+  OpenUi:
+    Description: How to open the control-plane UI in this AccessMode.
+    Value: !If
+      - AccessSsm
+      - !Sub 'Run ecdl-cli/ecdl-ui ${AWS::StackName} --region ${AWS::Region}, then open http://localhost:3000'
+      - !If
+        - AccessLoadBalancer
+        - 'Open your load balancer URL. It must route /api/* to port 5000 and everything else to port 3000 on this instance.'
+        - !Sub 'http://${Instance.PrivateIp}:3000 from inside AllowedCIDR (no login)'
+
+  UiTunnelCommand:
+    Condition: AccessSsm
+    Description: >
+      The SSM port forward ecdl-cli/ecdl-ui starts, if you prefer to run it
+      yourself. The UI forwards /api/* to the API, so this one port is enough;
+      forward 5000 as well only for the ecdl CLI.
+    Value: !Sub 'aws ssm start-session --region ${AWS::Region} --target ${Instance} --document-name AWS-StartPortForwardingSession --parameters portNumber=3000,localPortNumber=3000'
+
+  PrivateUrl:
+    Condition: AccessCidr
+    Description: >
+      Control-plane UI on the private address, from inside AllowedCIDR. Plain
+      HTTP with no login: anyone in AllowedCIDR can deploy.
+    Value: !Sub 'http://${Instance.PrivateIp}:3000'
+
+  PublicUrl:
+    Condition: CidrWithPublicIp
+    Description: >
+      Control-plane UI on the public address. Reachable only from AllowedCIDR,
+      over plain HTTP, with no login -- anyone in AllowedCIDR can deploy.
+    Value: !Sub 'http://${Instance.PublicIp}:3000'
+
+  InstancePrivateIp:
+    Condition: AccessLoadBalancer
+    Description: Private address of the instance, for load balancer target groups.
+    Value: !GetAtt Instance.PrivateIp
+
+  SecurityGroupId:
+    Value: !Ref SecurityGroup
+
+  ManagedPrefix:
+    Description: >
+      The control plane can only create and modify resources named with this
+      prefix. That is the limit of what it can change.
+    Value: !Ref ManagedResourcePrefix
