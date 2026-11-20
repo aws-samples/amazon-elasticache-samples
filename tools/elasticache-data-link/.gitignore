@@ -1,0 +1,48 @@
+.DS_Store
+.vscode/settings.json
+notes.txt
+prompt.txt
+notes_local.txt
+prompt_local.txt
+/frontend/node_modules
+/frontend/build
+__pycache__/
+*.pyc
+
+# Python virtual environments
+.venv/
+.venv*/
+venv/
+
+# Keys and credentials
+*.pem
+
+# Infrastructure files
+ec2-userdata*.sh
+docker-compose.ec2.yml
+docker-compose.local.yml
+
+# Kiro settings
+.kiro/
+
+# Terraform artifacts (never commit provider binaries or state)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+# Presentation / spreadsheet assets (kept out of the repo)
+*.pptx
+*.xlsx
+
+# Local run logs (MCP servers, ad-hoc scripts). Developer artefacts, not
+# reproducible output.
+*.log
+
+# Local application state (created at runtime; the app recreates these).
+# The directories are kept via .gitkeep so container mounts still work.
+/data/*.db
+/backend/data/*.jsonl
+/backend/data/*.json
+/backend/data/*.tmp
+# Built Go binaries (build with `go build` or ./release.sh; never commit)
+/tools/go-sink/ecdl-sink

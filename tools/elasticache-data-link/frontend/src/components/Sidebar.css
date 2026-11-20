@@ -1,0 +1,89 @@
+.sidebar {
+  width: 250px;
+  background-color: #232F3E;
+  color: white;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-title {
+  font-size: 18px;
+  margin-bottom: 30px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #37475A;
+}
+
+.sidebar-subtitle {
+  font-size: 11px;
+  color: #FF9900;
+  font-weight: 400;
+  display: block;
+  margin-top: 4px;
+}
+
+.sidebar-group {
+  margin-bottom: 20px;
+}
+
+.group-title {
+  font-size: 14px;
+  color: #8D9DB6;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.sidebar-item {
+  width: 100%;
+  padding: 12px 15px;
+  background: none;
+  border: none;
+  color: white;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 5px;
+  margin-bottom: 5px;
+  transition: background-color 0.2s;
+}
+
+.sidebar-item:hover {
+  background-color: #37475A;
+}
+
+.sidebar-item.active {
+  background-color: #FF9900;
+  color: #232F3E;
+  font-weight: 600;
+}
+
+.group-title-collapsible {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #8D9DB6;
+  margin-bottom: 10px;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 5px;
+  transition: background-color 0.2s;
+}
+
+.group-title-collapsible:hover {
+  background-color: #37475A;
+}
+
+.group-title-collapsible svg {
+  flex-shrink: 0;
+}
+
+.expand-arrow {
+  margin-left: auto;
+  font-size: 12px;
+  transition: transform 0.3s;
+}
+
+.expand-arrow.expanded {
+  transform: rotate(90deg);
+}

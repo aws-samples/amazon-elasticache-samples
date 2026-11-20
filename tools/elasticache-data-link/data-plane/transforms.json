@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "_doc": "Shared transform spec applied identically by the Go sink (CDC path) and the Python bulk loader (initial-load path). Processing order per row: (1) filter on ORIGINAL fields -> keep/drop; (2) computed fields (arithmetic over original numeric fields); (3) column selection (allowlist) + always keep computed; (4) rename. The key is always <table>:<source-pk>, unaffected by selection/rename. Computed numbers format as %.6f with trailing zeros/dot stripped.",
+  "tables": {
+    "orders": {
+      "columns": ["id", "category", "amount"],
+      "rename": { "category": "cat" },
+      "computed": [
+        { "name": "amount_cents", "expr": "amount * 100" }
+      ],
+      "filter": { "field": "amount", "op": ">=", "value": "0" }
+    }
+  }
+}

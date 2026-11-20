@@ -1,0 +1,1762 @@
+AWSTemplateFormatVersion: '2010-09-09'
+# Source database -> Debezium Server -> broker Valkey (streams) -> Go sink ->
+# target Valkey. Debezium's offset and schema history are stored in the broker
+# itself (no SQLite or EFS). The broker, the target and the source already
+# exist; the DB password comes from Secrets Manager.
+#
+# SIZE: CloudFormation accepts at most 51,200 bytes inline, measured after
+# ecdl_link.deploy.compact_template strips comments (test_deploy checks it).
+# Put reasoning in comments like this one; keep Description and
+# AlarmDescription text to what an operator needs on the console.
+Description: ECDL CDC pipeline on ECS Fargate (Debezium, broker streams, Go sink)
+
+Parameters:
+  PermissionsBoundaryArn:
+    Type: String
+    Default: ''
+    AllowedPattern: '^(arn:aws[a-z-]*:iam::[0-9]{12}:policy/[A-Za-z0-9+=,.@_/-]+)?$'
+    # The control plane always sets it: its own IAM policy refuses to create a
+    # role without it. Empty leaves the roles without one.
+    Description: Permissions boundary for the task roles.
+
+  ClusterName:
+    Type: String
+    Default: ecdl-cluster
+    Description: Existing ECS cluster to deploy services into.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  AssignPublicIp:
+    Type: String
+    Default: ENABLED
+    AllowedValues: [ENABLED, DISABLED]
+
+  # --- Existing broker (ElastiCache Valkey, cluster-mode-disabled, single shard) ---
+  # No defaults for the three hosts. They used to default to placeholder
+  # names, so a stack created without them came up "successfully" and the tasks
+  # restarted repeatedly on DNS errors. Required parameters fail at stack creation instead.
+  BrokerHost:
+    Type: String
+    MinLength: 1
+    Description: Broker primary endpoint (the broker stack's PrimaryEndpoint output).
+  BrokerPort:
+    Type: String
+    Default: '6379'
+  # Brokers made by ecdl-broker-quickstart.yaml have in-transit encryption on.
+  # false only for a broker created before that was the case.
+  BrokerSSL:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  BrokerWait:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    # true narrows the window in which a failover could lose a committed position.
+    # On a single-node broker WAIT can never succeed and every flush would take
+    # the full 1s timeout.
+    Description: Offset commits wait for a broker replica. false for a single-node broker.
+  BrokerReplicationGroupId:
+    Type: String
+    Default: ''
+    Description: The broker's replication group id, for the broker alarms. Empty skips them.
+  # The broker runs noeviction: at 100% it refuses Debezium's writes and
+  # capture waits (no events are lost). This is the warning before that.
+  BrokerMemoryAlarmPercent:
+    Type: Number
+    Default: 80
+    MinValue: 10
+    MaxValue: 99
+  BrokerReplicationLagAlarmSeconds:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 3600
+  BrokerSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  # --- Existing target (ElastiCache Valkey, cluster-mode-enabled) ---
+  # The configuration endpoint when cluster mode is on.
+  TargetHost:
+    Type: String
+    MinLength: 1
+  TargetPort:
+    Type: String
+    Default: '6379'
+  TargetSSL:
+    Type: String
+    Default: 'true'
+  TargetCluster:
+    Type: String
+    Default: 'true'
+  TargetSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  # --- Existing Aurora MySQL source ---
+  SourceDBHost:
+    Type: String
+    MinLength: 1
+  SourceDBPort:
+    Type: String
+    Default: '3306'
+  SourceDBName:
+    Type: String
+    Default: Inventory
+  SourceDBUser:
+    Type: String
+    Default: admin
+  # The DB password: plaintext, or JSON read with DBSecretJsonKey.
+  DBSecretArn:
+    Type: String
+  # advanced.key_prefix from the link. Keys become <prefix>:<table>:<pk>, so
+  # two links writing tables of the same name into one cache do not overwrite
+  # each other. Empty = <table>:<pk>.
+  KeyPrefix:
+    Type: String
+    Default: ''
+    AllowedPattern: '^[A-Za-z0-9_.-]*$'
+  # Without it a JSON secret was injected whole and the database refused the
+  # login. Set by the control plane.
+  DBSecretJsonKey:
+    Type: String
+    Default: ''
+    AllowedPattern: '^[A-Za-z0-9_]*$'
+    Description: Key to read from a JSON DB secret (password for RDS). Empty = plaintext.
+
+  # --- Cache credentials (optional; only when the cache has auth enabled) ---
+  # The whole secret value is injected, not a JSON key, because the two shapes
+  # differ: an ElastiCache auth token is a plaintext secret while an RBAC user is
+  # JSON with a username and a password. ECS can only select a key from a secret
+  # that has one, so the sink decides which it received.
+  # Empty when the cache has neither an auth token nor RBAC. A plaintext value
+  # is an auth token; JSON {"username","password"} is an RBAC user.
+  TargetSecretArn:
+    Type: String
+    Default: ''
+    Description: Target cache credential secret. Empty = no auth.
+  # Empty for a broker created without an auth token.
+  BrokerSecretArn:
+    Type: String
+    Default: ''
+  # Empty for an external (self-managed or on-premises) source: there is no
+  # AWS security group to amend, and the operator opens the source firewall
+  # over their Direct Connect / VPN link.
+  AuroraSecurityGroupId:
+    Type: String
+    Default: ''
+    Description: Security group of an AWS source, to admit the tasks. Empty for an external source.
+
+  # --- CDC scope ---
+  Tables:
+    Type: String
+    Default: Inventory.orders
+  TopicPrefix:
+    Type: String
+    Default: ecdl
+  # Jira stories F016/F017. no_data is what the planner sends; schema_only is Debezium
+  # 3.0's deprecated name for it, kept so a stack deployed with it still
+  # updates. never is in the link schema. recovery rebuilds a lost or
+  # compacted schema history from the current tables, then streams from the
+  # stored offset (docs/operations.md, schema history); the planner refuses
+  # it for PostgreSQL, which keeps no history.
+  SnapshotMode:
+    Type: String
+    Default: no_data
+    AllowedValues: [no_data, schema_only, initial, when_needed, never, recovery]
+  # One link, N tables, one sink service. Every table in the link gets its own
+  # broker stream, and ONE sink service consumes all of them: the consumer group
+  # already balances across workers and tasks, so a second table needs no second
+  # service, no second group and no extra Fargate task.
+  #
+  # Replaces the old StreamKey + StreamTable pair, which could only name one
+  # table. The sink still accepts that pair for a manually run container, but the
+  # template uses one form so the two cannot disagree.
+  #
+  # Comma-separated, one per table, e.g.
+  # "data:ecdl.Inventory.orders,data:ecdl.Inventory.customers". The table name
+  # is taken from the end of each stream; write stream=table to override it.
+  # The resolver composes the names with the same rule Debezium uses.
+  Streams:
+    Type: String
+    Default: data:ecdl.Inventory.orders
+    Description: Broker streams the sink consumes, one per table.
+
+  # --- Per-link identifiers on shared resources ---
+  # These were hardcoded, which meant two links against one source or one broker
+  # would silently overwrite each other's state. They are now derived per link.
+  #
+  # OffsetKey holds Debezium's committed log position, SchemaHistoryKey the
+  # captured schema history. Two links sharing a broker MUST have different
+  # keys, or each resumes from the other's position and skips or replays
+  # changes.
+  OffsetKey:
+    Type: String
+    Default: 'ecdl:metadata:offsets'
+  SchemaHistoryKey:
+    Type: String
+    Default: 'ecdl:metadata:schema_history'
+  # MySQL replication server id, ignored by the other engines. Must be unique
+  # among everything reading that binlog -- MySQL disconnects a duplicate. The
+  # control plane derives one per link; the default lets the template deploy
+  # on its own.
+  ServerId:
+    Type: String
+    Default: '88888'
+  # PostgreSQL only. Empty = the image default (ecdl_slot), which stacks
+  # created before this parameter use; the planner sets ecdl_<link> so two
+  # links on one source do not share a slot. Never change it on a running
+  # link: a new slot starts at the current WAL position and the old one
+  # retains WAL.
+  PgSlotName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^[a-z0-9_]{0,63}$'
+  OffsetCommitted:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false', '']
+    # Debezium then refuses to start when the broker has no offset for the link
+    # (broker wiped or replaced, OffsetKey changed) or, on PostgreSQL, when the
+    # replication slot is gone, instead of silently starting at the current log
+    # position. Empty means false (a stack updated before this parameter existed).
+    # Set by the deployer once the link has committed an offset; kept on
+    # update, reset by a reload.
+  # PostgreSQL only: the publication Debezium reads. Empty = the image default
+  # (dbz_pub), which stacks created before this parameter use; the planner
+  # sets ecdl_<link>_pub. It must contain every link table and the signalling
+  # table. Kept on update.
+  PgPublicationName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^[a-z0-9_]{0,63}$'
+  # Sink transform spec (JSON: filter / computed / columns / rename, keyed by
+  # table). Empty = passthrough.
+  TransformsJson:
+    Type: String
+    Default: ''
+
+  # --- Day-2 signalling ---
+  # Adding a table to a live link needs an INCREMENTAL SNAPSHOT, or the new table
+  # only ever yields changes made after the restart and the rows that already
+  # existed are never sent. The request is a row written into a signalling table on
+  # the source, which the connector polls.
+  #
+  # The table must exist before deployment and must be unique to this link;
+  # `ecdl signal ddl` prints the statement for the source engine.
+  #
+  # REQUIRED, with no default. It used to default to '' with the description
+  # "Empty disables signalling" -- which was false. The image always enables the
+  # source signal channel, so an empty collection reached Debezium as a table id
+  # of '' and the task restarted repeatedly on "Invalid identifier: ''". Refusing an empty
+  # value here turns that into a parameter error at stack creation, before any
+  # task starts. `ecdl apply` and the control plane both supply it.
+  SignalCollection:
+    Type: String
+    AllowedPattern: '^[^.\s]+(\.[^.\s]+)+$'
+    ConstraintDescription: must be a qualified table such as Inventory.ecdl_signal_mylink
+    # Qualified the way this engine qualifies table.include.list
+    # (database.table for MySQL, schema.table for the others). It must exist
+    # on the source before deploying.
+    Description: Signalling table (database.table or schema.table).
+  SignalTopicPattern:
+    Type: String
+    Default: '^$'
+    # Names the exact collection rather than a wildcard, so a customer table with
+    # a similar name is never dropped. The heartbeat is deliberately NOT dropped:
+    # Debezium commits an offset only for records that reach the sink, so an idle
+    # source would never commit one. The sink keeps its stream short (TRIM_STREAMS).
+    # The topics dropped are the signalling table's own inserts, which nothing
+    # consumes. '^$' drops nothing.
+
+  # --- Source engine ---
+  # Selects which connector configuration the Debezium image uses. There is no
+  # default on purpose: guessing would point, say, a MySQL connector at a
+  # PostgreSQL port, and the container refuses to start without it rather than
+  # coming up with no source configured. The value is the engine_family from
+  # ecdl_link/resolve.py, which derives it from the source ARN.
+  # Becomes QUARKUS_PROFILE, which picks application-<engine>.properties
+  # inside the Debezium image.
+  SourceEngine:
+    Type: String
+    AllowedValues: [mysql, postgresql, sqlserver, oracle]
+
+  # --- Images ---
+  # Pinned versions, not :latest. Both of these were :latest, which meant a
+  # deployment could not say which build it was running and a redeploy of an
+  # unchanged stack could silently pick up different bytes.
+  #
+  # Left empty, each image resolves to THIS account's own ECR at ImageTag:
+  #   <account>.dkr.ecr.<region>.amazonaws.com/ecdl/<image>:<ImageTag>
+  # which is exactly where `./release.sh push` publishes. These defaults used to
+  # be digests in one development account, so in any other account the tasks
+  # could not pull their images and a reviewer had to edit the template first.
+  # release.sh creates the repositories with IMMUTABLE tags, so a version tag
+  # cannot be moved once pushed. To pin a digest or use another registry, set
+  # the parameter; an explicit value always takes precedence.
+  # Published by ./release.sh push; `./release.sh pin` sets it to VERSION.
+  ImageTag:
+    Type: String
+    Default: 0.2.31
+    Description: Version tag of the default images in this account's ECR.
+  DebeziumImage:
+    Type: String
+    Default: ''
+    # Only an ECR image (this account's: the task-role boundary allows pulls
+    # from no other registry). An image from anywhere else would run with
+    # the pipeline's task role and credentials.
+    AllowedPattern: '^$|^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com(\.cn)?/[a-z0-9._/-]+(:[A-Za-z0-9._-]+|@sha256:[0-9a-f]{64})$'
+    ConstraintDescription: empty, or an ECR image (<repo>:<tag> or @sha256:<digest>)
+    # Upstream 3.0.6.Final plus this repo's connector config. Empty =
+    # <this account>.dkr.ecr.<region>/ecdl/ecdl-debezium-server:<ImageTag>.
+  # The CPU architecture the Fargate tasks run on. It has to match the images:
+  # release.sh builds amd64 + arm64 by default, which runs on either, but a
+  # single-architecture build (PLATFORMS=linux/arm64, the fast option on an arm64
+  # build host) only runs here when this says ARM64. With no RuntimePlatform at
+  # all, Fargate silently runs X86_64, and an arm64-only image then fails to
+  # start with "exec format error".
+  CpuArchitecture:
+    Type: String
+    Default: X86_64
+    AllowedValues: [X86_64, ARM64]
+    Description: Fargate CPU architecture; must match the images.
+  SinkImage:
+    Type: String
+    Default: ''
+    # Only an ECR image (this account's: the task-role boundary allows pulls
+    # from no other registry). An image from anywhere else would run with
+    # the pipeline's task role and credentials.
+    AllowedPattern: '^$|^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com(\.cn)?/[a-z0-9._/-]+(:[A-Za-z0-9._-]+|@sha256:[0-9a-f]{64})$'
+    ConstraintDescription: empty, or an ECR image (<repo>:<tag> or @sha256:<digest>)
+    # Reports its build at /version. Empty =
+    # <this account>.dkr.ecr.<region>/ecdl/ecdl-sink:<ImageTag>.
+
+  # --- Debezium ---
+  # There is exactly one Debezium task per link: it is a single log reader and a
+  # second one would either duplicate the stream or, on MySQL, be disconnected for
+  # reusing the server id. So this is 1 or 0, not a scaling setting.
+  #
+  # 0 exists for the initial-load handoff. The loader reads a snapshot of the
+  # table; if CDC is applying changes at the same time, CDC can write a fresh
+  # value and the loader can then overwrite it with the older value it read
+  # earlier -- and CDC will never replay that event, so the key stays stale until
+  # the row next changes. Holding Debezium at 0 across the load removes the race.
+  #
+  # It must NOT be 0 on the FIRST deployment of a cdc link. With no stored offset,
+  # Debezium's schema_only/no_data snapshot starts from the CURRENT log position,
+  # so anything written while it had never run is silently skipped. Let it start,
+  # then scale to 0 for the load: the stored offset then holds a position from
+  # before the load and the load window is replayed.
+  DebeziumDesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 1
+    Description: 1 = capture running, 0 = paused for an initial load. Never more than 1.
+
+  # Task size. These were HARDCODED at 8192/16384 and were not parameters at all,
+  # so every link paid for 8 vCPU whether it needed them or not -- and it is the
+  # single largest cost in a deployed link, larger than the broker.
+  #
+  # 8 vCPU came from the throughput benchmarks, where Debezium is the ceiling at
+  # roughly 40K events/s and the aim was to find that ceiling. A typical link is
+  # nowhere near it. Debezium is ONE log reader, so extra vCPU do not parallelise
+  # capture; they only help the JSON conversion and the sink batching keep up.
+  #
+  # Memory is the one to watch rather than CPU: the connector buffers up to
+  # max.queue.size events (32768 by default) before the sink drains them, and a
+  # wide row is a few KB, so a deep queue of large rows is hundreds of MB plus JVM
+  # overhead. 4 GB is enough for that; raise it before raising CPU.
+  #
+  # Set 4096/8192 or higher for a sustained high-rate source, and see
+  # docs/benchmark-results.md for what each engine actually reached.
+  DebeziumCpu:
+    Type: String
+    Default: '2048'
+    AllowedValues: ['1024', '2048', '4096', '8192', '16384']
+  # Must be a valid Fargate pairing for DebeziumCpu.
+  DebeziumMemory:
+    Type: String
+    Default: '4096'
+
+  # --- Sink scaling settings ---
+  # Goroutine workers per sink task.
+  SinkWorkers:
+    Type: String
+    Default: '8'
+  # Was 500 here while the sink's own code default was 5000, so a deployed
+  # pipeline behaved differently from every local run and from the published
+  # benchmarks. Both are now 2000, matching Debezium's own sink batch size, so the
+  # consumer pulls at the granularity the producer writes. Batch size does not add
+  # latency on a sparse stream (the read blocks for 500ms regardless). The
+  # throughput benchmarks used 5000-20000. Entries the sink pulls and
+  # pipelines per read cycle: larger batches hold more unacked entries in the
+  # broker for fewer round trips.
+  SinkBatchSize:
+    Type: String
+    Default: '2000'
+  SinkDesiredCount:
+    Type: Number
+    Default: 2
+  SinkMinCount:
+    Type: Number
+    Default: 2
+    # A target-tracking scale-out alarm takes ~3 minutes to fire, so a single task
+    # would handle a burst alone for that window and fall behind. Two tasks drain
+    # about as fast as the one Debezium task writes, so bursts barely queue.
+    # 1 lowers idle cost.
+  SinkMaxCount:
+    Type: Number
+    Default: 10
+  SinkTargetCpuPercent:
+    Type: Number
+    Default: 60
+  # Target-tracking value for ECDL/CDCSink BacklogPerTask (undelivered +
+  # unacked stream entries per running task). At the sink's ~18.5K events/s
+  # per-task drain, 25000 is ~1.3s of queued work per task before scale-out.
+  SinkTargetBacklogPerTask:
+    Type: Number
+    Default: 25000
+
+  # --- Alarms ---
+  # The pipeline used to have no alarms at all: every failure was visible only
+  # while someone had the dashboard open. These alarm on the conditions that
+  # mean "changes are not reaching the cache" and publish to an SNS topic this
+  # stack creates, so anything (email, chat, a pager) can subscribe.
+  AlarmsEnabled:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  # The subscription must be confirmed from the email. With no address, the
+  # planner warns and the monitor shows a banner until something subscribes to
+  # the AlarmTopicArn output (Jira story F105).
+  AlarmEmail:
+    Type: String
+    Default: ''
+    Description: Email subscribed to the alarm topic (confirm it from the email).
+  # The end-to-end "the cache is behind" signal on the sink side.
+  SinkLagAlarmSeconds:
+    Type: Number
+    Default: 300
+    MinValue: 30
+    Description: Alarm when the oldest change waiting in the broker is older than this.
+  # Expected only while a bulk load holds capture paused; at any other time the
+  # source log is accumulating changes that are lost once its retention runs
+  # out. MaxValue: the alarm evaluates one period per minute, and CloudWatch
+  # accepts at most 1440 of those (one day); a larger value failed the stack.
+  CaptureStoppedAlarmMinutes:
+    Type: Number
+    Default: 30
+    MinValue: 5
+    MaxValue: 1440
+    Description: Alarm when Debezium has had no running task for this many minutes.
+  # Debezium writes a heartbeat every 10 s while it streams. A pause for a bulk
+  # load does not count.
+  CaptureStaleAlarmSeconds:
+    Type: Number
+    Default: 300
+    MinValue: 60
+    MaxValue: 86400
+    Description: Alarm when Debezium's newest heartbeat is older than this.
+  # Jira story F103. Capture held paused this long alarms: a load that never resumed
+  # it (control plane lost mid-load). The planner sets the load timeout
+  # times the tables, plus one hour; the default is one table at the
+  # default timeout (6 h), plus one.
+  # Hours, as one period is an hour and CloudWatch evaluates at most a day.
+  CapturePausedAlarmHours:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 24
+  TableStaleSeconds:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[A-Za-z0-9_$]+=[0-9]+(,[A-Za-z0-9_$]+=[0-9]+)*$'
+    Description: 'Per-table alarm on no captured change, e.g. orders=3600,items=600.'
+
+Conditions:
+  HasPermissionsBoundary: !Not [!Equals [!Ref PermissionsBoundaryArn, '']]
+  HasDBSecretJsonKey: !Not [!Equals [!Ref DBSecretJsonKey, '']]
+  Alarms: !Equals [!Ref AlarmsEnabled, 'true']
+  TableStaleAlarms: !And
+    - !Condition Alarms
+    - !Not [!Equals [!Ref TableStaleSeconds, '']]
+  BrokerAlarms: !And
+    - !Condition Alarms
+    - !Not [!Equals [!Ref BrokerReplicationGroupId, '']]
+  AlarmsWithEmail: !And
+    - !Condition Alarms
+    - !Not [!Equals [!Ref AlarmEmail, '']]
+  # Grant and inject a cache credential only when one was supplied, so a
+  # no-auth deployment does not carry an unused permission.
+  HasTargetSecret: !Not [!Equals [!Ref TargetSecretArn, '']]
+  HasBrokerSecret: !Not [!Equals [!Ref BrokerSecretArn, '']]
+  # An explicit image takes precedence; empty means this account's ECR at ImageTag.
+  HasDebeziumImage: !Not [!Equals [!Ref DebeziumImage, '']]
+  HasSinkImage: !Not [!Equals [!Ref SinkImage, '']]
+  # Lets the sink's whole Secrets block be omitted rather than rendered as an
+  # empty list when neither cache needs a credential.
+  HasCacheSecret: !Or [!Condition HasTargetSecret, !Condition HasBrokerSecret]
+  # An AWS source supplies its security group so the pipeline can be granted
+  # ingress; an external source leaves it empty, so the ingress rule is skipped
+  # (the operator opens their own firewall over the DX/VPN link instead).
+  HasSourceSecurityGroup: !Not [!Equals [!Ref AuroraSecurityGroupId, '']]
+  HasPgSlotName: !Not [!Equals [!Ref PgSlotName, '']]
+  HasPgPublicationName: !Not [!Equals [!Ref PgPublicationName, '']]
+
+Resources:
+  # ═══════════════════════════════════════════════════════════════
+  # Security: dedicated SG for the pipeline tasks + ingress to deps
+  # ═══════════════════════════════════════════════════════════════
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      guard:
+        # Egress to 0.0.0.0/0 is limited to TCP 443 (the AWS APIs, which are
+        # public endpoints with no managed prefix list) and, only when the
+        # source's security group is unknown, the source database port.
+        SuppressedRules:
+          - EC2_SECURITY_GROUP_EGRESS_OPEN_TO_WORLD_RULE
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName} ECDL CDC task SG'
+      VpcId: !Ref VpcId
+      # Only what the tasks talk to. DNS (the VPC resolver), the task metadata
+      # endpoint and IMDS are not filtered by security groups, so they need no
+      # rule. HTTPS stays open to any address because the AWS APIs (ECR,
+      # Secrets Manager, CloudWatch, Logs, STS) are public endpoints when the
+      # subnet reaches them through an internet gateway or NAT.
+      SecurityGroupEgress:
+        - Description: HTTPS to the AWS APIs (ECR, Secrets Manager, CloudWatch, Logs)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - Description: The broker (Valkey streams)
+          IpProtocol: tcp
+          FromPort: !Ref BrokerPort
+          ToPort: !Ref BrokerPort
+          DestinationSecurityGroupId: !Ref BrokerSecurityGroupId
+        - Description: The target cache
+          IpProtocol: tcp
+          FromPort: !Ref TargetPort
+          ToPort: !Ref TargetPort
+          DestinationSecurityGroupId: !Ref TargetSecurityGroupId
+        # The source database: its own security group when known, otherwise
+        # its port only (the planner always knows it for an RDS/Aurora source).
+        - Description: The source database (change capture)
+          IpProtocol: tcp
+          FromPort: !Ref SourceDBPort
+          ToPort: !Ref SourceDBPort
+          DestinationSecurityGroupId: !If [HasSourceSecurityGroup, !Ref AuroraSecurityGroupId, !Ref 'AWS::NoValue']
+          CidrIp: !If [HasSourceSecurityGroup, !Ref 'AWS::NoValue', 0.0.0.0/0]
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-task-sg'
+
+  BrokerIngressFromTasks:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: !Sub 'ECDL ${AWS::StackName} CDC tasks to the broker'
+      GroupId: !Ref BrokerSecurityGroupId
+      IpProtocol: tcp
+      FromPort: !Ref BrokerPort
+      ToPort: !Ref BrokerPort
+      SourceSecurityGroupId: !Ref TaskSecurityGroup
+
+  TargetIngressFromTasks:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: !Sub 'ECDL ${AWS::StackName} CDC sink to the target cache'
+      GroupId: !Ref TargetSecurityGroupId
+      IpProtocol: tcp
+      # The target's own port, not a hardcoded 6379: a target on another port
+      # got an ingress rule for the wrong one and the sink could not connect.
+      FromPort: !Ref TargetPort
+      ToPort: !Ref TargetPort
+      SourceSecurityGroupId: !Ref TaskSecurityGroup
+
+  AuroraIngressFromTasks:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasSourceSecurityGroup
+    Properties:
+      Description: !Sub 'ECDL ${AWS::StackName} Debezium to the source database'
+      GroupId: !Ref AuroraSecurityGroupId
+      IpProtocol: tcp
+      FromPort: !Ref SourceDBPort
+      ToPort: !Ref SourceDBPort
+      SourceSecurityGroupId: !Ref TaskSecurityGroup
+
+  # ═══════════════════════════════════════════════════════════════
+  # IAM
+  # ═══════════════════════════════════════════════════════════════
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref 'AWS::NoValue']
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - !Ref ExecutionRolePolicy
+
+  ExecutionRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub '${AWS::StackName} ReadPipelineSecrets (was an inline policy on ExecutionRole)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: [secretsmanager:GetSecretValue]
+            Resource: !Ref DBSecretArn
+          # Separate statements rather than one list, so each is present only
+          # when its secret is.
+          - !If
+            - HasTargetSecret
+            - Effect: Allow
+              Action: [secretsmanager:GetSecretValue]
+              Resource: !Ref TargetSecretArn
+            - !Ref 'AWS::NoValue'
+          - !If
+            - HasBrokerSecret
+            - Effect: Allow
+              Action: [secretsmanager:GetSecretValue]
+              Resource: !Ref BrokerSecretArn
+            - !Ref 'AWS::NoValue'
+          # Jira story F177. A secret encrypted with a customer managed key needs
+          # kms:Decrypt as well as GetSecretValue, or the task fails at start.
+          # The broker secret always is (the broker stack's own key); a source
+          # or target secret may be. Decrypt is allowed only through Secrets
+          # Manager and only for these secrets (Secrets Manager puts the
+          # secret's ARN in the encryption context), so the key ARNs are not
+          # needed. A secret not given repeats DBSecretArn rather than adding
+          # a statement per secret. A key in another account also needs its
+          # key policy to admit this role (docs/prerequisites.md).
+          - Effect: Allow
+            Action: [kms:Decrypt]
+            Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+                kms:EncryptionContext:SecretARN:
+                  - !Ref DBSecretArn
+                  - !If [HasTargetSecret, !Ref TargetSecretArn, !Ref DBSecretArn]
+                  - !If [HasBrokerSecret, !Ref BrokerSecretArn, !Ref DBSecretArn]
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref 'AWS::NoValue']
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref TaskRolePolicy
+
+  TaskRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: !Sub '${AWS::StackName} PipelineTaskPolicy (was an inline policy on TaskRole)'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # PutMetricData has no resource-level permissions, so Resource
+          # must be '*'; the namespace condition is the constraint. The sink
+          # publishes only to ECDL/CDCSink (tools/go-sink/metrics.go;
+          # METRIC_NAMESPACE is not overridden by this stack).
+          - Effect: Allow
+            Action: [cloudwatch:PutMetricData]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                cloudwatch:namespace: ECDL/CDCSink
+          # The sink reads Debezium's desired count to tell a planned pause
+          # (0, during a bulk load) from a stall. This one service only.
+          - Effect: Allow
+            Action: ecs:DescribeServices
+            Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/${ClusterName}/${AWS::StackName}-debezium'
+
+  # ═══════════════════════════════════════════════════════════════
+  # Logs
+  # ═══════════════════════════════════════════════════════════════
+  # One customer-managed key per pipeline, for its log groups (Debezium error
+  # lines can carry row values) and its alarm topic. Each service is admitted
+  # only for this stack's own resources: CloudWatch Logs by log-group ARN in
+  # the encryption context, CloudWatch by alarm name (every AlarmName below
+  # starts with the stack name). About $1/month.
+  PipelineKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Description: !Sub 'Encrypts the ${AWS::StackName} logs and alarm topic'
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Standard default: the account administers the key through IAM, so
+          # the deploying role's own permissions decide who can manage it.
+          - Sid: AccountAdministersThroughIam
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: CloudWatchLogsForThisStacksLogGroups
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action: [kms:Encrypt*, kms:Decrypt*, kms:ReEncrypt*, kms:GenerateDataKey*, kms:Describe*]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${AWS::StackName}/*'
+          # This stack's alarms (CloudWatch) and its broker-events rule
+          # (EventBridge) publish to the encrypted alarm topic.
+          - Sid: CloudWatchPublishesThisStacksAlarms
+            Effect: Allow
+            Principal:
+              Service: [cloudwatch.amazonaws.com, events.amazonaws.com]
+            Action: [kms:Decrypt, kms:GenerateDataKey*]
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${AWS::StackName}-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${AWS::StackName}-*'
+      Tags:
+        # The control plane's IAM policy scopes key management to this tag.
+        - Key: ecdl:stack
+          Value: !Ref AWS::StackName
+  DebeziumLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/debezium'
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt PipelineKey.Arn
+  SinkLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/sink'
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt PipelineKey.Arn
+
+  # ═══════════════════════════════════════════════════════════════
+  # Debezium Server (single task — one binlog reader)
+  # ═══════════════════════════════════════════════════════════════
+  DebeziumTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-debezium'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform:
+        CpuArchitecture: !Ref CpuArchitecture
+        OperatingSystemFamily: LINUX
+      Cpu: !Ref DebeziumCpu
+      Memory: !Ref DebeziumMemory
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: debezium
+          Image: !If
+            - HasDebeziumImage
+            - !Ref DebeziumImage
+            - !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/ecdl/ecdl-debezium-server:${ImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+          Environment:
+            # Selects application-<engine>.properties on top of the shared base.
+            # The image will not start without it.
+            - { Name: QUARKUS_PROFILE, Value: !Ref SourceEngine }
+            - { Name: BROKER_HOST, Value: !Ref BrokerHost }
+            - { Name: BROKER_PORT, Value: !Ref BrokerPort }
+            - { Name: BROKER_SSL, Value: !Ref BrokerSSL }
+            - { Name: BROKER_WAIT, Value: !Ref BrokerWait }
+            - { Name: SOURCE_DB_HOST, Value: !Ref SourceDBHost }
+            - { Name: SOURCE_DB_PORT, Value: !Ref SourceDBPort }
+            - { Name: SOURCE_DB_NAME, Value: !Ref SourceDBName }
+            - { Name: SOURCE_DB_USER, Value: !Ref SourceDBUser }
+            - { Name: TABLE_INCLUDE_LIST, Value: !Ref Tables }
+            - { Name: TOPIC_PREFIX, Value: !Ref TopicPrefix }
+            - { Name: SNAPSHOT_MODE, Value: !Ref SnapshotMode }
+            # Per-link, so two links on one broker cannot overwrite each other's
+            # offsets or schema history.
+            - { Name: OFFSET_KEY, Value: !Ref OffsetKey }
+            - { Name: SCHEMA_HISTORY_KEY, Value: !Ref SchemaHistoryKey }
+            # true: refuse to start without a stored offset (and, on
+            # PostgreSQL, without the slot). See the OffsetCommitted parameter.
+            - { Name: EXPECT_OFFSET, Value: !Ref OffsetCommitted }
+            - { Name: SERVER_ID, Value: !Ref ServerId }
+            - { Name: SIGNAL_COLLECTION, Value: !Ref SignalCollection }
+            - { Name: SIGNAL_TOPIC_PATTERN, Value: !Ref SignalTopicPattern }
+            - !If
+              - HasPgSlotName
+              - { Name: SLOT_NAME, Value: !Ref PgSlotName }
+              - !Ref 'AWS::NoValue'
+            - !If
+              - HasPgPublicationName
+              - { Name: PUBLICATION, Value: !Ref PgPublicationName }
+              - !Ref 'AWS::NoValue'
+          Secrets:
+            - Name: SOURCE_DB_PASSWORD
+              ValueFrom: !If
+                - HasDBSecretJsonKey
+                - !Sub '${DBSecretArn}:${DBSecretJsonKey}::'
+                - !Ref DBSecretArn
+            # The broker's auth token. Injected as BROKER_PASSWORD rather than as
+            # a whole secret because Debezium reads a plain property and does no
+            # JSON parsing -- and the token we generate is a plaintext secret, so
+            # there is nothing to parse. The sink gets the same ARN as
+            # BROKER_SECRET, since it handles both shapes.
+            - !If
+              - HasBrokerSecret
+              - Name: BROKER_PASSWORD
+                ValueFrom: !Ref BrokerSecretArn
+              - !Ref 'AWS::NoValue'
+          HealthCheck:
+            Command: ['CMD-SHELL', 'curl -f http://localhost:8080/q/health || exit 1']
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 90
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref DebeziumLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: debezium
+
+  DebeziumService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-debezium'
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref DebeziumTaskDef
+      DesiredCount: !Ref DebeziumDesiredCount
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        # 0/100: never two Debezium tasks at once (see DebeziumDesiredCount).
+        # A deploy therefore stops the old task before starting the
+        # new one, so a bad image would leave capture DOWN -- hence the circuit breaker.
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        # A task that never becomes healthy fails the deployment and rolls back
+        # to the previous task definition, instead of restarting repeatedly while
+        # CloudFormation waits for hours. The stack update then reports
+        # UPDATE_ROLLBACK_COMPLETE, which the deployer treats as a failure.
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups: [!Ref TaskSecurityGroup]
+          AssignPublicIp: !Ref AssignPublicIp
+
+  # ═══════════════════════════════════════════════════════════════
+  # Go Sink (scalable — N tasks share the stream via the consumer group)
+  # ═══════════════════════════════════════════════════════════════
+  SinkTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-sink'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform:
+        CpuArchitecture: !Ref CpuArchitecture
+        OperatingSystemFamily: LINUX
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: sink
+          Image: !If
+            - HasSinkImage
+            - !Ref SinkImage
+            - !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/ecdl/ecdl-sink:${ImageTag}'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8081
+          Environment:
+            - { Name: BROKER_HOST, Value: !Ref BrokerHost }
+            - { Name: BROKER_PORT, Value: !Ref BrokerPort }
+            - { Name: TARGET_HOST, Value: !Ref TargetHost }
+            - { Name: TARGET_PORT, Value: !Ref TargetPort }
+            - { Name: TARGET_SSL, Value: !Ref TargetSSL }
+            - { Name: TARGET_CLUSTER, Value: !Ref TargetCluster }
+            - { Name: STREAMS, Value: !Ref Streams }
+            - { Name: KEY_PREFIX, Value: !Ref KeyPrefix }
+            # Debezium's heartbeat stream: written so an idle source still
+            # commits an offset, not read by any consumer, so the sink keeps it short.
+            - { Name: TRIM_STREAMS, Value: !Sub 'data:__debezium-heartbeat.${TopicPrefix}' }
+            # Capture freshness (CaptureStaleSeconds): the same heartbeat's age,
+            # and Debezium's desired count, which is 0 during a planned pause.
+            - { Name: CAPTURE_HEARTBEAT_STREAM, Value: !Sub 'data:__debezium-heartbeat.${TopicPrefix}' }
+            - { Name: CAPTURE_SERVICE_NAME, Value: !Sub '${AWS::StackName}-debezium' }
+            # Per-table freshness: tables that must see a change this often.
+            - { Name: TABLE_STALE_SECONDS, Value: !Ref TableStaleSeconds }
+            - { Name: EVENT_FORMAT, Value: envelope }
+            - { Name: CONSUMER_GROUP, Value: ecdl-sink }
+            - { Name: WORKERS, Value: !Ref SinkWorkers }
+            - { Name: BATCH_SIZE, Value: !Ref SinkBatchSize }
+            - { Name: HEALTH_PORT, Value: '8081' }
+            - { Name: TRANSFORMS_JSON, Value: !Ref TransformsJson }
+            - { Name: BROKER_SSL, Value: !Ref BrokerSSL }
+            # Backlog metric: the sink publishes ECDL/CDCSink BacklogPerTask
+            # under these two dimensions, which the backlog scaling policy
+            # below tracks. They must match the policy's dimensions exactly.
+            - { Name: CLUSTER_NAME, Value: !Ref ClusterName }
+            - { Name: SERVICE_NAME, Value: !Sub '${AWS::StackName}-sink' }
+            - { Name: AWS_REGION, Value: !Ref 'AWS::Region' }
+          # Whole-value injection: the sink reads JSON as an RBAC user and
+          # anything else as an auth token, so one variable covers both shapes.
+          Secrets: !If
+            - HasCacheSecret
+            - - !If
+                - HasTargetSecret
+                - Name: TARGET_SECRET
+                  ValueFrom: !Ref TargetSecretArn
+                - !Ref 'AWS::NoValue'
+              - !If
+                - HasBrokerSecret
+                - Name: BROKER_SECRET
+                  ValueFrom: !Ref BrokerSecretArn
+                - !Ref 'AWS::NoValue'
+            - !Ref 'AWS::NoValue'
+          HealthCheck:
+            Command: ['CMD-SHELL', 'curl -fsS -m 4 http://127.0.0.1:8081/health || exit 1']
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 20
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref SinkLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: sink
+
+  SinkService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-sink'
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref SinkTaskDef
+      DesiredCount: !Ref SinkDesiredCount
+      LaunchType: FARGATE
+      # Rolling: new sink tasks start before old ones stop, so a deploy never
+      # leaves the stream undrained. Unacked entries from a stopped task are
+      # reclaimed by the others, so there is no loss either way.
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups: [!Ref TaskSecurityGroup]
+          AssignPublicIp: !Ref AssignPublicIp
+
+  # ═══════════════════════════════════════════════════════════════
+  # Restart on a new secret value (Jira story F134)
+  #
+  # ECS injects secrets when a task starts, so a task keeps the old password
+  # after a rotation (RDS-managed source secrets rotate every 7 days by
+  # default) and fails at its next reconnect. When the source or target
+  # secret gets a new current value, this restarts the one service that
+  # reads it: Debezium for the source, the sink for the target. Debezium
+  # resumes from its committed offset; the sink rolls (100/200), so nothing
+  # is lost. A service paused at 0 tasks stays at 0.
+  #
+  # The event is Secrets Manager's own "Secret Label Updated" for AWSCURRENT,
+  # sent for every secret with no CloudTrail trail needed, at the end of a
+  # rotation and on any manual new value. A secret that never changes never
+  # fires it. EventBridge cannot call ECS UpdateService itself, hence the
+  # function. Its role may only force a deployment of these two services.
+  # ═══════════════════════════════════════════════════════════════
+  RestartLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/restart'
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt PipelineKey.Arn
+
+  RestartPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ecs:UpdateService
+            # Ref of a service is its ARN.
+            Resource: [!Ref DebeziumService, !Ref SinkService]
+          - Effect: Allow
+            Action: [logs:CreateLogStream, logs:PutLogEvents]
+            Resource: !GetAtt RestartLogGroup.Arn
+
+  RestartRole:
+    Type: AWS::IAM::Role
+    Properties:
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref 'AWS::NoValue']
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns: [!Ref RestartPolicy]
+
+  # The secret ARNs and service names are written into the code by !Sub, so
+  # the function has no environment to encrypt and the event carries nothing
+  # it acts on beyond the ARN it is compared with.
+  RestartFunction:
+    Type: AWS::Lambda::Function
+    Metadata:
+      checkov:
+        skip:
+          # Not in a VPC: it calls only the ECS API, and a VPC would need ENI
+          # rights. No DLQ: Lambda retries twice and logs a failure. No
+          # reserved concurrency: it fails in accounts at the minimum limit.
+          - { id: CKV_AWS_117, comment: ECS API only }
+          - { id: CKV_AWS_116, comment: retried and logged }
+          - { id: CKV_AWS_115, comment: small accounts }
+      guard:
+        SuppressedRules: [LAMBDA_INSIDE_VPC, LAMBDA_DLQ_CHECK, LAMBDA_CONCURRENCY_CHECK]
+    Properties:
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 30
+      Role: !GetAtt RestartRole.Arn
+      LoggingConfig: { LogGroup: !Ref RestartLogGroup }
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          def handler(e, c):
+            for a, s in (('${DBSecretArn}', 'debezium'), ('${TargetSecretArn}', 'sink')):
+              if a and a in e.get('resources', []):
+                boto3.client('ecs').update_service(cluster='${ClusterName}', service='${AWS::StackName}-' + s, forceNewDeployment=True)
+                print('restarted', s, 'for', a)
+
+  SecretChangedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source: [aws.secretsmanager]
+        detail-type: [Secret Label Updated]
+        resources: [!Ref DBSecretArn, !If [HasTargetSecret, !Ref TargetSecretArn, !Ref DBSecretArn]]
+        detail: { labelUpdated: [AWSCURRENT] }
+      Targets:
+        - { Id: restart, Arn: !GetAtt RestartFunction.Arn }
+
+  RestartPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RestartFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SecretChangedRule.Arn
+
+  # ═══════════════════════════════════════════════════════════════
+  # Autoscaling for the sink service.
+  #
+  # Two target-tracking policies share one scalable target; ECS honors the
+  # highest desired count either asks for. CPU is a floor for compute-bound
+  # work, but the sink is almost entirely network + JSON, so CPU stays low
+  # while a queue builds. BacklogPerTask (published by the sink itself) is the
+  # signal that actually reflects load, so it is the primary scale-out driver.
+  # ═══════════════════════════════════════════════════════════════
+  SinkScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      ServiceNamespace: ecs
+      ScalableDimension: 'ecs:service:DesiredCount'
+      ResourceId: !Sub 'service/${ClusterName}/${AWS::StackName}-sink'
+      MinCapacity: !Ref SinkMinCount
+      MaxCapacity: !Ref SinkMaxCount
+      RoleARN: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+    DependsOn: SinkService
+
+  SinkScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-sink-cpu-tt'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref SinkScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: !Ref SinkTargetCpuPercent
+        ScaleInCooldown: 120
+        ScaleOutCooldown: 60
+
+  # Primary scale-out driver: queue depth per task. The sink emits this metric
+  # (see CLUSTER_NAME / SERVICE_NAME env on the sink container); the dimensions
+  # here must match those exactly. Scale-in is deliberately slow (300s) to
+  # avoid dropping a task while a burst is still draining.
+  SinkBacklogScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-sink-backlog-tt'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref SinkScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        CustomizedMetricSpecification:
+          Namespace: ECDL/CDCSink
+          MetricName: BacklogPerTask
+          Statistic: Average
+          Dimensions:
+            - { Name: ClusterName, Value: !Ref ClusterName }
+            - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+        TargetValue: !Ref SinkTargetBacklogPerTask
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  # ═══════════════════════════════════════════════════════════════
+  # Alarms
+  #
+  # Each one names a way changes stop reaching the cache. ECS/CPUUtilization is
+  # used as "is a task running" because ECS publishes it per service only while
+  # a task runs: no data means no task, so missing data is treated as BREACHING
+  # for the two not-running alarms. The ECDL/CDCSink metrics come from the sink
+  # itself (tools/go-sink/metrics.go).
+  # Encrypted with PipelineKey (see Logs above), which admits CloudWatch for
+  # this stack's own alarms. Not the AWS-managed alias/aws/sns key: its key
+  # policy cannot be edited to admit CloudWatch, so alarm notifications to a
+  # topic encrypted with it are silently dropped.
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: Alarms
+    Properties:
+      DisplayName: !Sub 'ECDL ${AWS::StackName} alarms'
+      KmsMasterKeyId: !Ref PipelineKey
+
+  AlarmEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: AlarmsWithEmail
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: email
+      Endpoint: !Ref AlarmEmail
+
+  # Who may publish to the topic: this stack's alarms and this stack's
+  # EventBridge rule, nothing else. A topic policy replaces SNS's default one
+  # (any principal of the account), so the CloudWatch statement must stay or
+  # every alarm notification is dropped. Account principals keep the access
+  # their IAM policies give them.
+  AlarmTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Condition: Alarms
+    Properties:
+      Topics: [!Ref AlarmTopic]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ThisStacksAlarmsAndRules
+            Effect: Allow
+            Principal:
+              Service: [cloudwatch.amazonaws.com, events.amazonaws.com]
+            Action: sns:Publish
+            Resource: !Ref AlarmTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn:
+                  - !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${AWS::StackName}-*'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${AWS::StackName}-*'
+
+  # Jira story F103. A planned pause (Debezium's desired count 0, CapturePaused 1 from
+  # the sink) counts as running here, so this alarm no longer sits in ALARM
+  # through every bulk load, where a pause that was never resumed went
+  # unnoticed. capture-paused below alarms on a pause that lasts too long.
+  # Metric math counts a missing value as 0, so a minute with neither a CPU
+  # sample nor CapturePaused 1 is no task (no CapturePaused: no sink, or it
+  # could not read ECS); with neither metric at all it is missing, breaching.
+  CaptureNotRunningAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-capture-not-running'
+      AlarmDescription: !Sub >
+        No Debezium task for ${CaptureStoppedAlarmMinutes} min and capture is
+        not paused. Set ${AWS::StackName}-debezium to 1 task and read its log.
+        docs/operations.md#capture-is-paused-or-stopped
+      Metrics:
+        - { Id: cpu, ReturnData: false, MetricStat: { Period: 60, Stat: SampleCount, Metric: { Namespace: AWS/ECS, MetricName: CPUUtilization, Dimensions: [{ Name: ClusterName, Value: !Ref ClusterName }, { Name: ServiceName, Value: !Sub '${AWS::StackName}-debezium' }] } } }
+        - { Id: paused, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: ECDL/CDCSink, MetricName: CapturePaused, Dimensions: [{ Name: ClusterName, Value: !Ref ClusterName }, { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }] } } }
+        - { Id: running, Expression: 'cpu + paused', ReturnData: true }
+      EvaluationPeriods: !Ref CaptureStoppedAlarmMinutes
+      DatapointsToAlarm: !Ref CaptureStoppedAlarmMinutes
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # Expected during a bulk load, which pauses capture and resumes it at the
+  # end. Paused longer than the load can take means nothing will resume it
+  # (the control plane stopped mid-load) while the source log is purging
+  # what Debezium has not read. No data: the sink cannot tell, and
+  # capture-not-running and sink-metrics-missing cover that.
+  CapturePausedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-capture-paused'
+      AlarmDescription: !Sub >
+        Capture paused for ${CapturePausedAlarmHours} h. If no load is
+        running, resume it. docs/operations.md#capture-is-paused-or-stopped
+      Namespace: ECDL/CDCSink
+      MetricName: CapturePaused
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: Minimum
+      Period: 3600
+      EvaluationPeriods: !Ref CapturePausedAlarmHours
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  CaptureStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-capture-stale'
+      # No data also alarms: the sink could not read the heartbeat.
+      AlarmDescription: !Sub >
+        Debezium wrote no heartbeat for ${CaptureStaleAlarmSeconds}s while not
+        paused: it is stuck, retrying or restarting. Read the Debezium log.
+        docs/operations.md#capture-is-paused-or-stopped
+      Namespace: ECDL/CDCSink
+      MetricName: CaptureStaleSeconds
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: !Ref CaptureStaleAlarmSeconds
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  TableStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: TableStaleAlarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-table-stale'
+      # Usually the table was renamed, left out of Debezium's include list, or
+      # stopped changing at the source.
+      AlarmDescription: !Sub >
+        A table in ${TableStaleSeconds} had no captured change past its
+        threshold; sink log line table-stale names it. Check its name in the
+        link. docs/operations.md#alarms
+      Namespace: ECDL/CDCSink
+      MetricName: StaleTables
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      # No data: the sink is not publishing, which other alarms cover.
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  SinkNotRunningAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-sink-not-running'
+      AlarmDescription: >
+        No sink task for 5 min: nothing applies changes. Read the sink service
+        events and log. docs/operations.md#alarms
+      Namespace: AWS/ECS
+      MetricName: CPUUtilization
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: SampleCount
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # Jira story F093. The sink-lag and dead-letter alarms read metrics the sink publishes,
+  # so a dead metrics loop (AWS config error, PutMetricData denied or
+  # throttled) used to leave dead-letters OK indefinitely and stopped
+  # autoscaling with no alarm. TargetUp is sent on every publish, whatever
+  # the broker or target state, so no TargetUp at all means nothing is being
+  # published. sink-not-running also fires when there is no task; this one
+  # alone means tasks run but cannot publish.
+  SinkMetricsMissingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-sink-metrics-missing'
+      AlarmDescription: >
+        No sink metrics for 5 min, so lag, dead-letter and scaling signals are missing.
+        If sink-not-running is in alarm start there; else read sink log ERROR
+        metric- lines (credentials, PutMetricData denied). docs/operations.md#alarms
+      Namespace: ECDL/CDCSink
+      MetricName: TargetUp
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: SampleCount
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  SinkLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-sink-lag'
+      # Usually the target is unreachable or slow, or the sink is at its
+      # scaling ceiling.
+      AlarmDescription: !Sub >
+        The oldest change waiting in the broker is over ${SinkLagAlarmSeconds}s
+        old, or no lag was published: the cache is behind. Check target-down,
+        then the sink task count. docs/operations.md#sink-is-behind
+      Namespace: ECDL/CDCSink
+      MetricName: OldestEntryAgeSeconds
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: !Ref SinkLagAlarmSeconds
+      ComparisonOperator: GreaterThanThreshold
+      # Missing data counts as behind. Sinks stay running during a target outage
+      # (they hold changes and keep publishing), and a level is left out, not
+      # sent as 0, when the broker cannot be read; at least SinkMinCount tasks
+      # always publish. A gap used to count as OK, which hid the outage.
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      # Jira story F094: on the count dead-lettered per minute, not on DLQDepth. The
+      # depth stays above 0 until every dead letter is replayed, so the alarm
+      # stayed in ALARM and a later dead letter (another table, another cause)
+      # sent nothing. Each new dead letter now notifies. No OKActions: it
+      # returns to OK a minute later, which does not mean the dead letters
+      # were replayed (DLQDepth and `ecdl dlq list` show what is left). No data
+      # = no sink publishing, which sink-metrics-missing covers.
+      AlarmName: !Sub '${AWS::StackName}-dead-letters'
+      AlarmDescription: >
+        Changes were dead-lettered and are NOT in the cache. Sink log lines
+        dead-letter name the stream, id and reason. Fix the cause, then replay.
+        docs/operations.md#dead-letters
+      Namespace: ECDL/CDCSink
+      MetricName: DeadLettered
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  TargetDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-target-down'
+      # Unreachable, failing over, out of memory, or a permission change.
+      # Nothing is dead-lettered; changes apply when the target recovers, and
+      # broker memory grows meanwhile.
+      AlarmDescription: >
+        The sink cannot write to the target. Changes are held on the broker,
+        not lost; sink log lines target-down give the reason.
+        docs/operations.md#sink-is-behind
+      Namespace: ECDL/CDCSink
+      MetricName: TargetUp
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      # No data = no sink publishing, which SinkNotRunningAlarm covers.
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  PendingVanishedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-pending-vanished'
+      AlarmDescription: >
+        Changes were LOST: pending entries were deleted from the broker stream
+        (sink log pending-vanished lists ids). Reload the link or snapshot the
+        tables. docs/operations.md#alarms
+      Namespace: ECDL/CDCSink
+      MetricName: PendingVanished
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  TargetEvictionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-target-evicted'
+      # Under allkeys-* the evicted keys are cached rows, now missing; under
+      # volatile-* they include delete markers. Sink log target-evicted names
+      # the node.
+      AlarmDescription: >
+        The target evicted keys, so cache rows are missing. Set maxmemory-policy
+        noeviction or a larger node, then reload the link.
+        docs/operations.md#alarms
+      Namespace: ECDL/CDCSink
+      MetricName: TargetEvictedKeys
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      # Maximum, not Sum: every sink task reports the same target's evictions.
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+  # Dead letters dropped at DLQ_MAX_LEN are gone: not in the cache and no
+  # longer in the DLQ to replay. Must stay 0. No OKActions, as for
+  # dead-letters: OK a minute later does not mean anything was recovered.
+  DlqDroppedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-dlq-dropped'
+      AlarmDescription: >
+        Dead letters were dropped at DLQ_MAX_LEN: those changes are lost.
+        Snapshot or reload the tables. docs/operations.md#dead-letters
+      Namespace: ECDL/CDCSink
+      MetricName: DLQDropped
+      Dimensions:
+        - { Name: ClusterName, Value: !Ref ClusterName }
+        - { Name: ServiceName, Value: !Sub '${AWS::StackName}-sink' }
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  # Jira story F097. The broker always comes from ecdl-broker-quickstart.yaml (the
+  # planner takes BrokerReplicationGroupId from its output), which creates a
+  # primary and one replica, <group>-001 and <group>-002. ElastiCache names
+  # members <group>-NNN and keeps the names across node replacement and
+  # failover; a replica added later (IncreaseReplicaCount) is <group>-003,
+  # so three are watched. MAX ignores a member that does not exist. Either
+  # node can be primary after a failover, hence the highest.
+  #
+  # Missing data is breaching: with no member reporting (broker deleted or
+  # replaced under another name) the alarm used to keep its last state, so a
+  # broker that disappeared was never noticed. A broker with more than three
+  # members, or members not named <group>-NNN, needs its own alarm.
+  BrokerMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: BrokerAlarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-broker-memory'
+      AlarmDescription: !Sub >
+        Broker ${BrokerReplicationGroupId} memory is above
+        ${BrokerMemoryAlarmPercent}%, or it reports nothing (deleted?). When
+        full, Debezium's writes wait and capture stops. Usually the sink is
+        behind. docs/operations.md#sink-is-behind
+      Metrics:
+        - { Id: node1, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: AWS/ElastiCache, MetricName: DatabaseMemoryUsagePercentage, Dimensions: [{ Name: CacheClusterId, Value: !Sub '${BrokerReplicationGroupId}-001' }] } } }
+        - { Id: node2, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: AWS/ElastiCache, MetricName: DatabaseMemoryUsagePercentage, Dimensions: [{ Name: CacheClusterId, Value: !Sub '${BrokerReplicationGroupId}-002' }] } } }
+        - { Id: node3, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: AWS/ElastiCache, MetricName: DatabaseMemoryUsagePercentage, Dimensions: [{ Name: CacheClusterId, Value: !Sub '${BrokerReplicationGroupId}-003' }] } } }
+        - { Id: memory, Expression: 'MAX([node1, node2, node3])', Label: 'broker memory %', ReturnData: true }
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: !Ref BrokerMemoryAlarmPercent
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # ── Broker durability ───────────────────────────────────────────────
+  # The broker is a primary and one replica. Debezium commits an offset only
+  # once the replica holds the writes (WAIT), so a failover loses nothing that
+  # was committed -- as long as the replica keeps up and stays there. These
+  # alarm when it does not, and when the broker fails over or is rebooted.
+  #
+  # ReplicationLag is reported only by the nodes that are currently replicas,
+  # which can be any node after a failover, so the alarm takes the highest.
+  # Members -001 to -003, like broker-memory (Jira story F097): a broker of 4 to 6
+  # nodes leaves the others unwatched by these three alarms.
+  BrokerReplicationLagAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: BrokerAlarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-broker-replication-lag'
+      AlarmDescription: !Sub >
+        Broker ${BrokerReplicationGroupId} replica over
+        ${BrokerReplicationLagAlarmSeconds}s behind for 3 min: capture slows and
+        a failover now loses what it lacks. docs/operations.md#alarms
+      Metrics:
+        - { Id: node1, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: AWS/ElastiCache, MetricName: ReplicationLag, Dimensions: [{ Name: CacheClusterId, Value: !Sub '${BrokerReplicationGroupId}-001' }] } } }
+        - { Id: node2, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: AWS/ElastiCache, MetricName: ReplicationLag, Dimensions: [{ Name: CacheClusterId, Value: !Sub '${BrokerReplicationGroupId}-002' }] } } }
+        - { Id: node3, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: AWS/ElastiCache, MetricName: ReplicationLag, Dimensions: [{ Name: CacheClusterId, Value: !Sub '${BrokerReplicationGroupId}-003' }] } } }
+        - { Id: lag, Expression: 'MAX([node1, node2, node3])', ReturnData: true }
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: !Ref BrokerReplicationLagAlarmSeconds
+      ComparisonOperator: GreaterThanThreshold
+      # No data: no replica is reporting. The WAIT-shortfall alarm below covers
+      # a missing replica, and a broker without one never reports this.
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # ElastiCache does not send failover or node-replacement events to
+  # EventBridge, and cannot publish its own notifications to an encrypted
+  # topic. IsMaster (1 on the primary) changes on two nodes at a failover,
+  # automatic or manual, so a change in any is the failover event. The
+  # alarm returns to OK a minute or two later; the notification is the signal.
+  BrokerFailoverAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: BrokerAlarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-broker-failover'
+      AlarmDescription: !Sub >
+        Broker ${BrokerReplicationGroupId} failed over. Debezium resumes from
+        the replicated offset; nothing is skipped. Check the broker's events.
+        docs/operations.md#alarms
+      Metrics:
+        - { Id: node1, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: AWS/ElastiCache, MetricName: IsMaster, Dimensions: [{ Name: CacheClusterId, Value: !Sub '${BrokerReplicationGroupId}-001' }] } } }
+        - { Id: node2, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: AWS/ElastiCache, MetricName: IsMaster, Dimensions: [{ Name: CacheClusterId, Value: !Sub '${BrokerReplicationGroupId}-002' }] } } }
+        - { Id: node3, ReturnData: false, MetricStat: { Period: 60, Stat: Maximum, Metric: { Namespace: AWS/ElastiCache, MetricName: IsMaster, Dimensions: [{ Name: CacheClusterId, Value: !Sub '${BrokerReplicationGroupId}-003' }] } } }
+        - { Id: changed, Expression: 'MAX([ABS(DIFF(node1)), ABS(DIFF(node2)), ABS(DIFF(node3))])', ReturnData: true }
+      # Two periods so DIFF always has a previous value to compare with.
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # Calls that fail the broker over, restart a node or remove one. Rebooting
+  # the PRIMARY is the dangerous one: it restarts empty and the replica copies
+  # it, losing offsets, backlog and dead letters, and IsMaster does not change.
+  # Matches CloudTrail's record of the call, so the account needs a trail that
+  # logs management events (most do; without one this rule never fires).
+  BrokerEventsRule:
+    Type: AWS::Events::Rule
+    Condition: BrokerAlarms
+    Properties:
+      Name: !Sub '${AWS::StackName}-broker-events'
+      EventPattern:
+        source: [aws.elasticache]
+        detail-type: [AWS API Call via CloudTrail]
+        detail:
+          eventSource: [elasticache.amazonaws.com]
+          eventName: [RebootCacheCluster, TestFailover, DeleteCacheCluster, DecreaseReplicaCount, DeleteReplicationGroup]
+          $or:
+            - requestParameters: { replicationGroupId: [!Ref BrokerReplicationGroupId] }
+            - requestParameters: { cacheClusterId: [{ prefix: !Sub '${BrokerReplicationGroupId}-' }] }
+      Targets:
+        - Id: alarm-topic
+          Arn: !Ref AlarmTopic
+          InputTransformer:
+            InputPathsMap: { call: $.detail.eventName, node: $.detail.requestParameters.cacheClusterId, caller: $.detail.userIdentity.arn }
+            InputTemplate: !Sub '"ECDL broker ${BrokerReplicationGroupId}: <call> <node> by <caller>. A reboot of the primary empties the broker; see docs/operations.md."'
+
+  # What Debezium's broker writer logs while its writes are held: WAIT got no
+  # replica within its timeout (WARN, once a second; after 30 the task
+  # stops), or the broker refused or could not take a write -- full
+  # (noeviction), loading, busy, unreachable (ERROR, once a minute). The offset
+  # does not move meanwhile. The texts are the writer's own
+  # (EcdlStreamWriter, RedisStreamChangeConsumer); a test checks the pattern
+  # against them.
+  BrokerWritesHeldMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Alarms
+    Properties:
+      LogGroupName: !Ref DebeziumLogGroup
+      FilterPattern: '?"ECDL broker writer: no replica acknowledged" ?"ECDL broker writer: broker memory is full" ?"change(s) not written yet"'
+      MetricTransformations:
+        - MetricNamespace: ECDL/CDCPipeline
+          MetricName: !Sub '${AWS::StackName}-BrokerWritesHeld'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  BrokerWritesHeldAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-broker-writes-held'
+      # Held: no replica acknowledged in time (replica missing, resyncing or
+      # lagging), or the broker is full, loading or unreachable.
+      AlarmDescription: >
+        Debezium's broker writes were held 3+ times in 5 min; nothing is lost,
+        capture waits. Debezium log lines ECDL broker writer say why.
+        docs/operations.md#alarms
+      Namespace: ECDL/CDCPipeline
+      MetricName: !Sub '${AWS::StackName}-BrokerWritesHeld'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  # Errors in the logs, as metrics. Both services log a line containing ERROR
+  # for every failure worth acting on (the sink rate-limits these per kind), so
+  # a sustained count means a persistent problem rather than one isolated error.
+  # FATAL is matched too: the sink prints FATAL (not ERROR) when it refuses to
+  # start, so a crash loop on a bad setting used to count as no errors.
+  DebeziumErrorMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Alarms
+    Properties:
+      LogGroupName: !Ref DebeziumLogGroup
+      FilterPattern: '?"ERROR" ?"FATAL"'
+      MetricTransformations:
+        - MetricNamespace: ECDL/CDCPipeline
+          MetricName: !Sub '${AWS::StackName}-DebeziumErrors'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  SinkErrorMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Alarms
+    Properties:
+      LogGroupName: !Ref SinkLogGroup
+      FilterPattern: '?"ERROR" ?"FATAL"'
+      MetricTransformations:
+        - MetricNamespace: ECDL/CDCPipeline
+          MetricName: !Sub '${AWS::StackName}-SinkErrors'
+          MetricValue: '1'
+          DefaultValue: 0
+
+  DebeziumErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-debezium-errors'
+      # Typical causes: lost source connection, missing grants, a purged log
+      # position, a full broker, or Debezium refusing to start.
+      AlarmDescription: >
+        Debezium logged ERROR or FATAL in 2 of 3 five-minute periods. Read its
+        log. A binlog or WAL position no longer available means changes are
+        lost: reload with --reset-position. docs/operations.md#capture-is-paused-or-stopped
+      Namespace: ECDL/CDCPipeline
+      MetricName: !Sub '${AWS::StackName}-DebeziumErrors'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+  SinkErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: Alarms
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-sink-errors'
+      # Jira story F095: 2 of 3 periods, as for Debezium. 3 of 3 took 10 to 17 minutes and
+      # any quiet 5-minute window reset it, so errors every 6 minutes never
+      # alarmed. One isolated error still does not.
+      AlarmDescription: >
+        The sink logged ERROR or FATAL in 2 of 3 five-minute periods. Each
+        line's kind says what failed (broker, target, metric, dead-letter,
+        startup). docs/operations.md#where-to-look
+      Namespace: ECDL/CDCPipeline
+      MetricName: !Sub '${AWS::StackName}-SinkErrors'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
+
+Outputs:
+  AlarmTopicArn:
+    Condition: Alarms
+    Description: Subscribe email, chat or paging endpoints here for pipeline alarms.
+    Value: !Ref AlarmTopic
+  DebeziumService:
+    Value: !Sub '${AWS::StackName}-debezium'
+  SinkService:
+    Value: !Sub '${AWS::StackName}-sink'
+  SinkScaling:
+    Value: !Sub 'min=${SinkMinCount} desired=${SinkDesiredCount} max=${SinkMaxCount}, scale-out on BacklogPerTask ${SinkTargetBacklogPerTask}/task (CPU ${SinkTargetCpuPercent}% floor), ${SinkWorkers} workers/task'
+  Architecture:
+    Value: 'Aurora -> Debezium(ECS) -> Broker Valkey Streams -> Go Sink(ECS, autoscaled) -> Target Valkey. Offset+schema in broker (Option B).'
+  Tables:
+    Value: !Sub 'One sink service consumes every stream in Streams: ${Streams}'
+    # Adding a table means adding its stream to Streams, not deploying another
+    # sink service. This Output used to say the opposite -- one service per
+    # table -- which multiplied tasks, consumer groups and cost by the count.

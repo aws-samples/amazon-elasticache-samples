@@ -1,0 +1,23 @@
+# The sample link: the three sample tables, loaded once and then kept in sync.
+# Replace the three ARNs and the database name with your own test resources.
+schema_version: 1
+name: ecdlsample
+mode: initial_load_and_cdc
+source:
+  arn: arn:aws:rds:us-east-2:111122223333:cluster:my-test-pg-cluster
+  database: my_test_db
+  schema: public
+  secret_arn: arn:aws:secretsmanager:us-east-2:111122223333:secret:my-test-db-secret-a1b2c3
+target:
+  arn: arn:aws:elasticache:us-east-2:111122223333:replicationgroup:my-test-cache
+tables:
+  - sample_customers
+  - sample_products
+  - sample_orders
+advanced:
+  # A small broker for a test: two cache.t4g.small nodes, about $46 a month in
+  # us-east-2 On-Demand.
+  # The default for new links is three cache.m7g.large nodes (about $345 a month).
+  broker:
+    node_type: cache.t4g.small
+    replicas: 1

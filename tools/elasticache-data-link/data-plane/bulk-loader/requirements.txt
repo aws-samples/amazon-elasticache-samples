@@ -1,0 +1,10 @@
+# Bulk loader dependencies, pinned exactly. The image installs
+# requirements.lock (these plus every transitive dependency, with hashes);
+# after changing a version here, regenerate it:
+#   uv pip compile --universal --python-version 3.12 --generate-hashes \
+#     data-plane/bulk-loader/requirements.txt -o data-plane/bulk-loader/requirements.lock
+valkey==6.2.0
+pymysql==1.2.4
+psycopg2-binary==2.9.13
+pymssql==2.4.6         # SQL Server source (bundles FreeTDS; no ODBC packages needed)
+oracledb==26.1.0       # Oracle source, thin mode (pure Python, no Oracle client)

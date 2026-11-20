@@ -1,0 +1,15 @@
+# Control-plane API dependencies, pinned exactly. The image installs
+# requirements.lock (these plus every transitive dependency, with hashes);
+# after changing a version here, regenerate it:
+#   uv pip compile --universal --python-version 3.11 --generate-hashes \
+#     backend/requirements.txt -o backend/requirements.lock
+# Flask 3.1.3, Flask-CORS 6.0.5 and requests 2.34.2 replace versions with known
+# CVEs (Jira story F185); the others are what a fresh `>=` install resolved to.
+Flask==3.1.3
+Flask-CORS==6.0.5
+boto3==1.44.7
+requests==2.34.2
+PyYAML==6.0.3
+psycopg2-binary==2.9.13
+pymysql==1.2.4
+valkey==6.2.0

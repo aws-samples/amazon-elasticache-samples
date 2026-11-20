@@ -1,0 +1,13 @@
+# Keep build artifacts out of the build context.
+#
+# ecdl-sink is a compiled binary produced by a local `go build`. It is host-arch
+# and it is 10 MB. Sending it to the builder causes two problems: it makes up most of the
+# context upload for a multi-arch build that recompiles from source anyway, and a
+# stray COPY . . would copy a stale amd64 binary into an arm64 image, which then
+# fails at runtime with an exec format error that does not indicate the cause.
+ecdl-sink
+*.test
+*.out
+
+# Local module cache, if anyone has vendored or built in place.
+vendor/

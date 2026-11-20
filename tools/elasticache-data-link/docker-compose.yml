@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Restart after a host reboot (nightly SSM patching may reboot the instance).
+    restart: unless-stopped
+    # The image runs as uid 10001, not root. ./data and ./backend are mounted,
+    # so on Linux run as your own uid (ECDL_UID=$(id -u) docker compose up) or
+    # make ./data writable by 10001.
+    user: "${ECDL_UID:-10001}"
+    # Loopback only. A bare "5006:5000" publishes on every interface, and this
+    # API (with the host's AWS credentials) can create IAM roles and stacks.
+    # To use it from another machine, tunnel in (ssh -L / SSM port forwarding)
+    # rather than widening this.
+    ports:
+      - "127.0.0.1:5006:5000"
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app
+      # The shared link schema and validator, which the CLI imports from the
+      # repo root. Mounted rather than copied because the build context is
+      # ./backend and cannot reach outside it; Task 12 copies it into the
+      # control-plane image instead.
+      - ./ecdl_link:/app/ecdl_link
+    environment:
+      - FLASK_ENV=development
+      # No API token (shipped default for now). Safe here only because the
+      # ports above are bound to loopback.
+      - ECDL_AUTH_DISABLED=true
+      # The Host header values the API answers (any port). Anything else gets
+      # 403, so a web page whose domain is pointed at 127.0.0.1 (DNS rebinding)
+      # cannot use this API from your browser. Add a name here only if you
+      # open the UI by it.
+      - ECDL_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
+      - DATABASE_PATH=/app/data/app.db
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+      - AWS_DEFAULT_REGION=us-east-1
+    depends_on:
+      - frontend
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    # Restart after a host reboot (nightly SSM patching may reboot the instance).
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:5006
+
+volumes:
+  data:

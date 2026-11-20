@@ -1,0 +1,1012 @@
+#!/usr/bin/env python3
+"""
+ECDL CLI — Deploy and manage ElastiCache Data Link pipelines.
+
+Usage:
+  ecdl validate my-link.yaml             # check a link config against the schema
+  ecdl resolve  my-link.yaml             # what ECDL reads from the config's ARNs
+  ecdl plan     my-link.yaml             # the ordered deployment; changes nothing
+  ecdl apply    my-link.yaml             # deploy, or update a deployed link in place
+  ecdl diff     deployed.yaml desired.yaml
+  ecdl signal   ddl|snapshot my-link.yaml
+  ecdl status   --stack ecdl-<link>-cdc  # a stack's outputs
+  ecdl destroy  --link <link>            # delete a link's stacks (keeps source + target)
+"""
+
+import argparse
+import json
+import os
+import sys
+
+# The link schema and validator live at the repo root and are shared with the
+# control-plane API, so a config this CLI accepts is one the UI accepts.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from ecdl_link import (  # noqa: E402
+    LinkValidationError,
+    canonical_json,
+    load_file,
+    problems_for,
+    validate_link,
+)
+
+
+# ═══════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════
+
+def _load_or_exit(path, what="nothing to do"):
+    """The raw document of a link file, or exit with what is wrong with it.
+
+    A file that is not valid YAML or JSON used to end every command but
+    `validate` with a traceback (Jira story F143).
+    """
+    if not os.path.exists(path):
+        print(f"  ERROR: {path} not found")
+        sys.exit(1)
+    try:
+        return load_file(path)
+    except LinkValidationError as exc:
+        print(f"  x {path} could not be read, so there is {what}:")
+        for problem in exc.problems:
+            print(f"      {problem}")
+        sys.exit(1)
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"  x {path} could not be read: {exc}")
+        sys.exit(1)
+
+
+def _cloudformation(profile, region):
+    """A CloudFormation client for --profile / --region (either may be unset).
+
+    The SDK rather than shelling out to the aws CLI: nothing is executed, so a
+    stack name from the command line can never be read as a command.
+    """
+    import boto3
+    return boto3.session.Session(profile_name=profile or None,
+                                 region_name=region or None).client('cloudformation')
+
+
+# ═══════════════════════════════════════════════════════════════
+# COMMANDS
+# ═══════════════════════════════════════════════════════════════
+
+def cmd_status(args):
+    """Check pipeline status."""
+    from botocore.exceptions import BotoCoreError, ClientError
+    try:
+        stacks = _cloudformation(args.profile, args.region).describe_stacks(
+            StackName=args.stack)['Stacks']
+    except (ClientError, BotoCoreError) as exc:
+        print(f"  Stack '{args.stack}' not found ({exc}).")
+        return
+    print(f"\n  Stack: {args.stack}")
+    print("  " + "-" * 50)
+    for out in stacks[0].get('Outputs') or []:
+        print(f"  {out['OutputKey']:<22} {out['OutputValue']}")
+
+
+def cmd_destroy(args):
+    """Delete a pipeline's own stacks, leaving the shared source and target.
+
+    A link owns up to three stacks -- broker, cdc, loader -- all named
+    ecdl-<link>-*. The source database and the target cache are referenced by
+    endpoint, shared across links, and never created here, so they are never
+    deleted here: this command only ever names ecdl-<link>-{broker,cdc,loader}
+    and cannot name a source or target stack.
+
+    --link <name> is the pipeline-aware path. --stack <name> is kept for the
+    occasional need to delete one named stack directly.
+    """
+    if not args.link and not args.stack:
+        print("  ERROR: give --link <name> (delete a whole pipeline) or "
+              "--stack <name> (delete one stack).")
+        sys.exit(1)
+
+    # Legacy single-stack delete. Deliberately not the default, and explicit about
+    # what it does: whatever stack you name is deleted, source/target included.
+    if args.stack and not args.link:
+        print(f"  Deleting a single stack: {args.stack}")
+        print("  NOTE: this deletes ONLY that stack. If it names a source or "
+              "target stack, that shared resource is deleted with it.")
+        if not args.yes:
+            resp = input("  Delete this stack? [y/N]: ").strip().lower()
+            if resp != "y":
+                print("  Cancelled.")
+                return
+        from botocore.exceptions import BotoCoreError, ClientError
+        try:
+            _cloudformation(args.profile, args.region).delete_stack(StackName=args.stack)
+        except (ClientError, BotoCoreError) as exc:
+            print(f"  ERROR: could not delete {args.stack}: {exc}")
+            sys.exit(1)
+        print("  Delete initiated. Takes a few minutes.")
+        return
+
+    from ecdl_link.deploy import Clients, DeployError
+    from ecdl_link.teardown import (Destroyer, describe_broker_data,
+                                    describe_destroy_plan, destroy_plan)
+
+    plan_doc = destroy_plan(args.link, prefix=args.prefix)
+    print(describe_destroy_plan(plan_doc))
+
+    # What the broker holds that is not in the cache (Jira story F136). From a laptop the
+    # broker is usually unreachable, which is said, not taken as "nothing".
+    try:
+        clients = Clients(region=args.region, profile=args.profile)
+        data = Destroyer(clients).broker_data(plan_doc)
+    except DeployError as exc:
+        print(f"\n  x {exc}")
+        sys.exit(1)
+    mark = "!" if data.get("at_risk") or data.get("readable") is False else "-"
+    print(f"\n  {mark} {describe_broker_data(data)}")
+    for name, count in sorted((data.get("backlog") or {}).items()):
+        print(f"      {name}: {count} not yet written")
+    for name, count in sorted((data.get("dead_letters") or {}).items()):
+        print(f"      {name}: {count} dead letter(s)")
+
+    if args.dry_run:
+        print("\n  dry run: nothing was deleted")
+        return
+
+    delete_backlog = bool(getattr(args, "delete_backlog", False))
+    if data.get("at_risk") and args.yes and not delete_backlog:
+        print("  x --yes does not delete a broker that holds unapplied changes or dead "
+              "letters; add --delete-backlog to delete it anyway")
+        sys.exit(1)
+    if not args.yes:
+        extra = (" The broker's unapplied changes and dead letters go with it."
+                 if data.get("at_risk") else "")
+        resp = input(f"\n  Delete pipeline '{args.link}'? The source and target "
+                     f"are not changed.{extra} [y/N]: ").strip().lower()
+        if resp not in ("y", "yes"):
+            print("  Cancelled.")
+            return
+        # Answering yes to the prompt that named them is the confirmation.
+        delete_backlog = delete_backlog or bool(data.get("at_risk"))
+
+    def show(event):
+        name = event.get("event")
+        if name == "stack_deleting":
+            return          # one line per poll is too much output; the step lines show progress
+        detail = " ".join(f"{k}={v}" for k, v in sorted(event.items())
+                          if k != "event")
+        print(f"  {name:<22} {detail}")
+
+    print()
+    try:
+        result = Destroyer(clients, on_progress=show,
+                           delete_cluster=not args.keep_cluster,
+                           delete_backlog=delete_backlog).run(plan_doc)
+    except DeployError as exc:
+        print(f"\n  x delete failed: {exc}")
+        if getattr(exc, "hint", None):
+            print(f"    {exc.hint}")
+        sys.exit(1)
+
+    deleted = ", ".join(result["deleted"]) or "none (nothing was deployed)"
+    print(f"\n  deleted: {deleted}")
+    if result["skipped"]:
+        print(f"  already gone: {', '.join(result['skipped'])}")
+    if result.get("cluster_deleted"):
+        print(f"  ECS cluster removed: {plan_doc['cluster_name']}")
+
+    print("\n  left untouched (shared, not owned by this link):")
+    for item in result.get("kept", []):
+        print(f"    - {item}")
+
+    fu = result.get("follow_up") or {}
+    print("\n  optional manual cleanup (outside this link's stacks):")
+    print(f"    - source DB signal table '{fu.get('signal_table')}' — "
+          f"DROP it on the source if you want it gone")
+    print(f"    - stale cache keys for this link's tables stay in the target "
+          f"(nothing refreshes them); delete by key prefix if wanted")
+    print(f"    - if the broker is SHARED (not this link's own stack), delete "
+          f"its keys {fu.get('broker_offset_key')}, "
+          f"{fu.get('broker_schema_history_key')} and its data:* streams")
+    if fu.get("broker_final_snapshot"):
+        print(f"    - the broker left a FINAL SNAPSHOT '{fu['broker_final_snapshot']}' "
+              f"(offsets, schema history, unapplied changes, dead letters). Deploy the "
+              f"link again with advanced.broker.restore_snapshot to resume from it, or "
+              f"delete it to stop paying for it:\n"
+              f"        {fu['broker_snapshot_delete_command']}")
+    elif fu.get("broker_replication_group") and "broker_final_snapshot" in fu:
+        print(f"    - the broker left a final snapshot, which could not be named here. "
+              f"Find it with:\n        {fu['broker_snapshot_find_command']}")
+    if fu.get("pg_drop_slot_sql"):
+        print(f"    - PostgreSQL source: DROP THE REPLICATION SLOT, or the source "
+              f"keeps WAL forever and its disk fills:\n"
+              f"        {fu['pg_drop_slot_sql']}\n"
+              f"      (links created before per-link slots use 'ecdl_slot')")
+    # Jira story F140: the stacks took their log groups with them; keep what was read.
+    kept = fu.get("kept_log_lines") or {}
+    if kept:
+        path = f"ecdl-{plan_doc['link']}-teardown-logs.txt"
+        with open(path, "w") as handle:
+            for group, lines in sorted(kept.items()):
+                handle.write(f"== {group}\n")
+                handle.writelines(line + "\n" for line in lines)
+        print(f"\n  the last day's error and warning lines of the deleted log groups "
+              f"are in {path}")
+
+
+def cmd_validate(args):
+    """Check a link config against the shared schema and report every problem.
+
+    Exits non-zero when the config is invalid so it can gate a pipeline, and
+    prints the canonical form on success so two configs can be diffed without
+    differences in formatting.
+    """
+    path = args.file
+    document = _load_or_exit(path, "nothing to validate")
+
+    found = problems_for(document)
+    if found:
+        print(f"  ✗ {path} — {len(found)} problem"
+              f"{'' if len(found) == 1 else 's'}:")
+        for problem in found:
+            print(f"      {problem}")
+        sys.exit(1)
+
+    link = validate_link(document, source=path)
+    tables = link.get('tables', [])
+    print(f"  ✓ {path} is valid")
+    print(f"      link    {link['name']}  ({link['mode']})")
+    source = link['source']
+    # An external source has no ARN (Jira story F143: this was a KeyError).
+    where = source.get('arn') or "{} {}{} (external)".format(
+        source.get('engine'), source.get('host'),
+        f":{source['port']}" if source.get('port') else "")
+    print(f"      source  {where}")
+    print(f"      target  {link['target']['arn']}")
+    print(f"      tables  {len(tables)}: {', '.join(tables[:6])}"
+          f"{'...' if len(tables) > 6 else ''}")
+    if args.show:
+        print()
+        print(canonical_json(link))
+
+
+def cmd_resolve(args):
+    """Show everything ECDL reads from the config's ARNs.
+
+    The review step before deploying: endpoints, engine, cluster mode, TLS, auth
+    mode, the stream and cache-key names per table, and which components the
+    chosen mode will create. Read-only, and no secret value is ever fetched.
+    """
+    from ecdl_link.resolve import ResolutionError, describe_resolution, resolve_link
+
+    path = args.file
+    document = _load_or_exit(path, "nothing to resolve")
+    found = problems_for(document)
+    if found:
+        print(f"  ✗ {path} is not valid, so there is nothing to resolve:")
+        for problem in found:
+            print(f"      {problem}")
+        sys.exit(1)
+
+    try:
+        resolution = resolve_link(document, region=args.region,
+                                  profile=args.profile)
+    except ResolutionError as exc:
+        print(f"  ✗ {exc}")
+        sys.exit(1)
+
+    print(describe_resolution(resolution))
+    if args.json:
+        resolution.pop('link', None)
+        print()
+        print(json.dumps(resolution, indent=2, sort_keys=True, default=str))
+
+
+def _plan_from_file(args, with_resolution=False):
+    """validate -> resolve -> plan, or exit with the reason.
+
+    Staged so a config problem is never reported as an AWS error, which is the
+    same staging the API uses; both call the same three functions in the same
+    order, so a plan produced here and a plan produced there are identical.
+    """
+    from ecdl_link.deploy import add_load_step
+    from ecdl_link.provision import PlanError, plan as build_plan
+    from ecdl_link.resolve import ResolutionError, resolve_link
+
+    path = args.file
+    document = _load_or_exit(path, "nothing to plan")
+    found = problems_for(document)
+    if found:
+        print(f"  x {path} is not valid, so there is nothing to plan:")
+        for problem in found:
+            print(f"      {problem}")
+        sys.exit(1)
+    try:
+        resolution = resolve_link(document, region=args.region,
+                                  profile=args.profile)
+    except ResolutionError as exc:
+        # ResolutionError's str() already appends its hint, unlike PlanError and
+        # DeployError, so printing exc.hint here as well would say it twice.
+        print(f"  x {exc}")
+        sys.exit(1)
+    try:
+        plan_doc = add_load_step(build_plan(resolution))
+    except PlanError as exc:
+        print(f"  x {exc}")
+        if exc.hint:
+            print(f"    {exc.hint}")
+        sys.exit(1)
+    return (resolution, plan_doc) if with_resolution else plan_doc
+
+
+def _target_requirements_ok(resolution, ignore=False):
+    """Print the target-requirement findings; False when one blocks.
+
+    The same check the control plane runs before a deploy (preflight
+    target_findings), so the two paths refuse the same targets.
+    """
+    from ecdl_link.preflight import BLOCK, target_findings
+    findings = target_findings(resolution.get("target"))
+    blocked = False
+    for finding in findings:
+        if finding.level == BLOCK and not ignore:
+            blocked = True
+            print(f"  x {finding.message}")
+        else:
+            print(f"  ! {finding.message}")
+    if blocked:
+        print("    Fix the target, or apply again with --ignore-preflight to "
+              "deploy anyway.")
+    return not blocked
+
+
+def _source_preflight(args, resolution):
+    """The control plane's source preflight, run from this machine (Jira story F143).
+
+    The same checks: tables and columns exist, capture prerequisites (GTIDs,
+    log retention), PostgreSQL replica identity and publication, the load's
+    pause against the log retention, and the secrets the task-role boundary
+    admits. From a laptop the source is usually not reachable; that comes
+    back as a warning and is said plainly, never as "nothing is wrong".
+    """
+    from ecdl_link.preflight import pipeline_secret_list, preflight, secret_findings
+    from ecdl_link.resolve import Clients as ResolveClients
+    extra = {}
+    if (resolution.get("source") or {}).get("engine") == "postgresql":
+        publication, problem = _link_publication(args, resolution["name"])
+        extra["publication"] = None if problem else publication
+    try:
+        clients = ResolveClients(region=args.region, profile=args.profile)
+        summary = preflight(resolution.get("link") or {}, region=args.region,
+                            clients=clients, **extra)
+    except Exception as exc:  # noqa: BLE001 -- unknown is a warning, as on the control plane
+        summary = {"checked": False, "blocks": 0, "warnings": 1, "findings": [
+            {"level": "warn", "path": "source",
+             "message": f"preflight could not run: {exc}"}]}
+    for finding in secret_findings(resolution, pipeline_secret_list()):
+        summary["findings"].append(finding._asdict())
+        summary["warnings"] = summary.get("warnings", 0) + 1
+    return summary
+
+
+def _preflight_ok(summary, ignore=False, pauses_capture=None):
+    """Print the source preflight; False when a block stops the deploy.
+
+    The control plane's rule: a block stops the deploy unless
+    --ignore-preflight. A log-retention block only counts once the plan is
+    known to pause capture (pauses_capture True); None prints the findings
+    and checks the other blocks.
+    """
+    from ecdl_link.preflight import BLOCK, RETENTION_PATH
+    findings = summary.get("findings") or []
+    blocking = []
+    for f in findings:
+        retention = f.get("path") == RETENTION_PATH
+        if pauses_capture is None:
+            if retention:
+                continue    # judged on the second call, once the plan is known
+        elif not (retention and pauses_capture):
+            continue        # printed on the first call, or moot: nothing pauses
+        if f.get("level") == BLOCK and not ignore:
+            blocking.append(f)
+            print(f"  x {f.get('path')}: {f.get('message')}")
+        else:
+            print(f"  ! {f.get('path')}: {f.get('message')}")
+    if pauses_capture is None and not summary.get("checked"):
+        print("  ! the source could not be read from this machine, so its tables, "
+              "columns and capture prerequisites were not checked here. The pipeline "
+              "tasks reach it from inside the VPC; the control plane runs the same "
+              "check when it can reach the source.")
+    if blocking:
+        print("    Fix what is listed, or apply again with --ignore-preflight to "
+              "deploy anyway.")
+    return not blocking
+
+
+def cmd_plan(args):
+    """Show what would be deployed, in what order. Read-only."""
+    from ecdl_link.provision import describe_plan
+    resolution, plan_doc = _plan_from_file(args, with_resolution=True)
+    print(describe_plan(plan_doc))
+    _target_requirements_ok(resolution)
+    if args.json:
+        print()
+        print(json.dumps(plan_doc, indent=2, sort_keys=True, default=str))
+
+
+
+# A load reports every poll (load_waiting). Printing each one was too much, and
+# printing none left the terminal silent for the hours a large table takes, so
+# the status is printed when it changes and then every LOAD_EVERY polls.
+LOAD_EVERY = 30
+
+
+def progress_printer(out=print):
+    """The deploy's on_progress callback for a terminal."""
+    seen = {}
+
+    def show(event):
+        name = event.get("event")
+        if name == "load_waiting":
+            table, status = event.get("table"), event.get("status")
+            last = seen.get(table)
+            count = (last[1] + 1) if last and last[0] == status else 0
+            seen[table] = (status, count)
+            if count % LOAD_EVERY:
+                return
+            note = ("" if count == 0 else
+                    " (still loading; the loader log has its progress lines)")
+            out(f"  {name:<16} table={table} status={status}{note}")
+            return
+        if name in ("stack_waiting", "service_waiting", "capture_waiting"):
+            return          # too much output for a terminal; the step lines show progress
+        detail = " ".join(f"{k}={v}" for k, v in sorted(event.items())
+                          if k not in ("event", "purpose"))
+        out(f"  {name:<16} {detail}")
+        if event.get("purpose"):
+            out(f"                   -> {event['purpose']}")
+    return show
+
+
+def cmd_apply(args):
+    """Deploy the link described by a link file.
+
+    Runs in the foreground and prints each step as it happens, because a deploy
+    waits on ElastiCache and takes minutes; a command that returned immediately
+    would leave "it was accepted" and "it works" indistinguishable.
+    """
+    from ecdl_link.deploy import (Clients, DeployError, Deployer, add_load_step,
+                                  broker_offset_probe, deployment_state,
+                                  initial_load_refusal, reset_position_refusal,
+                                  wants_update_plan)
+    from ecdl_link.provision import PlanError, describe_plan, plan as build_plan
+
+    resolution, plan_doc = _plan_from_file(args, with_resolution=True)
+
+    # What already exists decides the plan. This command used to run the
+    # first-deploy plan every time, so applying a small change to a running link
+    # paused capture and bulk-loaded every table again -- and it would start
+    # while another deploy was still running.
+    try:
+        clients = Clients(region=args.region, profile=args.profile)
+        # With ECS: a running load of this link counts as in progress.
+        current = deployment_state(plan_doc, clients.cloudformation, ecs=clients.ecs)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  x could not read the current stack states: {exc}")
+        sys.exit(1)
+    # Another link already writing these keys into this cache? Two links that
+    # copy a same-named table into one target overwrite each other's rows.
+    from ecdl_link.conflicts import (CONFLICT_HINT, describe_conflict,
+                                     resolution_conflicts)
+    try:
+        clashes = resolution_conflicts(clients.cloudformation, resolution)
+    except Exception as exc:  # noqa: BLE001
+        clashes = []
+        print(f"  ! could not check other pipelines' cache keys: {exc}")
+    if clashes:
+        host = (resolution.get("target") or {}).get("endpoint")
+        for clash in clashes:
+            print(f"  x {describe_conflict(clash, host)}")
+        print(f"    {CONFLICT_HINT}")
+        sys.exit(1)
+    if not _target_requirements_ok(resolution, args.ignore_preflight):
+        sys.exit(1)
+    # The source preflight the control plane runs before a deploy (Jira story F143).
+    preflight_summary = _source_preflight(args, resolution)
+    if not _preflight_ok(preflight_summary, args.ignore_preflight):
+        sys.exit(1)
+    if current["state"] == "in_progress":
+        print(f"  x a deployment of {plan_doc['link']!r} is already running:")
+        for name, status in sorted(current["stacks"].items()):
+            print(f"      {name}  {status}")
+        if current.get("loader_tasks"):
+            print(f"      a load is running ({len(current['loader_tasks'])} task(s))")
+        print("    Wait for it to finish, then apply again.")
+        sys.exit(1)
+    # The last load did not finish: an update would load nothing and say "deployed".
+    refusal = initial_load_refusal(plan_doc, current, reload=args.reload)
+    if refusal is not None:
+        print(f"  x {refusal}")
+        print(f"    {refusal.hint}")
+        sys.exit(1)
+
+    infra_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "infra")
+
+    def template_body(filename):
+        if os.path.basename(filename) != filename:
+            raise DeployError(f"template {filename!r} is not a bare file name")
+        full = os.path.join(infra_dir, filename)
+        if not os.path.isfile(full):
+            raise DeployError(f"template {filename} not found in {infra_dir}")
+        with open(full) as handle:
+            return handle.read()
+
+    # Compare with what is deployed (D7), the same review the control plane
+    # runs. This command used to decide from stack states alone, so a new
+    # target or source was applied in place.
+    outstanding = []
+    needs_ack = False
+    update_plan = None
+    if current["stacks"]:
+        from ecdl_link.change import describe_review, follow_up, review_deployed
+        try:
+            update_plan = add_load_step(build_plan(resolution, for_update=True))
+            review = review_deployed(clients.cloudformation, update_plan,
+                                     resolution.get("link") or {}, template_body)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  x could not compare the change with the deployed link: {exc}")
+            print("    Refusing to update a running link without knowing what the "
+                  "update changes.")
+            sys.exit(1)
+        if review is not None:
+            print("  change to the deployed link:")
+            for line in describe_review(review).splitlines():
+                print(f"    {line}")
+            print()
+            if review["refuse"]:
+                print("  x this change cannot be made to the running link. Deploy it "
+                      "as a new link, or change the file back.")
+                sys.exit(1)
+            _follow, outstanding = follow_up(review, resolution)
+            needs_ack = review["needs_ack"]
+            if needs_ack:
+                print("  after the update the cache needs these steps:")
+                _print_outstanding(outstanding)
+                if args.yes and not args.acknowledge:
+                    print("  x --yes needs --acknowledge for a change that needs a "
+                          "backfill or a cleanup")
+                    sys.exit(1)
+    if wants_update_plan(plan_doc, current["state"], reload=args.reload):
+        try:
+            plan_doc = update_plan or add_load_step(build_plan(resolution, for_update=True))
+        except PlanError as exc:
+            print(f"  x {exc}")
+            sys.exit(1)
+        print(f"  {plan_doc['link']!r} is already deployed: updating the stacks in "
+              "place. Capture keeps running and nothing is reloaded (use --reload "
+              "to run the bulk load again).\n")
+    elif current["stacks"]:
+        print(f"  existing stacks for {plan_doc['link']!r} ({current['state']}): "
+              + ", ".join(f"{n} {s}" for n, s in sorted(current["stacks"].items()))
+              + "\n")
+
+    # How long the load holds capture paused only matters once it is known
+    # that this deploy pauses for a load (the control plane's rule).
+    from ecdl_link.deploy import plan_pauses_capture
+    if not _preflight_ok(preflight_summary, args.ignore_preflight,
+                         pauses_capture=plan_pauses_capture(plan_doc)):
+        sys.exit(1)
+
+    reset = bool(getattr(args, "reset_position", False))
+    slot_dropped = bool(getattr(args, "pg_slot_dropped", False))
+    refusal = reset_position_refusal(plan_doc, reload=args.reload, reset_position=reset,
+                                     pg_slot_dropped=slot_dropped)
+    if refusal is not None:
+        print(f"  x {refusal}")
+        print(f"    {refusal.hint}")
+        sys.exit(1)
+
+    print(describe_plan(plan_doc))
+    if reset:
+        print("  - the stored capture position is deleted after the pause; Debezium "
+              "starts briefly to record the current position, is paused again, and "
+              "then the load runs")
+    if args.dry_run:
+        print("\n  dry run: nothing was deployed")
+        return
+    if not args.yes:
+        prompt = ("Deploy this, then run the steps above? [y/N] " if needs_ack
+                  else "Deploy this? [y/N] ")
+        answer = input("\n  " + prompt).strip().lower()
+        if answer not in ("y", "yes"):
+            print("  aborted")
+            return
+
+    show = progress_printer()
+
+    print()
+    deployer = None
+    try:
+        # From a laptop the broker is usually unreachable; the probe then answers
+        # "cannot tell", and a load that pauses capture is refused unless
+        # --offset-checked says the operator confirmed Debezium committed a
+        # position (in which case a fixed grace period is waited instead).
+        try:
+            probe = broker_offset_probe(clients.secrets())
+        except Exception:  # noqa: BLE001
+            probe = None
+        load_timeout = getattr(args, "load_timeout", None)
+        deployer = Deployer(clients, template_body=template_body,
+                            on_progress=show, offset_probe=probe,
+                            allow_unverified_offset=bool(getattr(args, "offset_checked", False)),
+                            reset_position=reset, pg_slot_dropped=slot_dropped,
+                            # None: the link's advanced.loader.timeout_minutes,
+                            # else six hours (Jira story F068).
+                            load_timeout_seconds=load_timeout * 60 if load_timeout else None)
+        result = deployer.run(plan_doc)
+    except KeyboardInterrupt:
+        # The deployer has already stopped the load task and, only once it was
+        # STOPPED, resumed capture (or left it paused, and says why).
+        print("\n  x interrupted")
+        message = getattr(deployer, "capture_message", None)
+        if message:
+            print(f"    {message}")
+        sys.exit(130)
+    except DeployError as exc:
+        print(f"\n  x deploy failed at step {exc.step}: {exc}")
+        if exc.hint:
+            print(f"    {exc.hint}")
+        sys.exit(1)
+    print(f"\n  deployed {result['link']} ({result['mode']}): "
+          f"{', '.join(result['completed'])}")
+    if result.get("load_recorded") is False:
+        print("  ! every table loaded, but the loader stack could not be marked complete, "
+              "so the next apply will ask for --reload. The deploy log above has the error.")
+    if result.get("capture_verified") is False:
+        print("  ! capture not verified: this machine cannot read the broker, so it could "
+              "not see a Debezium heartbeat after the start. Watch the capture-stale "
+              "alarm or the Debezium log group.")
+    if result.get("offset_recorded") is False:
+        print("  ! the CDC stack could not record that this link has stored a log position "
+              "(offset_record_failed above). Until it does, Debezium starting without its "
+              "stored position is not refused. Apply again to retry.")
+    if outstanding:
+        print("\n  still to do, or the cache stays wrong:")
+        _print_outstanding(outstanding)
+
+
+def _print_outstanding(items):
+    for item in items:
+        print(f"    - {item['why']}")
+        if item.get("statement"):
+            print(f"      run on the source: {item['statement']}")
+            if item.get("values"):
+                print(f"      with values: {item['values']}")
+        if item.get("key_patterns"):
+            print(f"      delete keys: {', '.join(item['key_patterns'])}")
+        if item.get("blocked_reason"):
+            print(f"      ! {item['blocked_reason']}")
+
+
+def cmd_signal(args):
+    """Print or send a day-2 signal for a link.
+
+    `ddl` prints the prerequisite table statement -- emitted rather than executed
+    because it changes the customer's own database and needs their DBA to review it.
+    `snapshot` asks a running connector to re-read tables in chunks.
+    """
+    from ecdl_link.resolve import ResolutionError, resolve_link
+    from ecdl_link.signals import (describe_signal, insert_statement,
+                                   signal_table_ddl, snapshot_signal)
+
+    path = args.file
+    document = _load_or_exit(path, "no signal to make")
+    found = problems_for(document)
+    if found:
+        print(f"  x {path} is not valid:")
+        for problem in found:
+            print(f"      {problem}")
+        sys.exit(1)
+    try:
+        resolution = resolve_link(document, region=args.region,
+                                  profile=args.profile)
+    except ResolutionError as exc:
+        print(f"  x {exc}")
+        sys.exit(1)
+
+    engine = resolution["source"]["engine"]
+    collection = resolution["debezium"]["signal_collection"]
+
+    if args.action == "ddl":
+        print(f"-- Run this once on the source, before deploying '{resolution['name']}'.")
+        print(f"-- Debezium requires the signalling collection to be unique per link,")
+        print(f"-- so this table belongs to this link alone.")
+        print(signal_table_ddl(engine, collection))
+        if engine == "mysql":
+            from ecdl_link.signals import mysql_signal_grant_sql
+            print("-- Debezium writes its snapshot markers into the signalling table:")
+            print(mysql_signal_grant_sql(collection, resolution["source"].get("username")))
+        if engine == "postgresql":
+            from ecdl_link.signals import pg_prerequisite_sql
+            publication, problem = _link_publication(args, resolution["name"])
+            if problem:
+                print(f"-- Could not read the deployed CDC stack ({problem}), so this assumes")
+                print(f"-- the link's own publication. A link deployed before per-link")
+                print(f"-- publications reads dbz_pub instead.")
+            print(pg_prerequisite_sql(
+                publication, [t["qualified"] for t in resolution["tables"]],
+                collection, resolution["source"].get("username")))
+        return
+
+    # snapshot
+    known = {t["table"]: t["qualified"] for t in resolution["tables"]}
+    known.update({t["input"]: t["qualified"] for t in resolution["tables"]})
+    if args.tables:
+        wanted = [t.strip() for t in args.tables.split(",") if t.strip()]
+        unknown = [t for t in wanted if t not in known]
+        if unknown:
+            print(f"  x not tables in this link: {', '.join(unknown)}")
+            print(f"    the link has: {', '.join(sorted(set(known)))}")
+            sys.exit(1)
+        collections = []
+        for t in wanted:
+            if known[t] not in collections:
+                collections.append(known[t])
+    else:
+        collections = [t["qualified"] for t in resolution["tables"]]
+
+    signal = snapshot_signal(collections)
+    sql, values = insert_statement(engine, collection, signal)
+    # Watching needs the broker; the stream positions are taken before the
+    # INSERT runs, so anything newer is a reaction to it.
+    watch = _snapshot_watch(args, resolution, collections) if args.wait else None
+    print(f"  signal: {describe_signal(signal)}")
+    print(f"  into:   {collection}")
+    print()
+    print("  Run this against the source to request the snapshot:")
+    print(f"    {sql}")
+    print(f"    values: {values}")
+    print()
+    print("  The connector polls the signalling table every 5s and will re-read")
+    print("  these tables in chunks while streaming continues.")
+    if engine == "postgresql":
+        print("  On PostgreSQL the signalling table must be in the link's publication,")
+        print("  or the signal is never seen ('ecdl signal ddl' prints the statement).")
+    if not args.wait:
+        return
+    if isinstance(watch, str):
+        print(f"\n  unverified: cannot watch for Debezium reading the signal: {watch}")
+        return
+    from ecdl_link.signals import wait_for_snapshot
+    broker, streams, offset_key, baseline = watch
+    try:
+        input("\n  Run the INSERT, then press Enter to watch for Debezium reading it... ")
+    except EOFError:
+        pass
+    result = wait_for_snapshot(broker, signal["id"], collections, streams,
+                               offset_key, baseline, timeout=args.wait)
+    print(f"\n  {result['status']}: {result['detail']}")
+    for item in result["evidence"]:
+        print(f"    - {item}")
+    if result["status"] == "unverified":
+        sys.exit(2)
+
+
+def _link_publication(args, link_name):
+    """(publication the link reads, problem or None). See pg_publication_in_use."""
+    from ecdl_link.change import deployed_parameters
+    from ecdl_link.provision import pg_publication_in_use, pg_publication_name, stack_names
+    try:
+        cfn = _cloudformation(args.profile, args.region)
+        deployed = deployed_parameters(cfn, {"cdc": stack_names(link_name)["cdc"]})
+    except Exception as exc:  # noqa: BLE001
+        return pg_publication_name(link_name), str(exc)
+    return pg_publication_in_use(link_name, deployed.get("cdc")), None
+
+
+def _snapshot_watch(args, resolution, collections):
+    """(broker, streams, offset key, stream positions) to watch a snapshot
+    with, or a string saying why it cannot be watched from here."""
+    from ecdl_link.change import deployed_parameters
+    from ecdl_link.deploy import broker_client
+    from ecdl_link.provision import offset_key, stack_names
+    from ecdl_link.signals import stream_positions
+    names = stack_names(resolution["name"])
+    try:
+        import boto3
+        session = boto3.session.Session(profile_name=args.profile or None,
+                                        region_name=args.region or None)
+        cfn = session.client("cloudformation")
+        cdc = deployed_parameters(cfn, {"cdc": names["cdc"]}).get("cdc")
+        stacks = cfn.describe_stacks(StackName=names["broker"]).get("Stacks") or []
+        outputs = {o["OutputKey"]: o["OutputValue"]
+                   for o in (stacks[0].get("Outputs") if stacks else None) or []}
+        broker = broker_client(session.client("secretsmanager"), outputs)
+        if broker is None:
+            return "the broker stack has no endpoint output"
+        broker.ping()
+    except Exception as exc:  # noqa: BLE001
+        return (f"this machine cannot read the broker ({exc}). Watch the Debezium "
+                "log group instead")
+    if not cdc:
+        return "the link has no CDC stack"
+    streams = [t["stream"] for t in resolution["tables"] if t["qualified"] in collections]
+    return (broker, streams, cdc.get("OffsetKey") or offset_key(resolution["name"]),
+            stream_positions(broker, streams))
+
+
+def cmd_diff(args):
+    """Compare a deployed link config against an edited one.
+
+    Reports what redeploying would LEAVE BEHIND, which is the part that is not
+    visible from the pipeline -- it keeps processing changes and reports itself healthy
+    whether or not the cache is right.
+    """
+    from ecdl_link.repair import describe_diff, describe_repair, diff, repair_plan
+    from ecdl_link.resolve import ResolutionError, resolve_link
+
+    current = _load_or_exit(args.current, "nothing to compare")
+    desired = _load_or_exit(args.desired, "nothing to compare")
+
+    for label, doc in (("current", current), ("desired", desired)):
+        found = problems_for(doc)
+        if found:
+            print(f"  x the {label} config is not valid:")
+            for problem in found:
+                print(f"      {problem}")
+            sys.exit(1)
+
+    d = diff(current, desired)
+    print(describe_diff(d))
+    if not d["changed"]:
+        return
+
+    try:
+        resolution = resolve_link(desired, region=args.region, profile=args.profile)
+    except ResolutionError as exc:
+        print()
+        print(f"  ! could not resolve the desired config, so no repair plan: {exc}")
+        sys.exit(1)
+
+    print()
+    print(describe_repair(repair_plan(d, resolution)))
+
+
+# ═══════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════
+
+def _positive_minutes(text):
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number of minutes")
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1 minute")
+    return value
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="ecdl", description="ECDL CLI — Manage CDC pipelines")
+    # Defaults come from the standard AWS environment, NOT from this repo's own
+    # development account. They used to be "testing" and "us-east-2", so anyone
+    # else running `ecdl` without flags got "profile not found" -- or, worse,
+    # deployed into the wrong region of whatever account that profile named.
+    parser.add_argument("--profile", default=os.environ.get("AWS_PROFILE"),
+                        help="AWS CLI profile (default: $AWS_PROFILE, else the "
+                             "default credential chain)")
+    parser.add_argument("--region", default=(os.environ.get("AWS_REGION")
+                                             or os.environ.get("AWS_DEFAULT_REGION")),
+                        help="AWS region (default: $AWS_REGION / "
+                             "$AWS_DEFAULT_REGION, else the profile's region)")
+    sub = parser.add_subparsers(dest="command")
+
+    # validate
+    p = sub.add_parser("validate", help="Check a link config against the schema")
+    p.add_argument("file", help="Link config file (.yaml or .json)")
+    p.add_argument("--show", action="store_true",
+                   help="Print the canonical normalised config")
+
+    # resolve
+    p = sub.add_parser("resolve",
+                       help="Show what ECDL reads from the config's ARNs")
+    p.add_argument("file", help="Link config file (.yaml or .json)")
+    p.add_argument("--json", action="store_true",
+                   help="Also print the full resolution as JSON")
+
+    # plan
+    p = sub.add_parser("plan",
+                       help="Show what deploying a link config would create")
+    p.add_argument("file", help="Link config file (.yaml or .json)")
+    p.add_argument("--json", action="store_true",
+                   help="Also print the full plan as JSON")
+    # apply
+    p = sub.add_parser("apply", help="Deploy the link described by a link config")
+    p.add_argument("file", help="Link config file (.yaml or .json)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print the plan and stop")
+    p.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
+    p.add_argument("--reload", action="store_true",
+                   help="On a link that is already deployed, run the bulk load "
+                        "again (pausing capture around it). Without this, applying "
+                        "to a deployed link only updates its stacks.")
+    p.add_argument("--acknowledge", action="store_true",
+                   help="With --yes: go ahead with a change that leaves the cache "
+                        "needing a backfill or a cleanup (the steps are printed).")
+    p.add_argument("--ignore-preflight", action="store_true",
+                   help="Deploy even though the preflight blocks: the target fails "
+                        "a requirement (an eviction policy that deletes cached rows), "
+                        "or the source does (a missing table or column, GTIDs off, "
+                        "a load longer than the log retention). It does not override "
+                        "a key clash with another pipeline.")
+    p.add_argument("--offset-checked", action="store_true",
+                   help="Pause capture for a load even though this machine cannot "
+                        "read the broker to confirm Debezium committed a log "
+                        "position. Only after checking the Debezium log: without a "
+                        "committed position, changes made during the load are lost. "
+                        "Deploying from the control plane does not need this.")
+    p.add_argument("--reset-position", action="store_true",
+                   help="With --reload: delete Debezium's stored log position and "
+                        "start from the source's current one. For a link whose "
+                        "position the source has purged (Debezium fails at start "
+                        "with a missing binlog file or LSN). Needs the broker, so "
+                        "only from the control plane's network.")
+    p.add_argument("--load-timeout", type=_positive_minutes, metavar="MINUTES",
+                   help="How long one table's load may run before the deploy stops "
+                        "it and fails, for this run (default: the link's "
+                        "advanced.loader.timeout_minutes, else 360). Capture stays "
+                        "paused during the load, so the source must keep its log "
+                        "for longer than that.")
+    p.add_argument("--pg-slot-dropped", action="store_true",
+                   help="With --reset-position on PostgreSQL: you stopped capture "
+                        "and dropped the link's replication slot (the command is "
+                        "printed when this is missing).")
+    # signal
+    p = sub.add_parser("signal", help="Day-2 signalling: prerequisite DDL, or ask "
+                                      "for an incremental snapshot")
+    p.add_argument("action", choices=["ddl", "snapshot"])
+    p.add_argument("file", help="Link config file (.yaml or .json)")
+    p.add_argument("--tables", help="Comma-separated tables to snapshot "
+                                    "(default: every table in the link)")
+    # diff
+    p.add_argument("--wait", type=float, default=0, metavar="SECONDS",
+                   help="snapshot: after you run the INSERT, watch the broker for up "
+                        "to SECONDS and report whether Debezium read the signal "
+                        "(consumed / finished / unverified). Needs network access "
+                        "to the broker.")
+    p = sub.add_parser("diff",
+                       help="What changes between two link configs, and what it "
+                            "would leave behind in the cache")
+    p.add_argument("current", help="The config that is deployed now")
+    p.add_argument("desired", help="The edited config")
+    # status
+    p = sub.add_parser("status", help="Show a stack's outputs")
+    p.add_argument("--stack", required=True, help="Stack name")
+
+    # destroy
+    p = sub.add_parser("destroy",
+                       help="Delete a pipeline's stacks (keeps the shared "
+                            "source + target)")
+    p.add_argument("--link", help="Pipeline/link name — deletes "
+                                  "ecdl-<link>-{cdc,loader,broker}")
+    p.add_argument("--prefix", default="ecdl",
+                   help="Stack-name prefix (default: ecdl)")
+    p.add_argument("--stack", help="[single-stack] delete one named stack directly")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Show what would be deleted and stop")
+    p.add_argument("--keep-cluster", action="store_true",
+                   help="Do not delete the per-link ECS cluster even if empty")
+    p.add_argument("--delete-backlog", action="store_true",
+                   help="Delete the broker even though it holds changes not yet "
+                        "written to the cache or dead letters (they are kept only "
+                        "in its final snapshot). Needed with --yes.")
+    p.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
+
+    args = parser.parse_args()
+    if not args.command:
+        parser.print_help()
+        return
+
+    {"validate": cmd_validate, "resolve": cmd_resolve,
+     "plan": cmd_plan, "apply": cmd_apply,
+     "signal": cmd_signal, "diff": cmd_diff,
+     "status": cmd_status, "destroy": cmd_destroy}[args.command](args)
+
+
+if __name__ == "__main__":
+    main()

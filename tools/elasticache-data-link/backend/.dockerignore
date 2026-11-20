@@ -1,0 +1,5 @@
+# Build context for backend/Dockerfile (docker-compose). The local database,
+# deployment records and monitor history must not be baked into an image (Jira story F184).
+data/
+**/__pycache__
+**/*.pyc

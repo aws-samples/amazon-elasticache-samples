@@ -1,0 +1,772 @@
+/* Pipeline Monitor page. */
+.pm {
+  --pm-ink: #2c3e50;
+  --pm-muted: #7f8c8d;
+  --pm-line: #e4e8ec;
+  --pm-amz: #FF9900;
+  --pm-ok: #27ae60;
+  --pm-ok-bg: #d4edda;
+  --pm-ok-fg: #155724;
+  --pm-warn: #f39c12;
+  --pm-warn-bg: #fff3cd;
+  --pm-warn-fg: #856404;
+  --pm-bad: #e74c3c;
+  --pm-bad-bg: #f8d7da;
+  --pm-bad-fg: #721c24;
+  padding: 24px;
+  color: var(--pm-ink);
+}
+
+.pm-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+.pm-head h1 { font-size: 24px; margin: 0; }
+.pm-head .pm-spacer { flex: 1; }
+.pm-stamp { font-size: 13px; color: var(--pm-muted); }
+.pm-live-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--pm-ok); margin-right: 6px; vertical-align: middle;
+}
+.pm-live-dot.pm-paused { background: var(--pm-muted); }
+.pm-stamp.pm-stale { color: var(--pm-bad-fg); font-weight: 600; }
+
+/* ---------- flow banner ---------- */
+.pm-banner {
+  background: #fff; border-radius: 10px; padding: 20px 24px; margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08); display: flex; gap: 28px;
+  align-items: center; flex-wrap: wrap;
+}
+.pm-flow { display: flex; align-items: flex-start; flex: 1; min-width: 480px; }
+.pm-hop { text-align: center; min-width: 92px; }
+.pm-hop .pm-dot {
+  width: 16px; height: 16px; border-radius: 50%; margin: 0 auto 8px;
+  border: 3px solid #fff; box-shadow: 0 0 0 2px currentColor;
+}
+.pm-hop .pm-name { font-weight: 600; font-size: 13px; }
+.pm-hop .pm-sub { font-size: 12px; color: var(--pm-muted); margin-top: 2px; }
+.pm-link { flex: 1; height: 3px; border-radius: 2px; margin-top: 7px; min-width: 20px; }
+
+.pm-s-ok { color: var(--pm-ok); }
+.pm-s-warn { color: var(--pm-warn); }
+.pm-s-bad { color: var(--pm-bad); }
+.pm-dot.pm-s-ok, .pm-link.pm-s-ok { background: var(--pm-ok); }
+.pm-dot.pm-s-warn, .pm-link.pm-s-warn { background: var(--pm-warn); }
+.pm-dot.pm-s-bad, .pm-link.pm-s-bad { background: var(--pm-bad); }
+
+.pm-lagbox {
+  border-left: 4px solid var(--pm-amz); background: #fffaf2;
+  border-radius: 8px; padding: 14px 22px; min-width: 220px;
+}
+.pm-lagbox .pm-k {
+  font-size: 12px; letter-spacing: .08em; color: var(--pm-muted); text-transform: uppercase;
+}
+.pm-lagbox .pm-v { font-size: 38px; font-weight: 700; line-height: 1.1; }
+.pm-lagbox .pm-v.pm-bad { color: var(--pm-bad); }
+.pm-lagbox .pm-d { font-size: 12px; color: var(--pm-muted); }
+.pm-flowmsg { flex-basis: 100%; font-size: 13px; color: var(--pm-muted); }
+.pm-flowmsg.pm-bad { color: var(--pm-bad); font-weight: 600; }
+
+/* ---------- cards ---------- */
+.pm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+@media (max-width: 1200px) { .pm-grid { grid-template-columns: repeat(2, 1fr); } .pm-flow { min-width: 0; } }
+@media (max-width: 640px) { .pm-grid { grid-template-columns: 1fr; } }
+
+.pm-card {
+  background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.pm-card > header {
+  padding: 12px 16px; border-bottom: 1px solid var(--pm-line);
+  display: flex; align-items: center; gap: 8px;
+}
+.pm-card h2 { font-size: 13px; margin: 0; letter-spacing: .04em; text-transform: uppercase; }
+.pm-res {
+  font-size: 11px; color: var(--pm-muted); font-family: ui-monospace, Menlo, monospace;
+  padding: 8px 16px 0; word-break: break-all;
+}
+.pm-pill {
+  margin-left: auto; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 11px;
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+.pm-pill.pm-s-ok { background: var(--pm-ok-bg); color: var(--pm-ok-fg); }
+.pm-pill.pm-s-warn { background: var(--pm-warn-bg); color: var(--pm-warn-fg); }
+.pm-pill.pm-s-bad { background: var(--pm-bad-bg); color: var(--pm-bad-fg); }
+
+.pm-bignums { display: flex; gap: 8px; padding: 12px 16px 6px; }
+.pm-bignum { flex: 1; min-width: 0; }
+.pm-bignum .pm-v { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.pm-bignum .pm-v.pm-bad { color: var(--pm-bad); }
+.pm-bignum .pm-v.pm-warn { color: var(--pm-warn-fg); }
+.pm-bignum .pm-k {
+  font-size: 11px; color: var(--pm-muted); text-transform: uppercase; letter-spacing: .04em;
+}
+.pm-bignum svg { display: block; margin-top: 4px; }
+
+.pm-rows { margin: 0; padding: 10px 16px 16px; border-top: 1px solid var(--pm-line); }
+.pm-rows > div {
+  display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 13px;
+}
+.pm-rows dt { color: var(--pm-muted); }
+.pm-rows dd { margin: 0; font-weight: 600; text-align: right; }
+.pm-rows dd.pm-mono {
+  font-family: ui-monospace, Menlo, monospace; font-weight: 500; font-size: 12px;
+}
+.pm-rows dd.pm-bad { color: var(--pm-bad); }
+.pm-cw { font-size: 10px; color: var(--pm-muted); font-weight: 400; }
+
+.pm-error {
+  margin: 12px 16px 16px; padding: 10px 12px; border-radius: 6px;
+  background: var(--pm-bad-bg); color: var(--pm-bad-fg); font-size: 12px;
+  font-family: ui-monospace, Menlo, monospace; word-break: break-word;
+}
+.pm-note-inline { padding: 0 16px 12px; font-size: 12px; color: var(--pm-muted); }
+
+/* ---------- wide panels ---------- */
+.pm-wide {
+  background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px;
+}
+.pm-wide > header {
+  padding: 12px 16px; border-bottom: 1px solid var(--pm-line);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.pm-wide > header h2 {
+  font-size: 13px; margin: 0; letter-spacing: .04em; text-transform: uppercase;
+}
+.pm-wide .pm-res { padding: 0; }
+.pm-quad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 16px; }
+@media (max-width: 900px) { .pm-quad { grid-template-columns: repeat(2, 1fr); } }
+.pm-foot { padding: 0 16px 14px; font-size: 12px; color: var(--pm-muted); display: flex; gap: 22px; flex-wrap: wrap; }
+
+.pm-page-note { font-size: 12px; color: var(--pm-muted); margin: 4px 0 0; }
+.pm-banner-error {
+  background: var(--pm-bad-bg); color: var(--pm-bad-fg); border-radius: 8px;
+  padding: 12px 16px; margin-bottom: 16px; font-size: 13px;
+}
+/* Recoverable, so deliberately not red: the selected pipeline is gone and the
+   page has fallen back to the configured one. Red here reads as "the monitor is
+   broken", which is the impression this replaces. */
+.pm-banner-warn {
+  background: #fdf6e9; color: #935116; border-left: 3px solid #e67e22;
+  border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px;
+}
+
+/* ---------- data flowing strip ---------- */
+.pm-totals {
+  display: flex; gap: 26px; padding: 12px 16px; font-size: 13px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--pm-line);
+}
+.pm-totals b { font-family: ui-monospace, Menlo, monospace; }
+
+.pm-table { width: 100%; border-collapse: collapse; }
+.pm-table th, .pm-table td {
+  text-align: left; padding: 8px 16px; font-size: 13px; border-bottom: 1px solid var(--pm-line);
+}
+.pm-table th {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--pm-muted); font-weight: 600;
+}
+.pm-table .pm-num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+.pm-table tr.pm-row-pending td { background: #fffdf5; }
+.pm-table tr.pm-row-differs td { background: #fff8ee; }
+/* filtered = excluded by design; neutral grey, never an alarm colour */
+.pm-table tr.pm-row-filtered td { background: #f6f7f9; }
+.pm-table .pm-empty { text-align: center; color: var(--pm-muted); padding: 24px; }
+
+.pm-state { font-weight: 600; font-size: 12px; white-space: nowrap; }
+.pm-state-synced { color: var(--pm-ok-fg); }
+.pm-state-pending { color: var(--pm-warn-fg); }
+.pm-state-differs { color: var(--pm-warn-fg); }
+
+/* ---------- lag source badge + probe button ---------- */
+.pm-src, .pm-src-inline {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px;
+  background: #eef2f6; color: var(--pm-muted); font-size: 10px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; vertical-align: middle;
+}
+.pm-src-inline { margin: 0 2px; text-transform: none; }
+
+.pm-probe-btn {
+  margin-top: 10px; padding: 5px 12px; font: inherit; font-size: 12px; font-weight: 600;
+  border-radius: 6px; border: 1px solid var(--pm-amz); background: #fff;
+  color: #b36b00; cursor: pointer;
+}
+.pm-probe-btn:hover:not(:disabled) { background: var(--pm-amz); color: #fff; }
+.pm-probe-btn:disabled { opacity: .6; cursor: default; }
+.pm-probe-btn:focus-visible { outline: 3px solid #2684ff; outline-offset: 2px; }
+.pm-probe-err { margin-top: 6px; font-size: 11px; color: var(--pm-bad-fg); }
+
+/* A stale probe reading must not look like the current state. */
+.pm-lagbox .pm-v.pm-stale-lag { color: #aab4bd; text-decoration: line-through; }
+.pm-d-stale { color: var(--pm-warn-fg); font-weight: 600; }
+
+/* ---------- delivery integrity ---------- */
+/* Loss is a correctness failure, so it gets the loudest treatment on the page. */
+.pm-integ { border-left: 5px solid var(--pm-ok); }
+.pm-integ-retrying { border-left-color: var(--pm-warn); }
+.pm-integ-stuck, .pm-integ-pressure { border-left-color: var(--pm-warn); }
+.pm-integ-unknown { border-left-color: var(--pm-muted); }
+.pm-integ-streamnote {
+  margin: 6px 0; padding: 6px 10px; border-radius: 6px; font-size: 12.5px;
+  background: var(--pm-warn-bg); color: var(--pm-warn-fg);
+}
+.pm-integ-loss { border-left-color: var(--pm-bad); box-shadow: 0 0 0 2px rgba(231,76,60,.25); }
+
+.pm-integ-headline { font-size: 12px; color: var(--pm-muted); }
+.pm-integ-loss .pm-integ-headline { color: var(--pm-bad-fg); font-weight: 700; }
+
+.pm-integ-alert {
+  flex-basis: 100%; margin-top: 8px; padding: 8px 12px; border-radius: 6px;
+  background: var(--pm-warn-bg); color: var(--pm-warn-fg);
+  font-size: 13px; font-weight: 600;
+}
+.pm-integ-alert-loss { background: var(--pm-bad-bg); color: var(--pm-bad-fg); }
+
+.pm-integ code {
+  font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+  background: #f4f6f8; padding: 1px 5px; border-radius: 4px;
+}
+
+/* A stalled pipeline is not losing data yet, but it is heading there. */
+.pm-integ-stalled { border-left-color: var(--pm-bad); }
+.pm-integ-stalled .pm-integ-headline { color: var(--pm-bad-fg); font-weight: 700; }
+
+/* ---------- layout v3: two labelled sections ----------
+   Section 1 "ECDL pipeline": delivery integrity (hero) + Debezium, broker, sink.
+   Section 2 "Datastores": Aurora and Valkey, wider so their latency rows read well.
+   Grouping beats a uniform grid here — the pipeline cards answer one question
+   together, the datastores answer another. */
+.pm-section { margin-bottom: 24px; }
+
+/* The pipeline section is visually enclosed so integrity reads as belonging
+   with the three components rather than floating above them. No section label:
+   the flow banner already names the hops, and a second copy conveyed nothing. */
+.pm-section-pipeline {
+  background: #eef2f6; border-radius: 12px; padding: 16px 16px 4px;
+}
+.pm-section-pipeline .pm-integ-hero { margin-bottom: 16px; }
+
+.pm-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.pm-grid-2 { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 1100px) {
+  .pm-grid-3, .pm-grid-2 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 700px) {
+  .pm-grid-3, .pm-grid-2 { grid-template-columns: 1fr; }
+}
+
+.pm-integ-hero { margin-bottom: 20px; }
+.pm-integ-hero > header { padding: 16px 20px; }
+.pm-integ-hero > header h2 { font-size: 15px; }
+.pm-integ-hero .pm-quad { padding: 20px; gap: 20px; }
+.pm-integ-hero .pm-bignum .pm-v { font-size: 40px; }
+.pm-integ-hero .pm-bignum .pm-k { font-size: 12px; }
+.pm-integ-hero .pm-integ-headline { font-size: 13px; }
+
+/* Five narrow cards: keep the two headline figures readable side by side. */
+.pm-grid .pm-bignum .pm-v { font-size: 22px; }
+.pm-grid .pm-rows > div { font-size: 12.5px; }
+.pm-grid .pm-res { font-size: 10px; }
+
+/* ---------- trends ---------- */
+.pm-trends { margin-bottom: 20px; }
+.pm-trend-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 18px; padding: 12px 16px 4px;
+}
+@media (max-width: 1300px) { .pm-trend-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 800px)  { .pm-trend-grid { grid-template-columns: 1fr; } }
+
+.pm-trend { padding-bottom: 10px; }
+.pm-trend-title {
+  font-size: 12px; font-weight: 600; color: var(--pm-ink);
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  flex-wrap: wrap;
+}
+.pm-trend-legend { display: flex; gap: 12px; font-weight: 400; font-size: 11px; }
+.pm-trend-legend b { color: var(--pm-ink); }
+.pm-trend-ax { font-size: 9px; fill: var(--pm-muted); }
+.pm-trend-hint { font-size: 10px; color: var(--pm-muted); margin-top: -4px; }
+.pm-trend-empty {
+  height: 130px; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--pm-muted); background: #f7f9fb; border-radius: 6px;
+  margin-top: 6px;
+}
+.pm-trend-range { margin-left: auto; display: flex; gap: 4px; }
+.pm-range-btn {
+  font: inherit; font-size: 11px; padding: 2px 8px; border-radius: 5px;
+  border: 1px solid var(--pm-line); background: #fff; color: var(--pm-muted); cursor: pointer;
+}
+.pm-range-on { background: var(--pm-amz); border-color: var(--pm-amz); color: #fff; font-weight: 600; }
+
+/* ---------- read latency comparison ---------- */
+.pm-readlat { margin-bottom: 20px; }
+.pm-lat-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pm-lat-table thead th {
+  text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--pm-muted); font-weight: 600; padding: 8px 16px 6px; border-bottom: 1px solid var(--pm-line);
+}
+.pm-lat-table thead th:first-child { text-align: left; }
+.pm-lat-table tbody th {
+  text-align: left; padding: 9px 16px; font-weight: 600; color: var(--pm-ink); white-space: nowrap;
+}
+.pm-lat-table tbody td {
+  text-align: right; padding: 9px 16px; font-variant-numeric: tabular-nums;
+  font-size: 15px; font-weight: 600;
+}
+.pm-lat-good { color: var(--pm-ok); }
+.pm-lat-bad  { color: var(--pm-err); }
+.pm-lat-n { font-size: 11px; font-weight: 400; color: var(--pm-muted); }
+.pm-lat-idle td, .pm-lat-idle th { opacity: .45; }
+.pm-lat-idle .pm-lat-good, .pm-lat-idle .pm-lat-bad { color: var(--pm-muted); }
+.pm-lat-ratio { background: #f7f9fb; }
+.pm-lat-ratio th { font-size: 11px; color: var(--pm-muted); font-weight: 600; }
+.pm-lat-ratio td { font-size: 14px; color: var(--pm-amz); }
+.pm-readlat-empty { padding: 16px; font-size: 12px; color: var(--pm-muted); }
+.pm-readlat-off { opacity: .8; }
+
+/* ---------- health chips (compact component status) ---------- */
+.pm-chips {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 16px; border-top: 1px solid var(--pm-line);
+}
+.pm-chip {
+  display: flex; align-items: baseline; gap: 7px;
+  padding: 6px 11px; border-radius: 7px; background: #f7f9fb;
+  border: 1px solid var(--pm-line); font-size: 12px;
+}
+.pm-chip.pm-s-bad  { background: #fdecea; border-color: #f5b7b1; }
+.pm-chip.pm-s-warn { background: #fff7e6; border-color: #ffd699; }
+.pm-chip-name { font-weight: 600; color: var(--pm-ink); }
+.pm-chip-head { font-variant-numeric: tabular-nums; color: var(--pm-ink); }
+.pm-chip-detail { font-size: 11px; color: var(--pm-muted); }
+.pm-details-btn {
+  margin-left: auto; font: inherit; font-size: 11px; padding: 5px 12px;
+  border-radius: 6px; border: 1px solid var(--pm-line); background: #fff;
+  color: var(--pm-muted); cursor: pointer;
+}
+.pm-details-btn:hover { color: var(--pm-ink); border-color: var(--pm-muted); }
+.pm-lagbox-lead { border-right: 1px solid var(--pm-line); }
+
+/* ---------- resource usage cards ---------- */
+.pm-resources {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+}
+@media (max-width: 1000px) { .pm-resources { grid-template-columns: 1fr; } }
+/* The middle-of-the-pipeline row: Debezium, Broker, Sink, three across, using
+   the same card styling as the two store cards above them. */
+.pm-resources-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1000px) { .pm-resources-3 { grid-template-columns: 1fr; } }
+.pm-res-card {
+  background: #fff; border: 1px solid var(--pm-line); border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}
+.pm-res-card > header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px 0;
+}
+.pm-res-card > header h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.pm-res-sub {
+  padding: 2px 16px 10px; font-size: 11px; color: var(--pm-muted);
+  font-family: var(--pm-mono, ui-monospace, monospace);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pm-usage { padding: 4px 16px 8px; display: flex; flex-direction: column; gap: 12px; }
+.pm-usage-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12px; color: var(--pm-ink); margin-bottom: 4px;
+}
+.pm-usage-head b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.pm-usage-sub { font-size: 10px; color: var(--pm-muted); margin-top: 3px; }
+.pm-bar {
+  height: 7px; border-radius: 4px; background: #eef2f5; overflow: hidden;
+}
+.pm-bar-empty { background: repeating-linear-gradient(90deg,#eef2f5,#eef2f5 4px,#fff 4px,#fff 8px); }
+.pm-bar-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+.pm-bar-ok   { background: var(--pm-ok); }
+.pm-bar-warn { background: #FF9900; }
+.pm-bar-bad  { background: var(--pm-err); }
+
+/* per-store percentile table */
+.pm-pct-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.pm-pct-table thead th {
+  text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--pm-muted); font-weight: 600; padding: 8px 16px 5px;
+  border-top: 1px solid var(--pm-line); border-bottom: 1px solid var(--pm-line);
+}
+.pm-pct-table thead th:first-child { text-align: left; text-transform: none; letter-spacing: 0; }
+.pm-pct-table tbody th {
+  text-align: left; padding: 7px 16px; font-size: 12px; font-weight: 600; color: var(--pm-ink);
+}
+.pm-pct-table tbody td {
+  text-align: right; padding: 7px 16px; font-size: 14px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- history groups (one block per source) ---------- */
+.pm-trend-group { border-top: 1px solid var(--pm-line); }
+.pm-trend-group:first-of-type { border-top: none; }
+.pm-trend-group-head {
+  padding: 10px 16px 0; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--pm-muted);
+}
+.pm-detail-strip { margin-bottom: 20px; }
+
+/* ---------- compact history ---------- */
+.pm-trend-group { padding: 2px 16px 6px; }
+.pm-trend-group-head {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--pm-muted); font-weight: 700; margin: 8px 0 2px;
+  border-bottom: 1px solid var(--pm-line); padding-bottom: 3px;
+}
+.pm-trend-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 20px;
+  padding: 4px 0 0;
+}
+@media (max-width: 1250px) { .pm-trend-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 760px)  { .pm-trend-grid { grid-template-columns: 1fr; } }
+
+.pm-trend { padding-bottom: 4px; }
+.pm-trend-title {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px; font-size: 11px; line-height: 1.5;
+}
+.pm-trend-name { color: var(--pm-muted); white-space: nowrap; }
+.pm-trend-legend { display: flex; gap: 8px; font-size: 10px; white-space: nowrap; }
+.pm-trend-legend b { color: var(--pm-ink); font-variant-numeric: tabular-nums; }
+.pm-trend-peak { color: #b9c3cb; }
+.pm-trend-empty {
+  height: 62px; display: flex; align-items: center; font-size: 10px;
+  color: var(--pm-muted);
+}
+.pm-trend svg { display: block; }
+
+/* ---------- run controls ---------- */
+.pm-runbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: #fff; border: 1px solid var(--pm-line); border-radius: 8px;
+  padding: 9px 14px; margin-bottom: 14px;
+}
+.pm-runbar-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--pm-muted); font-weight: 700;
+}
+.pm-run-btn, .pm-run-stop {
+  font: inherit; font-size: 12px; font-weight: 600; padding: 5px 12px;
+  border-radius: 6px; cursor: pointer; border: 1px solid var(--pm-line);
+  background: #f7f9fb; color: var(--pm-ink);
+}
+.pm-run-btn:hover:not(:disabled) { background: var(--pm-amz); border-color: var(--pm-amz); color: #fff; }
+.pm-run-stop { border-color: #f5c6c0; color: var(--pm-err); }
+.pm-run-stop:hover:not(:disabled) { background: var(--pm-err); border-color: var(--pm-err); color: #fff; }
+.pm-run-btn:disabled, .pm-run-stop:disabled { opacity: .4; cursor: not-allowed; }
+.pm-runbar-state {
+  margin-left: auto; font-size: 11px; color: var(--pm-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.pm-run-err { font-size: 11px; color: var(--pm-err); }
+/* Why Run and Stop are disabled (Jira story F165): a note, not an error. */
+.pm-run-off { font-size: 11px; color: var(--pm-muted); }
+.pm-run-out {
+  background: #1d252c; color: #d7e0e6; font-size: 10.5px; line-height: 1.45;
+  padding: 10px 14px; border-radius: 8px; margin: -6px 0 14px;
+  max-height: 150px; overflow: auto; white-space: pre-wrap;
+}
+
+/* ---------- phase tabs ---------- */
+.pm-tabs { display: flex; gap: 6px; margin: 4px 0 0; }
+.pm-tab {
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 10px 14px; border: 1px solid var(--pm-line); border-bottom: none;
+  border-radius: 8px 8px 0 0; background: #f2f5f7; cursor: pointer;
+  font: inherit; text-align: left; color: var(--pm-muted);
+}
+.pm-tab-on { background: #fff; color: var(--pm-ink); box-shadow: 0 -2px 0 var(--pm-amz) inset; }
+.pm-tab-running { box-shadow: 0 -2px 0 var(--pm-ok) inset; }
+.pm-tab-n {
+  font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--pm-amz);
+}
+.pm-tab-title { font-size: 14px; font-weight: 600; }
+.pm-tab-sub { font-size: 11px; display: flex; align-items: center; gap: 5px; }
+.pm-tabpanel {
+  background: #fff; border: 1px solid var(--pm-line); border-radius: 0 0 8px 8px;
+  padding: 12px 16px; margin-bottom: 16px;
+}
+.pm-tab-detail { font-size: 12px; color: var(--pm-muted); margin-bottom: 10px; }
+
+/* ---------- phase summary ---------- */
+.pm-summary { margin-bottom: 20px; }
+.pm-summary-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 24px; padding: 10px 16px 14px;
+}
+@media (max-width: 900px) { .pm-summary-grid { grid-template-columns: 1fr; } }
+.pm-summary-head {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--pm-muted); font-weight: 700; padding-bottom: 6px;
+  border-bottom: 1px solid var(--pm-line); margin-bottom: 4px;
+}
+.pm-summary-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 12px; padding: 3px 0; border-bottom: 1px dotted #eef2f4;
+}
+.pm-summary-row b { font-variant-numeric: tabular-nums; color: var(--pm-ink); }
+.pm-summary-row span { color: var(--pm-muted); }
+.pm-summary-empty { padding: 16px; font-size: 12px; color: var(--pm-muted); }
+
+/* ---------- per-phase CDC context ---------- */
+.pm-cdc-context {
+  grid-column: 1 / -1;
+  margin: 10px 16px 4px;
+  padding: 8px 12px;
+  background: #f4f8fc;
+  border-left: 3px solid var(--pm-amz);
+  border-radius: 4px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--pm-muted);
+}
+
+/* ---------- history: one column per source ---------- */
+.pm-history { margin-bottom: 20px; }
+.pm-hist-cols {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; padding: 10px 16px 0;
+}
+@media (max-width: 1100px) { .pm-hist-cols { grid-template-columns: 1fr; } }
+.pm-hist-col { min-width: 0; }
+.pm-hist-head {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+  padding: 6px 0 8px; border-bottom: 2px solid var(--pm-line); margin-bottom: 10px;
+}
+.pm-hist-head-db { color: var(--pm-err); border-bottom-color: #f5c6c0; }
+.pm-hist-head-cache { color: var(--pm-ok); border-bottom-color: #bfe6ce; }
+.pm-hist-head-cdc { color: var(--pm-amz); border-bottom-color: #ffd9a0; }
+.pm-hist-cdc { padding: 6px 16px 0; }
+.pm-hist-cdc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
+@media (max-width: 1100px) { .pm-hist-cdc-grid { grid-template-columns: 1fr; } }
+
+.pm-chart { padding-bottom: 12px; min-width: 0; }
+.pm-chart-title {
+  font-size: 12px; font-weight: 600; color: var(--pm-ink);
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 10px; flex-wrap: wrap;
+}
+.pm-chart-legend { display: flex; gap: 10px; font-weight: 400; font-size: 10px; }
+.pm-chart-legend b { color: var(--pm-ink); font-variant-numeric: tabular-nums; }
+.pm-chart-ax { font-size: 9px; fill: var(--pm-muted); }
+.pm-chart-hint { font-size: 10px; color: var(--pm-muted); margin-top: -2px; }
+.pm-chart-empty {
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+  color: var(--pm-muted); background: #f7f9fb; border-radius: 6px; margin-top: 6px;
+}
+
+/* CDC lag suppressed because CDC is not in the path for this phase */
+.pm-lagbox-off { opacity: .72; }
+.pm-v-off { color: var(--pm-muted) !important; }
+.pm-src-warn { background: #fff3e0; color: #b35309; }
+
+/* ---------- the two "data is moving" panels ---------- */
+.pm-flowpair {
+  display: grid; grid-template-columns: 1fr 1.35fr; gap: 18px; margin-bottom: 20px;
+}
+@media (max-width: 1100px) { .pm-flowpair { grid-template-columns: 1fr; } }
+
+.pm-flowcard {
+  background: #fff; border: 1px solid var(--pm-line); border-radius: 10px;
+  padding: 14px 16px 12px;
+}
+.pm-flowcard-live { border-color: var(--pm-ok); box-shadow: 0 0 0 1px rgba(39,174,96,.12); }
+.pm-flowcard header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.pm-flowcard h2 { font-size: 13px; margin: 0; }
+.pm-idle { background: #f0f3f6; color: var(--pm-muted); }
+.pm-flowtop { display: flex; gap: 26px; margin-bottom: 12px; }
+.pm-flowidle {
+  font-size: 12px; color: var(--pm-muted); line-height: 1.5;
+  background: #f7f9fb; border-radius: 6px; padding: 10px 12px;
+}
+.pm-flowidle-sub { margin-top: 6px; color: var(--pm-ink); }
+.pm-table-tight td, .pm-table-tight th { padding: 5px 10px; font-size: 12px; }
+
+/* ---------- write path stages ---------- */
+.pm-stages { display: flex; align-items: stretch; gap: 6px; margin-bottom: 10px; }
+.pm-stage { flex: 1; background: #f7f9fb; border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.pm-stage-rate { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pm-stage-rate span { font-size: 11px; font-weight: 400; color: var(--pm-muted); margin-left: 1px; }
+.pm-stage-name { font-size: 11px; font-weight: 600; color: var(--pm-ink); margin-top: 2px; }
+.pm-stage-detail { font-size: 10px; color: var(--pm-muted); line-height: 1.3; margin-top: 2px; }
+.pm-stage-arrow { align-self: center; color: var(--pm-muted); font-size: 13px; }
+.pm-probe-strip { margin-top: 10px; border-top: 1px solid var(--pm-line); padding-top: 8px; }
+.pm-probe-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 11px; color: var(--pm-muted); margin-bottom: 6px;
+}
+
+/* sample toggle on the data-flowing table: same look as the range buttons but a
+   distinct class, so tests and styles do not conflate the two controls */
+.pm-sample-btn {
+  font: inherit; font-size: 11px; padding: 2px 8px; border-radius: 5px;
+  border: 1px solid var(--pm-line); background: #fff; color: var(--pm-muted); cursor: pointer;
+}
+.pm-sample-btn:disabled { opacity: .6; cursor: default; }
+.pm-sample-on { background: var(--pm-amz); border-color: var(--pm-amz); color: #fff; font-weight: 600; }
+
+/* ---------- reconcile result ---------- */
+.pm-recon {
+  margin: 0 16px 10px; padding: 8px 12px; border-radius: 6px; font-size: 12px;
+  display: flex; flex-direction: column; gap: 3px; border-left: 3px solid var(--pm-line);
+  background: #f7f9fb;
+}
+.pm-recon-ok  { border-left-color: var(--pm-ok);  background: #f2fbf5; }
+.pm-recon-bad { border-left-color: var(--pm-err); background: #fdf3f2; }
+.pm-recon code { font-size: 11px; background: #fff; padding: 0 3px; border-radius: 3px; }
+
+.pm-recon-btn {
+  font: inherit; font-size: 11px; padding: 3px 10px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--pm-line); background: #fff; color: var(--pm-ink);
+}
+.pm-recon-btn:disabled { opacity: .6; cursor: default; }
+
+/* ---------- banner without a lag readout ---------- */
+/* Phases 1 and 2 serve nothing from the cache, so the lag box is gone and the
+   health chips get the full width instead of sitting next to a blank column. */
+.pm-banner-nolag { grid-template-columns: 1fr; }
+.pm-nolag-note {
+  grid-column: 1 / -1; font-size: 11px; color: var(--pm-muted); padding: 2px 2px 0;
+}
+
+/* ---------- paused: a deliberate stop, not a fault ---------- */
+/* Slate rather than red or amber: nothing is wrong, this hop is being held
+   still on purpose while the initial load runs. */
+.pm-s-paused { color: #5d6d7e; }
+.pm-dot.pm-s-paused, .pm-link.pm-s-paused { background: #aab7b8; }
+.pm-pill.pm-s-paused { background: #eaeded; color: #5d6d7e; }
+.pm-chip.pm-s-paused { background: #f4f6f6; border-color: #d5dbdb; }
+/* Hollow dot reads as "held" rather than "lit" at a glance. */
+.pm-dot.pm-s-paused { box-shadow: inset 0 0 0 2px #fff; }
+.pm-banner .pm-flowmsg.pm-paused { color: #5d6d7e; }
+
+/* 'starting' — coming back up after the handoff. Amber-neutral: something is
+   happening and it is not finished, but nothing is broken. */
+.pm-s-starting { color: #b9770e; }
+.pm-dot.pm-s-starting, .pm-link.pm-s-starting { background: #f5b041; }
+.pm-pill.pm-s-starting { background: #fdf2e2; color: #b9770e; }
+.pm-chip.pm-s-starting { background: #fdf6ec; border-color: #f5cba7; }
+.pm-dot.pm-s-starting { animation: pm-pulse 1.4s ease-in-out infinite; }
+@keyframes pm-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ── which pipeline this page is describing ─────────────────────────────────
+   The page used to describe whatever the control plane was configured with, and
+   never said so. Someone deployed a link, opened this, and read a healthy
+   dashboard about a different pipeline. A green light for the wrong thing is
+   worse than no light, so the subject is now named in the header. */
+.pm-linkpick {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-left: auto; font-size: 12.5px;
+}
+.pm-linkpick label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: #6b7784;
+}
+.pm-linkpick select {
+  font: inherit; font-size: 12.5px; padding: 5px 8px; border-radius: 5px;
+  border: 1px solid #cfd6de; background: #fff; color: #1d2733; cursor: pointer;
+  max-width: 260px;
+}
+.pm-linkpick select:focus { outline: 2px solid #cfe2ff; border-color: #0a58ca; }
+.pm-watchnote {
+  font-size: 11.5px; color: #6b7784;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* A panel that is NOT about the selected link says so, rather than being quietly
+   wrong. Amber, not red: the data is real, it just describes something else. */
+.pm-scopewarn {
+  margin: 0 0 10px; padding: 8px 11px; border-radius: 5px;
+  background: #fff8e6; border: 1px solid #f0d9a0; color: #6b5312;
+  font-size: 12.5px; line-height: 1.45;
+}
+
+/* Shown in place of the demo load-phase harness when a deployed link is
+   selected: those controls drive a load generator against the configured demo
+   pipeline's broker, so on a link they are both irrelevant and broken. */
+.pm-demo-note {
+  padding: 9px 12px; border: 1px dashed #d6dbdd; border-radius: 6px;
+  background: #fbfcfc; color: #6b7b8c; font-size: 12px;
+}
+.pm-demo-note b { color: #2c3e50; }
+
+/* ── unreachable: a gap in our view, not an observed fault ──────────────────
+   Deliberately grey and dashed rather than red. A component the control plane
+   cannot read may be perfectly healthy -- the commonest case is a customer-owned
+   target cache whose security group does not admit this host, which ECDL must
+   not edit. Painting that as an outage condemned working pipelines. */
+.pm-s-unknown { color: var(--pm-muted, #7f8c8d); }
+.pm-dot.pm-s-unknown, .pm-link.pm-s-unknown { background: #b3bcc4; }
+.pm-pill.pm-s-unknown { background: #eef1f2; color: #5d6d7e; }
+.pm-chip.pm-s-unknown { background: #f7f9fa; border-color: #d5dbdb; border-style: dashed; }
+
+.pm-card-unknown { border-style: dashed; }
+
+.pm-unknown {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 8px 10px; margin: 6px 0;
+  background: #f7f9fa; border-left: 3px solid #b3bcc4; border-radius: 4px;
+  font-size: 12px; color: #5d6d7e;
+}
+.pm-unknown b { color: #34495e; }
+.pm-unknown code {
+  font-size: 11px; color: #7f8c8d; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.pm-flowmsg.pm-unknown-msg { color: #5d6d7e; font-weight: 600; }
+
+.pm-visibilitynote {
+  font-size: 12px; color: #5d6d7e; line-height: 1.5;
+  padding: 7px 10px; margin-top: 6px;
+  background: #f7f9fa; border-left: 3px solid #b3bcc4; border-radius: 4px;
+}
+
+/* ---------- Data flowing: per-table CDC counters + source/target sample ---- */
+.pm-dataflow .pm-totals .pm-warn { color: var(--pm-warn-fg); font-weight: 600; }
+
+.pm-flowtable {
+  border: 1px solid var(--pm-line); border-radius: 10px;
+  margin: 0 16px 14px; overflow: hidden;
+}
+.pm-flowtable-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; background: #f7f9fb; border-bottom: 1px solid var(--pm-line);
+}
+.pm-flowtable-name { font-weight: 600; font-size: 14px; }
+.pm-flowbadge { font-size: 11.5px; padding: 2px 9px; border-radius: 20px; font-weight: 600; }
+.pm-flowbadge-ok   { background: var(--pm-ok-bg);   color: var(--pm-ok-fg); }
+.pm-flowbadge-wait { background: var(--pm-warn-bg); color: var(--pm-warn-fg); }
+/* Grey, not amber: an unread stream is a gap in our view, not a measured backlog. */
+.pm-flowbadge-unknown { background: #eceff1; color: var(--pm-muted); }
+
+/* DMS-style counter strip: rows read (CDC) vs rows applied (CDC) */
+.pm-flowctr { display: flex; border-bottom: 1px solid var(--pm-line); }
+.pm-flowctr-cell { flex: 1; padding: 10px 14px; border-right: 1px solid var(--pm-line); }
+.pm-flowctr-cell:last-child { border-right: none; }
+.pm-flowctr-lbl {
+  color: var(--pm-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+}
+.pm-flowctr-num {
+  font-family: ui-monospace, Menlo, monospace; font-size: 18px; margin-top: 3px; color: var(--pm-ink);
+}
+.pm-flowctr-num.pm-flowctr-behind { color: var(--pm-warn-fg); }
+.pm-flowctr-rate { color: var(--pm-amz); font-size: 11px; margin-top: 2px; }
+.pm-flowctr-rate.pm-flowctr-idle { color: var(--pm-muted); }
+
+/* Sample rows: PK · value at source · value at target */
+.pm-flow-rows th.pm-flow-src { color: #2b6cb0; }
+.pm-flow-rows th.pm-flow-tgt { color: #1f8a5b; }
+.pm-flow-rows .pm-pk { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; color: var(--pm-ink); }
+.pm-flow-rows .pm-flowval { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.pm-flow-rows .pm-flowval-pending { color: var(--pm-muted); font-style: italic; }
+.pm-flow-rows .pm-flowval-filtered { color: var(--pm-muted); font-style: italic; }
+.pm-flow-rows .pm-flowval-differs { color: var(--pm-warn-fg); }
+.pm-flowtable .pm-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 8px; vertical-align: middle;
+}
+.pm-flowtable .pm-dot-synced  { background: var(--pm-ok); }
+.pm-flowtable .pm-dot-pending  { background: var(--pm-warn); }
+.pm-flowtable .pm-dot-filtered { background: #c3cbd4; }
+.pm-flowtable .pm-dot-differs { background: var(--pm-amz); }

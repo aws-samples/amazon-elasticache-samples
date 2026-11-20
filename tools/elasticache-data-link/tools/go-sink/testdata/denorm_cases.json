@@ -1,0 +1,47 @@
+{
+  "about": "What a denormalized child embeds from its parent, shared by the Go sink and the bulk loader (Jira story F198). Each case is a transform spec, one parent row and one child row (source values; id and cid are integers). The sink is tested writing the parent first and then the child (the child reads the parent's cached hash), and the child first and then the parent (the parent's change fans out); the loader loads the parent table and then the child table. All three must leave exactly `embed` on the child. A rule field is a parent column: it is read under the name the parent's rename gives it, from the parent row after the parent's own transform, so a column the parent's `columns` does not keep, or a parent its filter drops, embeds as empty on every path.",
+  "cases": [
+    {
+      "name": "no parent transform",
+      "spec": {"tables": {"orders": {"denormalize": [{"parent_table": "customers", "join_field": "cid", "fields": ["name", "tier"], "prefix": "c_"}]}, "customers": {}}},
+      "parent": {"id": 7, "name": "Ann", "tier": "gold", "score": "10"},
+      "child": {"id": 1, "cid": 7, "qty": "5"},
+      "embed": {"c_name": "Ann", "c_tier": "gold"}
+    },
+    {
+      "name": "parent renames an embedded column",
+      "spec": {"tables": {"orders": {"denormalize": [{"parent_table": "customers", "join_field": "cid", "fields": ["name", "tier"], "prefix": "c_"}]}, "customers": {"rename": {"name": "full_name"}}}},
+      "parent": {"id": 7, "name": "Ann", "tier": "gold", "score": "10"},
+      "child": {"id": 1, "cid": 7, "qty": "5"},
+      "embed": {"c_name": "Ann", "c_tier": "gold"}
+    },
+    {
+      "name": "parent columns leave an embedded column out",
+      "spec": {"tables": {"orders": {"denormalize": [{"parent_table": "customers", "join_field": "cid", "fields": ["name", "tier"], "prefix": "c_"}]}, "customers": {"columns": ["id", "tier"]}}},
+      "parent": {"id": 7, "name": "Ann", "tier": "gold", "score": "10"},
+      "child": {"id": 1, "cid": 7, "qty": "5"},
+      "embed": {"c_name": "", "c_tier": "gold"}
+    },
+    {
+      "name": "parent computed field replaces a column of the same name",
+      "spec": {"tables": {"orders": {"denormalize": [{"parent_table": "customers", "join_field": "cid", "fields": ["name", "score"], "prefix": "c_"}]}, "customers": {"computed": [{"name": "score", "expr": "score * 2"}]}}},
+      "parent": {"id": 7, "name": "Ann", "tier": "gold", "score": "10"},
+      "child": {"id": 1, "cid": 7, "qty": "5"},
+      "embed": {"c_name": "Ann", "c_score": "20"}
+    },
+    {
+      "name": "renamed, selected and computed together",
+      "spec": {"tables": {"orders": {"denormalize": [{"parent_table": "Inventory.customers", "join_field": "cid", "fields": ["name", "tier", "score"], "prefix": "p_"}]}, "customers": {"columns": ["id", "name", "score"], "rename": {"name": "label", "score": "points"}, "computed": [{"name": "score", "expr": "score + 1"}]}}},
+      "parent": {"id": 7, "name": "Ann", "tier": "gold", "score": "10"},
+      "child": {"id": 1, "cid": 7, "qty": "5"},
+      "embed": {"p_name": "Ann", "p_tier": "", "p_score": "11"}
+    },
+    {
+      "name": "parent dropped by its filter",
+      "spec": {"tables": {"orders": {"denormalize": [{"parent_table": "customers", "join_field": "cid", "fields": ["name", "tier"], "prefix": "c_"}]}, "customers": {"filter": {"field": "tier", "op": "!=", "value": "gold"}}}},
+      "parent": {"id": 7, "name": "Ann", "tier": "gold", "score": "10"},
+      "child": {"id": 1, "cid": 7, "qty": "5"},
+      "embed": {"c_name": "", "c_tier": ""}
+    }
+  ]
+}

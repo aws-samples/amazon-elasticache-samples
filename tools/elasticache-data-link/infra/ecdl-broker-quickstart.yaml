@@ -1,0 +1,391 @@
+AWSTemplateFormatVersion: '2010-09-09'
+# Cluster-mode disabled is a requirement, not a default: Debezium's Redis sink
+# is single-connection and not cluster aware, and a single Valkey stream lives
+# in one hash slot, so sharding the broker would achieve nothing.
+#
+# This cluster carries full before-and-after row images from the customer's
+# database while they are in flight. It used to be created with in-transit
+# encryption off and no credential, reachable by anything in the VPC CIDR.
+# TLS is now on, an auth token is generated into Secrets Manager at deploy
+# time, and the CIDR rule is optional.
+#
+# WHAT IT GUARANTEES (Jira story F195). The broker is a replicated in-memory buffer, not
+# a durable store: Valkey on ElastiCache has no append-only file. What
+# survives is what is on the replica and in the snapshots.
+#   - One node lost, or a failover: nothing committed is lost. Debezium
+#     commits an offset only after the replica holds the writes (BrokerWait),
+#     and replays anything after that offset.
+#   - Both nodes lost: restore the newest snapshot (automatic snapshots are
+#     daily, so up to about a day old; a teardown leaves a final one).
+#     Debezium replays from the snapshot's older offset only if the source
+#     still keeps its log that far back; PostgreSQL needs a reload either way
+#     (operations.md, "Restoring the broker from a snapshot"). Dead letters
+#     created after the snapshot are lost. Without a snapshot: reload the link.
+Description: >
+  ECDL CDC broker: single-shard, cluster-mode-disabled, Multi-AZ ElastiCache
+  for Valkey (primary and replica) with TLS and a generated auth token. It
+  buffers changes between Debezium and the Go sink. A failover loses nothing
+  committed; losing both nodes falls back to the newest daily snapshot.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Default: ecdl-demo-broker-cache
+    Description: ReplicationGroupId for the broker cache.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least 2 subnets in different AZs.
+  AllowedCIDR:
+    Type: String
+    Default: ''
+    Description: >
+      Optional CIDR allowed to reach the broker on 6379, in addition to the
+      pipeline's own security group which the CDC stack grants. The control plane
+      needs this to read stream and consumer-group state for the dashboard, since
+      it does not run in the pipeline's security group. With the auth token in
+      place, reaching the port no longer means being able to read the data --
+      which is the point of the token. Leave empty for the most restrictive setup and
+      pass MonitorSecurityGroupId instead, which is narrower than any CIDR.
+  MonitorSecurityGroupId:
+    Type: String
+    Default: ''
+    Description: >
+      Security group allowed to reach the broker on 6379, for the control plane
+      that reads the dashboard. This is the narrow version of AllowedCIDR and is
+      the preferred one.
+
+      Not optional in practice if you want observability. The CDC stack grants the
+      pipeline's own task security group, and nothing else, so without this the
+      control plane cannot open a socket to the broker -- and the broker is where
+      stream depth, consumer-group lag, pending entries, DLQ length and Debezium's
+      committed offset all live. The symptom is specific and misleading: ECS
+      reports the tasks healthy, so Debezium and Sink show "1/1 tasks" while every
+      broker-derived number stays blank and delivery integrity reads "unknown".
+  # The broker absorbs the backlog while the sink is behind or the target is
+  # down, so its memory is what matters. cache.t4g.small has about 1.37 GB,
+  # of which ElastiCache reserves part for itself. An event's size depends on
+  # the row: Debezium writes the before and after images plus the envelope,
+  # so it is several times the row size (about 1 KB for a narrow row, far more
+  # for a wide one). Size it as change rate x event size x the longest outage
+  # the backlog must cover, and check BrokerMemoryAlarmPercent against the
+  # Pipeline Monitor's broker memory under a real load.
+  NodeType:
+    Type: String
+    # The default stays cache.t4g.small so a stack created before the planner
+    # sent this keeps its node. The planner gives a NEW link cache.m7g.large
+    # (ecdl_link/provision.py DEFAULT_BROKER); a burstable node runs out of
+    # CPU credits under a sustained backlog.
+    Default: cache.t4g.small
+    Description: >
+      Broker node type. Its memory holds the backlog while the sink is behind;
+      size it from your change rate, event size and the longest outage to cover.
+  NodeCount:
+    Type: String
+    Default: ''
+    AllowedPattern: '^[2-6]?$'
+    ConstraintDescription: empty (2 nodes), or 2 to 6
+    Description: >
+      Nodes in the broker: one primary and NodeCount-1 replicas. Empty means 2,
+      what a broker created before this parameter has. With one replica, every
+      failover or node replacement leaves a single copy until the new replica
+      has synced; 3 keeps two. Adding nodes does not replace the broker.
+  EngineVersion:
+    Type: String
+    Default: '9.0'
+  ParameterGroupFamily:
+    Type: String
+    Default: valkey9
+    Description: >
+      Must match EngineVersion. Cluster-mode-disabled families have no
+      ".cluster.on" suffix.
+
+  SnapshotRetentionLimit:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 35
+    # The broker holds Debezium's committed offset, the captured schema
+    # history, the changes the sink has not applied yet and the dead letters.
+    # A restored snapshot is up to a day old and holds an OLDER offset:
+    # Debezium replays from it (the sink applies the duplicates idempotently)
+    # only if the source still retains that log position, and PostgreSQL needs
+    # a reload. Dead letters written after the snapshot are not in it.
+    # Automatic snapshots are deleted with the broker; the final snapshot
+    # taken on delete is not.
+    Description: >
+      Days of automatic daily snapshots (taken in SnapshotWindow). A restore
+      returns the broker as of the snapshot, up to a day old.
+  SnapshotWindow:
+    Type: String
+    Default: '03:00-04:00'
+    AllowedPattern: '^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$'
+    Description: >
+      Daily UTC window for the automatic snapshot, at least 60 minutes. It must
+      not overlap PreferredMaintenanceWindow.
+  PreferredMaintenanceWindow:
+    Type: String
+    Default: 'sun:05:00-sun:06:00'
+    AllowedPattern: '^(mon|tue|wed|thu|fri|sat|sun):([01][0-9]|2[0-3]):[0-5][0-9]-(mon|tue|wed|thu|fri|sat|sun):([01][0-9]|2[0-3]):[0-5][0-9]$'
+    Description: >
+      Weekly UTC maintenance window. Set explicitly so it cannot be chosen to
+      overlap SnapshotWindow.
+  RestoreSnapshotName:
+    Type: String
+    Default: ''
+    # The deploy role may restore only from snapshots named for ECDL
+    # (ecdl-*, or automatic.ecdl-* while the broker still exists), so another
+    # team's cache cannot be restored into a broker the control plane reads.
+    AllowedPattern: '^((automatic\.)?ecdl-[A-Za-z0-9-]+)?$'
+    ConstraintDescription: empty, or an ElastiCache snapshot name starting with ecdl- (copy the snapshot to such a name first)
+    Description: >
+      Create the broker from this snapshot instead of empty: the offsets,
+      schema history, unapplied changes and dead letters it held come back.
+      Used only when the broker is CREATED (a new link, or a link deployed
+      again after a teardown, which leaves a final snapshot). Changing it on a
+      running broker would replace it, so the planner keeps the deployed
+      value. See docs/operations.md, "Restoring the broker from a snapshot".
+
+Conditions:
+  HasAllowedCIDR: !Not [!Equals [!Ref AllowedCIDR, '']]
+  HasMonitorSG: !Not [!Equals [!Ref MonitorSecurityGroupId, '']]
+  RestoreFromSnapshot: !Not [!Equals [!Ref RestoreSnapshotName, '']]
+  HasNodeCount: !Not [!Equals [!Ref NodeCount, '']]
+
+Resources:
+  # ═══════════════════════════════════════════════════════════════
+  # Auth token, generated at deploy time so nobody ever chooses or
+  # handles it. ElastiCache requires 16-128 printable ASCII characters and
+  # forbids '/', '"', '@' and spaces, hence the exclusions below.
+  # ═══════════════════════════════════════════════════════════════
+  # Customer-managed key for the auth secret and the broker log group. About
+  # $1/month.
+  #
+  # The key policy delegates to IAM; each secret reader is granted kms:Decrypt
+  # in its own role, limited to Secrets Manager and to this secret's ARN (the
+  # encryption context Secrets Manager supplies): the CDC tasks' execution role
+  # (ecdl-cdc-ecs.yaml) and the control plane, which also lets CloudFormation
+  # resolve AuthToken below.
+  BrokerKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Description: !Sub 'Encrypts the ${ClusterName} broker auth secret and logs'
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccountAdministersThroughIam
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: CloudWatchLogsForThisStacksLogGroup
+            Effect: Allow
+            Principal:
+              Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+            Action: [kms:Encrypt*, kms:Decrypt*, kms:ReEncrypt*, kms:GenerateDataKey*, kms:Describe*]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${AWS::StackName}/*'
+      Tags:
+        # The control plane's IAM policy scopes key management to this tag.
+        - Key: ecdl:stack
+          Value: !Ref AWS::StackName
+  BrokerAuthSecret:
+    Type: AWS::SecretsManager::Secret
+    Metadata:
+      guard:
+        # Not rotated automatically yet. Rotating this token means changing it
+        # on ElastiCache in two steps (ROTATE, then SET) and restarting the
+        # Debezium and sink tasks in between; a rotation schedule without that
+        # function would lock the pipeline out. The manual, no-outage procedure
+        # is in docs/operations.md ("Rotating credentials").
+        SuppressedRules:
+          - SECRETSMANAGER_ROTATION_ENABLED_CHECK
+    Properties:
+      # Deliberately unnamed. A fixed name plus Secrets Manager's recovery window
+      # means a teardown followed by a redeploy fails with "already scheduled for
+      # deletion" for up to 30 days. Consumers are given the ARN via the stack
+      # output, so a generated name has no downside.
+      Description: !Sub 'Auth token for the ECDL broker ${ClusterName}'
+      KmsKeyId: !Ref BrokerKey
+      GenerateSecretString:
+        # A plaintext secret, not JSON: that is the shape both the Go sink and
+        # the Python loader read as "this is an auth token".
+        PasswordLength: 64
+        # Alphanumerics only. ElastiCache is far stricter about auth tokens than
+        # Secrets Manager is about passwords: the ONLY punctuation it accepts is
+        # ! & # $ ^ < > and -. An earlier version excluded a handful of characters
+        # and allowed the rest, so roughly any generated token containing % * ( )
+        # + = { } [ ] : ; , . ? | or ~ was rejected at create time with nothing
+        # more helpful than "Invalid AuthToken provided", after the stack had
+        # already built its secret, parameter group and subnet group.
+        #
+        # Excluding all punctuation rather than allowing the eight legal specials:
+        # 64 alphanumeric characters is ~381 bits, so a wider character set adds no
+        # useful strength, and a token that cannot be quoted wrongly in a shell
+        # or a properties file is more valuable than the extra entropy.
+        ExcludePunctuation: true
+        IncludeSpace: false
+      Tags:
+        - Key: Project
+          Value: ECDL
+        - Key: Role
+          Value: broker-auth
+        # Jira story F176. Marks the secret as this ECDL stack's: the control plane may
+        # read a BrokerAuthSecret-* secret only with this tag (or with the
+        # aws:cloudformation:stack-name tag CloudFormation adds) naming an
+        # ecdl- stack. The generated name alone matches any stack's secret.
+        - Key: ecdl:stack
+          Value: !Ref AWS::StackName
+
+  BrokerParameterGroup:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      CacheParameterGroupFamily: !Ref ParameterGroupFamily
+      Description: !Sub '${ClusterName} broker parameters'
+      Properties:
+        # No broker template used to set this at all, so the broker ran on
+        # whatever the ElastiCache default happened to be. It matters: stream
+        # entries carry no TTL, so an evicting policy has nothing it is allowed
+        # to free and would either evict nothing or start discarding data.
+        # noeviction makes a full broker return an error to Debezium, which
+        # retries, instead of losing events.
+        maxmemory-policy: noeviction
+
+  BrokerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${ClusterName} broker access'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: !If
+        - HasAllowedCIDR
+        - - IpProtocol: tcp
+            FromPort: 6379
+            ToPort: 6379
+            CidrIp: !Ref AllowedCIDR
+            Description: Broker client access (in-VPC, optional)
+        - !Ref 'AWS::NoValue'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-sg'
+
+  # Kept as its own resource rather than folded into SecurityGroupIngress above,
+  # because that property is already an !If on AllowedCIDR and nesting a second
+  # optional entry inside one list is hard to read. A separate conditional resource
+  # is also purely additive to stacks that already exist.
+  BrokerMonitorIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasMonitorSG
+    Properties:
+      GroupId: !Ref BrokerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 6379
+      ToPort: 6379
+      SourceSecurityGroupId: !Ref MonitorSecurityGroupId
+      Description: Control plane reading stream and consumer-group state
+
+  BrokerSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: !Sub '${ClusterName} broker subnets (Multi-AZ)'
+      SubnetIds: !Ref SubnetIds
+
+  BrokerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      # Under /ecs/<prefix>-... so the control plane's log grants already cover it.
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/broker'
+      RetentionInDays: 14
+      KmsKeyId: !GetAtt BrokerKey.Arn
+
+  # Snapshot, not Delete: deleting the stack, or a change that replaces the
+  # broker, first takes a final snapshot, which ElastiCache keeps (and
+  # charges for) until someone deletes it. The broker is the only copy of the
+  # committed offset, the schema history, the unapplied changes and the dead
+  # letters; the automatic snapshots go with the replication group.
+  Broker:
+    Type: AWS::ElastiCache::ReplicationGroup
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      ReplicationGroupId: !Ref ClusterName
+      ReplicationGroupDescription: ECDL CDC broker (single shard, cluster-mode disabled, Multi-AZ)
+      Engine: valkey
+      EngineVersion: !Ref EngineVersion
+      CacheNodeType: !Ref NodeType
+      CacheParameterGroupName: !Ref BrokerParameterGroup
+      # 1 primary + NodeCount-1 replicas (cluster mode disabled); 2 when unset.
+      NumCacheClusters: !If [HasNodeCount, !Ref NodeCount, 2]
+      AutomaticFailoverEnabled: true
+      MultiAZEnabled: true
+      CacheSubnetGroupName: !Ref BrokerSubnetGroup
+      SecurityGroupIds:
+        - !Ref BrokerSecurityGroup
+      # TLS and the auth token go together: ElastiCache will not accept an auth
+      # token without in-transit encryption, which is the right constraint --
+      # sending a credential over a plaintext connection would be pointless.
+      TransitEncryptionEnabled: true
+      AtRestEncryptionEnabled: true
+      AuthToken: !Sub '{{resolve:secretsmanager:${BrokerAuthSecret}:SecretString}}'
+      Port: 6379
+      SnapshotRetentionLimit: !Ref SnapshotRetentionLimit
+      SnapshotWindow: !Ref SnapshotWindow
+      PreferredMaintenanceWindow: !Ref PreferredMaintenanceWindow
+      SnapshotName: !If [RestoreFromSnapshot, !Ref RestoreSnapshotName, !Ref 'AWS::NoValue']
+      # Engine and slow logs to CloudWatch, so a broker problem (OOM rejections,
+      # failovers, slow commands) can be investigated after the fact.
+      LogDeliveryConfigurations:
+        - DestinationType: cloudwatch-logs
+          LogFormat: json
+          LogType: slow-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref BrokerLogGroup
+        - DestinationType: cloudwatch-logs
+          LogFormat: json
+          LogType: engine-log
+          DestinationDetails:
+            CloudWatchLogsDetails:
+              LogGroup: !Ref BrokerLogGroup
+      Tags:
+        - Key: Project
+          Value: ECDL
+        - Key: Role
+          Value: broker-cdc
+
+Outputs:
+  PrimaryEndpoint:
+    Description: Primary endpoint host for the Debezium sink + Go sink.
+    Value: !GetAtt Broker.PrimaryEndPoint.Address
+  Port:
+    Value: !GetAtt Broker.PrimaryEndPoint.Port
+  SecurityGroupId:
+    Description: Broker security group (pipeline tasks are granted ingress to it).
+    Value: !Ref BrokerSecurityGroup
+  AuthSecretArn:
+    Description: >
+      Secrets Manager ARN holding the broker auth token. Pass this to the CDC
+      stack as BrokerSecretArn; both Debezium and the sink read it at runtime.
+    Value: !Ref BrokerAuthSecret
+  TransitEncryption:
+    Description: Pass to the CDC stack as BrokerSSL.
+    Value: 'true'
+  ReplicationGroupId:
+    Description: >
+      Pass to the CDC stack as BrokerReplicationGroupId, which alarms on the
+      broker's memory (a full broker refuses Debezium's writes).
+    Value: !Ref Broker
+  LogGroupName:
+    Value: !Ref BrokerLogGroup
+  NodeCount:
+    Description: >
+      Nodes in the broker (<group>-001 ... -00N), for alarms that watch each
+      node.
+    Value: !If [HasNodeCount, !Ref NodeCount, '2']
