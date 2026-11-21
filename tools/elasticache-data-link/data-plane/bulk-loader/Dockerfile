@@ -45,13 +45,17 @@ RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 # ecdl_link/sqlident.py, kept identical by a test.
 COPY bulk_loader.py transforms.py sqlident.py cdc_values.py ./
 # The CAs the loader verifies the source's TLS certificate with
-# (SOURCE_TLS_CA_FILE): Amazon RDS's global bundle, from
-# https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem, then the
-# system CAs (RDS Proxy, sources with a public certificate). The build fails if
-# either is missing rather than producing an image that cannot verify.
-COPY rds-ca-bundle.pem ./
-RUN cat /app/rds-ca-bundle.pem /etc/ssl/certs/ca-certificates.crt > /app/source-ca.pem \
-    && chmod 0444 /app/source-ca.pem
+# (SOURCE_TLS_CA_FILE): Amazon RDS's global bundle, then the system CAs (RDS
+# Proxy, sources with a public certificate). The build fails if either is
+# missing rather than producing an image that cannot verify.
+# Amazon RDS's public CA bundle (certificates only), downloaded at build time
+# and checked against this SHA-256, so the repository carries no certificate
+# file and a changed download fails the build. The same pin is in the Makefile.
+ARG RDS_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+ARG RDS_CA_SHA256=90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b
+RUN python -c "import hashlib, sys, urllib.request; d = urllib.request.urlopen(sys.argv[1], timeout=60).read(); h = hashlib.sha256(d).hexdigest(); h == sys.argv[2] or sys.exit('RDS CA bundle sha256 %s, expected %s: update RDS_CA_SHA256 after checking the new bundle' % (h, sys.argv[2])); open(sys.argv[3], 'wb').write(d)" "$RDS_CA_URL" "$RDS_CA_SHA256" /app/rds-ca-bundle.pem \
+ && cat /app/rds-ca-bundle.pem /etc/ssl/certs/ca-certificates.crt > /app/source-ca.pem \
+ && chmod 0444 /app/source-ca.pem
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod 0555 /app/entrypoint.sh
 

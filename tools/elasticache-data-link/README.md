@@ -211,8 +211,11 @@ the cache matches. Use a test database and a test cache, not production.
 | `samples/cleanup-mysql.sql`, `samples/cleanup-postgresql.sql` | delete the sample tables and the link's signalling table |
 
 1. **Create the tables** in a test database on your source (MySQL shown; for
-   PostgreSQL use `postgresql.sql` with `psql`, as its first lines show):
+   PostgreSQL use `postgresql.sql` with `psql`, as its first lines show).
+   `make ca-bundle` downloads Amazon RDS's CA bundle, which the TLS check uses,
+   and verifies its checksum:
    ```bash
+   make ca-bundle
    mysql --ssl-mode=VERIFY_IDENTITY --ssl-ca=ecdl_link/rds-ca-bundle.pem \
      -h <writer endpoint> -u <admin user> -p <test database> < samples/mysql.sql
    ```

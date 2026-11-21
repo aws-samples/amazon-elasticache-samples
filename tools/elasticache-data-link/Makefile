@@ -7,7 +7,7 @@
 SHELL := /bin/bash
 VERSION := $(shell tr -d '[:space:]' < VERSION)
 
-.PHONY: help test test-ecdl-link test-loader test-backend test-docs lint-cfn \
+.PHONY: help ca-bundle test test-ecdl-link test-loader test-backend test-docs lint-cfn \
         images push pin version release-check
 
 help:
@@ -29,7 +29,7 @@ help:
 # Listed separately as well as together, because when one fails you want to
 # re-run just that one. Each suite also runs on its own with a bare `python3`.
 # The backend suites and test-docs need PyYAML/Flask/boto3 — see TESTING.md.
-test: test-ecdl-link test-loader test-backend test-docs
+test: ca-bundle test-ecdl-link test-loader test-backend test-docs
 	@echo "all suites passed"
 
 # The link engine shared by the CLI and the backend.
@@ -52,6 +52,16 @@ test-backend:
 	cd backend && python3 tests/test_app_hardening.py
 	cd backend && python3 tests/test_alarm_topic.py
 
+# Amazon RDS's public CA bundle, for the tests, the sample script and a local
+# control plane. Not in git: downloaded and checked against the same SHA-256
+# the Dockerfiles pin (data-plane/bulk-loader/Dockerfile, backend/Dockerfile.release).
+RDS_CA_URL := https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+RDS_CA_SHA256 := 90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b
+ca-bundle: ecdl_link/rds-ca-bundle.pem data-plane/bulk-loader/rds-ca-bundle.pem
+ecdl_link/rds-ca-bundle.pem:
+	python3 -c "import hashlib, sys, urllib.request; d = urllib.request.urlopen(sys.argv[1], timeout=60).read(); h = hashlib.sha256(d).hexdigest(); h == sys.argv[2] or sys.exit('RDS CA bundle sha256 %s, expected %s' % (h, sys.argv[2])); open(sys.argv[3], 'wb').write(d)" "$(RDS_CA_URL)" "$(RDS_CA_SHA256)" $@
+data-plane/bulk-loader/rds-ca-bundle.pem: ecdl_link/rds-ca-bundle.pem
+	cp $< $@
 # Documentation-vs-code guardrail: runs the CLI over the README examples.
 test-docs:
 	python3 test_docs.py

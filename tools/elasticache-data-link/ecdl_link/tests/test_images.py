@@ -126,22 +126,35 @@ class RuntimeImagesTest(unittest.TestCase):
 
 
 class CaBundleTest(unittest.TestCase):
-    """The RDS CA bundles the loader image and the table listing need are
-    files in the repository, and .gitignore's *.pem rule does not drop them:
-    a plain `git add` of a fresh copy once left both out, and the loader
-    image could not build."""
-    BUNDLES = ('ecdl_link/rds-ca-bundle.pem', 'data-plane/bulk-loader/rds-ca-bundle.pem')
+    """Amazon RDS's CA bundle is downloaded and checksum-checked, never
+    committed: both images and `make ca-bundle` use the same URL and SHA-256."""
+    URL = 'https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem'
 
-    def test_the_bundles_exist(self):
-        for rel in self.BUNDLES:
-            self.assertIn('BEGIN CERTIFICATE', _read(rel), rel)
-            self.assertNotIn('PRIVATE KEY', _read(rel), rel)
+    def _pins(self, rel, pattern):
+        found = re.findall(pattern, _read(rel), re.M)
+        self.assertEqual(len(found), 1, rel)
+        return found[0]
 
-    def test_gitignore_keeps_them(self):
-        lines = [l.strip() for l in _read('.gitignore').splitlines()]
-        pem = lines.index('*.pem')
-        for rel in self.BUNDLES:
-            self.assertIn('!' + rel, lines[pem:], rel)
+    def test_the_same_pin_everywhere(self):
+        pins = {self._pins(rel, r'^ARG RDS_CA_SHA256=([0-9a-f]{64})$')
+                for rel in ('data-plane/bulk-loader/Dockerfile', 'backend/Dockerfile.release')}
+        pins.add(self._pins('Makefile', r'^RDS_CA_SHA256 := ([0-9a-f]{64})$'))
+        self.assertEqual(len(pins), 1, pins)
+        for rel in ('data-plane/bulk-loader/Dockerfile', 'backend/Dockerfile.release'):
+            self.assertIn('ARG RDS_CA_URL=' + self.URL, _read(rel), rel)
+            self.assertIn('hashlib.sha256(d).hexdigest()', _read(rel), rel)
+        self.assertIn('RDS_CA_URL := ' + self.URL, _read('Makefile'))
+
+    def test_no_certificate_file_is_committed(self):
+        import subprocess  # nosec B404 - reads the repo's own index
+        run = subprocess.run(['git', 'ls-files', '--', '*.pem'], cwd=ROOT,  # nosec B603 B607
+                             capture_output=True, text=True, check=False)
+        if run.returncode != 0:
+            self.skipTest('not a git checkout')
+        self.assertEqual(run.stdout.split(), [])
+
+    def test_make_test_fetches_it_first(self):
+        self.assertRegex(_read('Makefile'), r'(?m)^test: ca-bundle ')
 
 
 class LockFilesTest(unittest.TestCase):
