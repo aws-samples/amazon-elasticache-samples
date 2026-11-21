@@ -15,7 +15,7 @@
         </mxCell>
 
         <!-- main pipeline (left to right) -->
-        <mxCell id="src" parent="1" vertex="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" value="&lt;b&gt;Source database&lt;/b&gt;&lt;br&gt;MySQL · PostgreSQL&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#555555&quot;&gt;SQL Server, Oracle:&lt;br&gt;not tested in this release&lt;/font&gt;">
+        <mxCell id="src" parent="1" vertex="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" value="&lt;b&gt;Source database&lt;/b&gt;&lt;br&gt;MySQL · PostgreSQL&lt;br&gt;SQL Server · Oracle">
           <mxGeometry x="40" y="270" width="180" height="130" as="geometry" />
         </mxCell>
 

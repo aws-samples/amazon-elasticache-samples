@@ -31,12 +31,14 @@ log is work each team ends up doing alone.
 
 More in the [one-pager](docs/one-pager.md).
 
-**Status:** release 0.2.31 (`VERSION`). Tested live on Aurora MySQL 3 with an
-ElastiCache for Valkey cluster: bulk load, inserts, updates and deletes,
-filters, computed fields, renames, denormalize, reload, failovers of the
-broker and the target, and secret rotation. PostgreSQL is covered by the
-automated suites and the benchmark runs, not by a live test. SQL Server and
-Oracle are not tested in this release. See [Limitations](#limitations).
+**Status:** release 0.2.31 (`VERSION`). All four source engines have run end
+to end, bulk load and live change capture with every row delivered: Aurora
+MySQL 8.0, Aurora PostgreSQL 16, SQL Server 2022 and RDS Oracle 19c (see
+[Benchmark results](docs/benchmark-results.md)). This release was also tested
+live on Aurora MySQL 3 with an ElastiCache for Valkey cluster: bulk load,
+inserts, updates and deletes, filters, computed fields, renames, denormalize,
+reload, failovers of the broker and the target, and secret rotation. See
+[Limitations](#limitations).
 
 **Contents:** [What you need](#what-you-need) · [Deploy in five steps](#deploy-in-five-steps) ·
 [Check it offline](#check-it-offline) · [Prepare the database](#prepare-the-database) ·
@@ -314,8 +316,8 @@ database and the target cache are yours**; a link references them by ARN (Amazon
 |---|---|---|
 | MySQL / Aurora MySQL | supported | row-based binlog |
 | PostgreSQL / Aurora PostgreSQL | supported | logical decoding (`pgoutput`) |
-| SQL Server | not tested in this release | CDC change tables, polled |
-| Oracle | preview, not tested in this release | LogMiner |
+| SQL Server | supported | CDC change tables, polled |
+| Oracle | supported, non-CDB databases (RDS Oracle 19c) | LogMiner |
 
 The engine is detected from `source.arn`.
 
@@ -568,7 +570,11 @@ Your source database and target cache are billed as before.
 - **MySQL `BIGINT UNSIGNED`** values above 9,223,372,036,854,775,807 are
   stored as the signed number Debezium sends (`18446744073709551615` becomes
   `-1`).
-- **SQL Server and Oracle** are not tested in this release.
+- **Oracle** runs on a non-CDB database; a multitenant container database
+  (CDB with pluggable databases, the only option on RDS Oracle 21c) is not
+  supported.
+- **Release testing:** each release is tested live on Aurora MySQL; the other
+  engines were last measured end to end in the benchmark runs (0.1.0).
 
 ## Security
 
