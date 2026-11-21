@@ -1,5 +1,5 @@
 -- ECDL sample tables for PostgreSQL 13+ / Aurora PostgreSQL.
--- Synthetic data only. Run it in a TEST database, in the schema the link
+-- Synthetic data only. Run `make ca-bundle` first for ecdl_link/rds-ca-bundle.pem. Run it in a TEST database, in the schema the link
 -- reads (public by default), as a user that can create tables there:
 --   psql "host=<writer endpoint> dbname=<database> user=<admin user> sslmode=verify-full sslrootcert=ecdl_link/rds-ca-bundle.pem" \
 --        -v ON_ERROR_STOP=1 -f samples/postgresql.sql

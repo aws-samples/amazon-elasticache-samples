@@ -1,5 +1,5 @@
 -- ECDL sample tables for MySQL 8.0 / Aurora MySQL 3.
--- Synthetic data only. Run it in a TEST database, as a user that can create
+-- Synthetic data only. Run `make ca-bundle` first for ecdl_link/rds-ca-bundle.pem. Run it in a TEST database, as a user that can create
 -- tables there, for example:
 --   mysql --ssl-mode=VERIFY_IDENTITY --ssl-ca=ecdl_link/rds-ca-bundle.pem \
 --         -h <writer endpoint> -u <admin user> -p <database> < samples/mysql.sql
