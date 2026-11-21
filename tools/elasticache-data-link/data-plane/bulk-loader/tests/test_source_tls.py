@@ -255,7 +255,10 @@ class ImageTest(unittest.TestCase):
     def test_the_image_builds_the_default_ca_file(self):
         with open(os.path.join(LOADER, 'Dockerfile')) as handle:
             text = handle.read()
-        self.assertIn('COPY rds-ca-bundle.pem', text)
+        # Downloaded at build time and checked against a pinned SHA-256.
+        self.assertNotIn('COPY rds-ca-bundle.pem', text)
+        self.assertIn('ARG RDS_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem', text)
+        self.assertRegex(text, r'ARG RDS_CA_SHA256=[0-9a-f]{64}')
         self.assertRegex(text, r'cat /app/rds-ca-bundle.pem /etc/ssl/certs/ca-certificates.crt'
                                r' > /app/source-ca.pem')
         self.assertEqual(bulk_loader.SOURCE_TLS_CA_DEFAULT, '/app/source-ca.pem')

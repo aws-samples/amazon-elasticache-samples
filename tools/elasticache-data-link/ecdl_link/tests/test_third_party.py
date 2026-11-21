@@ -52,6 +52,12 @@ class ThirdPartyLicensesTest(unittest.TestCase):
         self.assertIn('eclipse-temurin:21-jre', self.rows)
         self.assertIn('Debezium Server 3.0.6.Final', self.text)
 
+    def test_the_readme_status_names_this_release(self):
+        version = _read('VERSION').strip()
+        status = [l for l in _read('README.md').splitlines() if l.startswith('**Status:**')]
+        self.assertEqual(len(status), 1)
+        self.assertIn('release {} (`VERSION`)'.format(version), status[0])
+
     def test_the_readme_links_it(self):
         self.assertIn('[THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES)', _read('README.md'))
         # The disclaimer aws-samples requires, right under the title.

@@ -15,7 +15,8 @@ Safety:
   sample_orders). Table names are fixed in this file, never taken from input.
 - Passwords come from Secrets Manager and are never printed or logged.
 - Connections are TLS with the server certificate and host name verified:
-  the database against ecdl_link/rds-ca-bundle.pem (Amazon RDS's CAs), the
+  the database against ecdl_link/rds-ca-bundle.pem (Amazon RDS's CAs; run
+  `make ca-bundle` once to download it), the
   cache against the system CAs (ElastiCache certificates are Amazon-issued).
 - `compare` only reads. It prints row ids and column names, not values,
   unless --show-values is given.
@@ -287,6 +288,9 @@ def main():
     args = p.parse_args()
     if not args.region:
         sys.exit('set AWS_REGION or pass --region')
+    if not os.path.isfile(args.ca):
+        sys.exit('no CA bundle at {}: run `make ca-bundle` in the repository folder '
+                 '(downloads Amazon RDS\'s CA bundle and checks it), or pass --ca'.format(args.ca))
     if args.schema and not SAFE_NAME.match(args.schema):
         sys.exit('--schema: letters, digits and _ only')
     if args.cmd == 'changes':

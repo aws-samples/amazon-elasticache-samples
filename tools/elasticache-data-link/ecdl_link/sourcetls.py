@@ -6,9 +6,9 @@ the source's password on the wire. Both now verify the server certificate
 against Amazon RDS's CA bundle and check that it names the endpoint.
 
 rds-ca-bundle.pem is Amazon RDS's global bundle
-(https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem), the same
-file as data-plane/bulk-loader/rds-ca-bundle.pem (a test keeps them identical).
-The control-plane image gets it with ecdl_link/.
+(https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem). It is not
+in git: the control-plane image downloads it at build time and checks its
+SHA-256 (backend/Dockerfile.release); `make ca-bundle` does the same locally.
 """
 import os
 import ssl

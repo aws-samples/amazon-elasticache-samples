@@ -7,7 +7,7 @@ Streams) → sink → cache.
 
 > **When these were measured.** These runs used ECDL 0.1.0 (October 2026), with
 > Debezium, the broker and the sink on one EC2 `c5.4xlarge` rather than on
-> Fargate, where a deployed link runs. They have not been repeated on 0.2.29.
+> Fargate, where a deployed link runs. They have not been repeated since.
 > Two changes since then make each write wait for a replica, which costs
 > throughput:
 > - Debezium waits for a broker replica to confirm each batch before its source
