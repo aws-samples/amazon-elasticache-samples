@@ -107,7 +107,7 @@ export function StartPage() {
 
         <Box color="text-body-secondary">
           Not listed?{" "}
-          <Link href={href({ name: "connect" })} onFollow={(e) => follow(e)}>Add a database by hand</Link>
+          <Link href={href({ name: "connect" })} onFollow={(e) => follow(e)}>Enter the connection details yourself</Link>
         </Box>
       </SpaceBetween>
     </ContentLayout>

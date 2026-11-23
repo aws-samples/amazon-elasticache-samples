@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Box, Button, ContentLayout, Header, Link, Modal, Pagination, Select,
+  Box, Button, Header, Link, Modal, Pagination, Select,
   SpaceBetween, StatusIndicator, Table, TextFilter, type SelectProps,
 } from "@cloudscape-design/components";
 import { useCapabilities, useDatabases, useDelete, useJobList, useRerun } from "../api/hooks";
@@ -76,13 +76,9 @@ function DeleteModal({ job, onClose }: { job: JobSummary; onClose: () => void })
   );
 }
 
-/** Every assessment on the server: the all-assessments list. */
+/** Every assessment on the server: the all-assessments list. The table header is the page title. */
 export function HistoryPage() {
-  return (
-    <ContentLayout header={<Header variant="h1" description="Every assessment on this server, newest first.">Assessments</Header>}>
-      <AssessmentsTable />
-    </ContentLayout>
-  );
+  return <AssessmentsTable />;
 }
 
 /**
@@ -150,7 +146,8 @@ export function AssessmentsTable({ databaseId }: { databaseId?: string }) {
                   {!databaseId && <Button variant="primary" href={href({ name: "new" })} onFollow={(e) => follow(e)}>New assessment</Button>}
                 </SpaceBetween>
               }
-              variant={databaseId ? "h2" : undefined}
+              variant={databaseId ? "h2" : "awsui-h1-sticky"}
+              description={databaseId ? undefined : "Every assessment on this server, newest first."}
             >
               {databaseId ? "Assessments of this database" : "Assessments"}
             </Header>

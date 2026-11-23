@@ -45,7 +45,7 @@ function existingId(e: unknown): string | null {
 }
 
 /** The discovery finds to pick from, one at a time. */
-function FoundTable({ items, selected, onSelect, loading, label, empty = "Nothing found" }: {
+function FoundTable({ items, selected, onSelect, loading, label, empty = "No databases or instances found" }: {
   items: DiscoveredServer[];
   selected: DiscoveredServer | null;
   onSelect: (s: DiscoveredServer) => void;
@@ -489,7 +489,7 @@ function ConnectFlow({ caps, pick, existing }: { caps: Capabilities; pick: strin
   };
 
   const conflict = existingId(stepError);
-  const errorText = stepError === "pick" ? "Pick a database or instance from the list, or enter the details by hand."
+  const errorText = stepError === "pick" ? "Select a database or instance from the list, or choose Enter the details."
     : stepError ? (
       <SpaceBetween size="xs">
         <ErrorAlert error={stepError} header="The connection was not saved" />
@@ -503,7 +503,7 @@ function ConnectFlow({ caps, pick, existing }: { caps: Capabilities; pick: strin
       case "choose":
         return {
           title: "Choose",
-          description: "Pick a database or instance that discovery or a host probe found, or enter the details by hand.",
+          description: "Use a database or instance that discovery or a host probe found, or enter the connection details yourself.",
           errorText: step === "choose" ? errorText : undefined,
           content: (
             <SpaceBetween size="l">
@@ -521,7 +521,7 @@ function ConnectFlow({ caps, pick, existing }: { caps: Capabilities; pick: strin
                     Databases and instances</Header>}>
                     {disc.error ? <ErrorAlert error={disc.error} header="Discovery could not run" /> : null}
                     <FoundTable items={clusters} selected={found} onSelect={choose} loading={disc.isFetching && !disc.data}
-                      label="Databases and instances" empty="Nothing found. Probe a host below to look for PostgreSQL on it." />
+                      label="Databases and instances" empty="No databases or instances found. Probe a host below to look for PostgreSQL on it." />
                   </Container>
                   <HostProbePanel description="Probe an SSH host to add what runs on it to the list above. When the SSH user can run commands as postgres (sudo), the probe lists the databases." />
                 </SpaceBetween>

@@ -47,7 +47,7 @@ def queued(monkeypatch) -> list:
     """Records the jobs the API queues instead of running them."""
     calls: list = []
     monkeypatch.setattr(assessments, "_run_from_collection",
-                        lambda *args: calls.append(args))
+                        lambda *args, **kwargs: calls.append(args))
     return calls
 
 
@@ -124,6 +124,36 @@ def test_options_default_to_what_the_original_used(client, collection):
     assert record(client, new)["options"] == record(client, job)["options"] == {
         "use_llm": False, "size": False, "price": False, "region": "ap-south-1",
         "model_id": None, "require_llm": False}
+
+
+@pytest.fixture
+def model_job(client, collection, tmp_path) -> str:
+    """A finished job whose record says it ran with the model required."""
+    job_id = submit(client, collection)
+    path = tmp_path / job_id / "job.json"
+    rec = json.loads(path.read_text())
+    rec["options"].update(use_llm=True, require_llm=True)
+    path.write_text(json.dumps(rec))
+    return job_id
+
+
+def test_turning_the_model_off_drops_the_originals_require_llm(client, model_job):
+    out = rerun(client, model_job, use_llm=False)
+    assert out["status"] == "complete"
+    opts = record(client, out["job_id"])["options"]
+    assert opts["use_llm"] is False and opts["require_llm"] is False
+
+
+def test_requiring_the_model_with_it_off_is_still_422(client, model_job):
+    r = client.post(f"{PREFIX}/assessments/{model_job}/rerun",
+                    json={"use_llm": False, "require_llm": True})
+    assert r.status_code == 422 and r.json()["code"] == "invalid_options"
+
+
+def test_a_rerun_that_says_nothing_keeps_require_llm(client, model_job, queued):
+    out = rerun(client, model_job)
+    opts = record(client, out["job_id"])["options"]
+    assert opts["use_llm"] is True and opts["require_llm"] is True
 
 
 def test_pricing_queues_the_job_and_passes_the_saved_collection(client, job, queued):

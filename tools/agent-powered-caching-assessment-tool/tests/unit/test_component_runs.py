@@ -644,6 +644,17 @@ def test_the_model_makes_analyze_a_queued_run(client, coll, held):
     assert held[0][3].use_llm is True               # the options the run will use
 
 
+def test_analyze_without_the_model_drops_the_jobs_require_llm(client, coll, tmp_path):
+    job = start(client, coll)["job_id"]
+    path = tmp_path / job / "job.json"
+    rec = json.loads(path.read_text())
+    rec["options"].update(use_llm=True, require_llm=True)  # as if it first ran with the model
+    path.write_text(json.dumps(rec))
+    assert run(client, job, "analyze", use_llm=False).status_code == 200
+    r = run(client, job, "analyze", use_llm=False, require_llm=True)
+    assert r.status_code == 422 and r.json()["code"] == "invalid_options"
+
+
 def test_collect_is_always_queued(client, coll, held):
     job = start(client, coll)["job_id"]
     r = client.post(f"{PREFIX}/assessments/{job}/collect", json=live_payload())

@@ -25,7 +25,9 @@ from src.agents.collector.target_checks import target_problems
 from src.api import audit, limits
 from src.api.common import REGION_MAX_LENGTH, JobId, RegionPattern, job_store, orchestrator
 from src.api.errors import ApiError, error_responses
-from src.api.routes.assessments import check_model_options, check_window, model_kwargs
+from src.api.routes.assessments import (
+    check_model_options, check_window, model_changes, model_kwargs,
+)
 from src.contracts.api_models import JobOptions, PhaseRunResponse
 from src.contracts.collector_input import CollectorInput
 from src.contracts.models import MODEL_ID_MAX_LENGTH, MODEL_ID_PATTERN
@@ -86,7 +88,7 @@ def _start(job_id: str, phase: Phase, background: BackgroundTasks, *,
     if record is None:
         raise ApiError(404, "job_not_found", f"Job {job_id} not found")
     options: JobOptions = record.options.model_copy(
-        update={k: v for k, v in changes.items() if v is not None})
+        update=model_changes({k: v for k, v in changes.items() if v is not None}))
     check_model_options(options.use_llm, options.require_llm)
     orch = orchestrator(options.use_llm, True, options.price, options.region,
                         **model_kwargs(options.model_id, options.require_llm))
