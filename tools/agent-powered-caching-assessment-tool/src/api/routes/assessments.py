@@ -79,6 +79,25 @@ def model_kwargs(model_id: str | None, require_llm: bool | None) -> dict:
             **({"require_llm": True} if require_llm else {})}
 
 
+def model_changes(changes: dict) -> dict:
+    """Option changes for a job that reuses another's options (rerun, analyze again).
+
+    Turning the model off without saying anything about require_llm means the model is not
+    required either. Otherwise the original's require_llm survives the merge and the
+    request is refused with 422 `invalid_options`. An explicit require_llm is kept as
+    given, so asking for both still gets the 422.
+
+    Args:
+        changes: The options the request set, without the ones it left out.
+
+    Returns:
+        The same changes, with require_llm false when use_llm is turned off without it.
+    """
+    if changes.get("use_llm") is False and changes.get("require_llm") is None:
+        return {**changes, "require_llm": False}
+    return changes
+
+
 def check_model_options(use_llm: bool, require_llm: bool) -> None:
     """require_llm only means something when the model was asked for."""
     if require_llm and not use_llm:
@@ -442,7 +461,8 @@ def rerun_assessment(job_id: JobId, background: BackgroundTasks,
         raise ApiError(404, "artifact_not_available",
                        f"Job {job_id} has no saved collection to rerun") from e
 
-    chosen = {k: v for k, v in body.model_dump(exclude={"label"}).items() if v is not None}
+    chosen = model_changes(
+        {k: v for k, v in body.model_dump(exclude={"label"}).items() if v is not None})
     options = JobOptions.model_validate({**record.options.model_dump(), **chosen})
     check_model_options(options.use_llm, options.require_llm)
     if body.label is not None:

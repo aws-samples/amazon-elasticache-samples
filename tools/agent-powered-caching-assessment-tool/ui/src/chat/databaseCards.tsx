@@ -99,16 +99,16 @@ export function DiscoveryCard() {
         <Header variant="h3" counter={`(${servers.length})`}
           description="On this machine. To look on a database host over SSH, type the host in the connect form."
           actions={<Button href={href({ name: "connect" })} onFollow={(e) => follow(e)}>Look on another host</Button>}>
-          Databases found
+          Databases
         </Header>
       }
       items={servers}
       trackBy="id"
-      ariaLabels={{ tableLabel: "Databases found" }}
-      empty={<Box textAlign="center">Nothing found on this machine. Add a database by hand or look on its host.</Box>}
+      ariaLabels={{ tableLabel: "Databases" }}
+      empty={<Box textAlign="center">No databases found on this machine. Enter the connection details yourself, or look on the database host.</Box>}
       wrapLines
       columnDefinitions={[
-        { id: "label", header: "Found", cell: (s) => s.label },
+        { id: "label", header: "Database or instance", cell: (s) => s.label },
         { id: "source", header: "Source", cell: (s) => sourceLabel(s.source) },
         { id: "version", header: "Version", cell: (s) => s.version ?? "-" },
         { id: "connect", header: "", cell: (s) => (

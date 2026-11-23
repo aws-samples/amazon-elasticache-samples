@@ -54,6 +54,7 @@ from pathlib import Path
 
 from src.contracts.api_models import JobInput, JobOptions, JobRecord
 from src.contracts.regions import REGION_PATTERN, valid_region
+from src.orchestrator import safe_paths
 from src.orchestrator.job_store import (
     JOB_ID_PATTERN,
     PHASE_FILES,
@@ -522,7 +523,7 @@ class LocalOrchestrator:
         self._check_job_id(job_id)
         cleared, forget = [], {}
         for phase in PHASE_ORDER[PHASE_ORDER.index(first):]:
-            folder = self.root / job_id / phase.value
+            folder = self._job_path(job_id) / phase.value
             if folder.is_dir() and not folder.is_symlink():
                 shutil.rmtree(folder)
                 cleared.append(phase.value)
@@ -783,9 +784,13 @@ class LocalOrchestrator:
                 "starting with a letter or digit"
             )
 
-    def _job_dir(self, job_id: str) -> Path:
+    def _job_path(self, job_id: str) -> Path:
+        """The job's folder, after its id is checked; refused if it resolves elsewhere."""
         self._check_job_id(job_id)
-        d = self.root / job_id
+        return safe_paths.child(self.root, job_id)
+
+    def _job_dir(self, job_id: str) -> Path:
+        d = self._job_path(job_id)
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -813,8 +818,7 @@ class LocalOrchestrator:
             FileNotFoundError: when the job or artifact does not exist.
             ValueError: for an invalid job id.
         """
-        self._check_job_id(job_id)
-        path = self.root / job_id / phase.value / filename
+        path = self._job_path(job_id) / phase.value / filename
         return json.loads(path.read_text())
 
     def load_analysis(self, job_id: str) -> dict:
@@ -837,8 +841,7 @@ class LocalOrchestrator:
 
     def load_text(self, job_id: str, phase: Phase, filename: str) -> str:
         """Load a text artifact such as report.html. Raises as load() does."""
-        self._check_job_id(job_id)
-        return (self.root / job_id / phase.value / filename).read_text(encoding="utf-8")
+        return (self._job_path(job_id) / phase.value / filename).read_text(encoding="utf-8")
 
     def get_state(self, job_id: str) -> dict:
         """The job's state, or {'status': 'not_found'} (also for an invalid id)."""

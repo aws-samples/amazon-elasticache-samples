@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Protocol
 
 from src.contracts.databases import DATABASE_ID_PATTERN, DatabaseConnection, DatabaseRecord
+from src.orchestrator import safe_paths
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ class LocalDatabaseStore:
         """
         if not valid_database_id(database_id):
             raise ValueError("invalid database id")
-        return self.dir / f"{database_id}.json"
+        return safe_paths.child(self.dir, f"{database_id}.json")
 
     def _read(self, path: Path) -> DatabaseRecord | None:
         """Read one database file.
@@ -158,8 +159,8 @@ class LocalDatabaseStore:
         """The database, or None (also for an id not in the stored form)."""
         if not valid_database_id(database_id):
             return None
-        p = self._path(database_id)
-        return self._read(p) if p.is_file() else None
+        p = safe_paths.child_or_none(self.dir, f"{database_id}.json")
+        return self._read(p) if p is not None and p.is_file() else None
 
     def _taken(self, conn: DatabaseConnection, besides: str | None) -> str | None:
         """Which other saved database has this connection.
@@ -209,8 +210,8 @@ class LocalDatabaseStore:
         if not valid_database_id(database_id):
             return False
         with self._lock:
-            p = self._path(database_id)
-            if not p.is_file():
+            p = safe_paths.child_or_none(self.dir, f"{database_id}.json")
+            if p is None or not p.is_file():
                 return False
             p.unlink()
         return True

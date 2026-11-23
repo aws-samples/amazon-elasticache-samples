@@ -236,3 +236,20 @@ def test_options_default_to_sizing_and_pricing_on():
 def test_valid_job_id_lives_here_and_in_the_orchestrator():
     from src.orchestrator import local_orchestrator
     assert local_orchestrator.valid_job_id is valid_job_id
+
+
+def test_a_symlink_inside_the_folder_is_refused_too(store, tmp_path):
+    from src.orchestrator import safe_paths
+    (tmp_path / "real").mkdir()
+    (tmp_path / "alias").symlink_to(tmp_path / "real")
+    with pytest.raises(ValueError, match="symlink"):
+        safe_paths.child(tmp_path, "alias")
+    assert safe_paths.child(tmp_path, "real") == (tmp_path / "real").resolve()
+    assert store.read_state("alias") == {"status": "not_found"}
+
+
+def test_a_job_id_with_a_trailing_newline_is_refused(store):
+    from src.orchestrator.job_store import valid_job_id
+    assert valid_job_id("job-1") and not valid_job_id("job-1\n")
+    with pytest.raises(ValueError):
+        store.job_dir("job-1\n")

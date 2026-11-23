@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from src.contracts.api_models import JobInput, JobRecord, JobSummary
+from src.orchestrator import safe_paths
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,8 @@ def valid_job_id(job_id: str) -> bool:
         True for 1 to 64 characters of letters, digits, '.', '_' and '-', starting
         with a letter or digit, and not containing '..'.
     """
-    return bool(isinstance(job_id, str) and JOB_ID_PATTERN.match(job_id) and ".." not in job_id)
+    # fullmatch: match() with "$" would also accept a trailing newline.
+    return bool(isinstance(job_id, str) and JOB_ID_PATTERN.fullmatch(job_id) and ".." not in job_id)
 
 
 def now_iso() -> str:
@@ -244,7 +246,11 @@ class LocalJobStore:
                 "invalid job id: use 1 to 64 letters, digits, '.', '_' or '-', "
                 "starting with a letter or digit"
             )
-        return self.root / job_id
+        return safe_paths.child(self.root, job_id)
+
+    def _found(self, job_id: str) -> Path | None:
+        """The job's folder for a lookup, or None for an invalid id or an unsafe path."""
+        return safe_paths.child_or_none(self.root, job_id) if valid_job_id(job_id) else None
 
     # --- records ---------------------------------------------------------
 
@@ -269,9 +275,10 @@ class LocalJobStore:
 
     def get(self, job_id: str) -> JobRecord | None:
         """The job's record, or None when absent or the id is invalid."""
-        if not valid_job_id(job_id):
+        d = self._found(job_id)
+        if d is None:
             return None
-        path = self.root / job_id / "job.json"
+        path = d / "job.json"
         if path.is_file():
             try:
                 return JobRecord.model_validate_json(path.read_text(encoding="utf-8"))
@@ -306,9 +313,10 @@ class LocalJobStore:
 
     def read_state(self, job_id: str) -> dict:
         """The job's state, or {'status': 'not_found'} (also for an invalid id)."""
-        if not valid_job_id(job_id):
+        d = self._found(job_id)
+        if d is None:
             return {"status": "not_found"}
-        path = self.root / job_id / "state.json"
+        path = d / "state.json"
         if not path.is_file():
             return {"status": "not_found"}
         try:
@@ -384,16 +392,11 @@ class LocalJobStore:
             'deleted'; 'not_found' when there is no such job; 'busy' while the job is
             queued or running. Cancel it first.
         """
-        if not valid_job_id(job_id):
-            return "not_found"
-        d = self.root / job_id
-        if not d.is_dir() or d.is_symlink():
+        d = self._found(job_id)
+        if d is None or not d.is_dir():
             return "not_found"
         if self.read_state(job_id).get("status") in UNFINISHED:
             return "busy"
-        # Belt and braces: the id is already a single safe component.
-        if d.resolve().parent != self.root.resolve():
-            return "not_found"
         shutil.rmtree(d)
         return "deleted"
 
@@ -434,12 +437,14 @@ class LocalJobStore:
 
     def cancel_requested(self, job_id: str) -> bool:
         """Whether a cancel has been requested for the job. False for an invalid id."""
-        return valid_job_id(job_id) and (self.root / job_id / CANCEL_MARKER).is_file()
+        d = self._found(job_id)
+        return d is not None and (d / CANCEL_MARKER).is_file()
 
     def clear_cancel(self, job_id: str) -> None:
         """Forget a cancel request, for a job that is about to run again."""
-        if valid_job_id(job_id):
-            (self.root / job_id / CANCEL_MARKER).unlink(missing_ok=True)
+        d = self._found(job_id)
+        if d is not None:
+            (d / CANCEL_MARKER).unlink(missing_ok=True)
 
     def expired(self, cutoff: datetime, status: str | None = None) -> list[str]:
         """Finished jobs that finished before a time.
@@ -474,9 +479,9 @@ class LocalJobStore:
         Read from the job's folder, so it is true whatever the state says. An invalid
         id has none.
         """
-        if not valid_job_id(job_id):
+        d = self._found(job_id)
+        if d is None:
             return []
-        d = self.root / job_id
         return [name for name, rel in PHASE_FILES.items() if (d / rel).is_file()]
 
     def claim_run(self, job_id: str, phases: list[str]) -> int:

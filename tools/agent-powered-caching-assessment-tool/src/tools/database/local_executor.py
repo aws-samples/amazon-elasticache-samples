@@ -36,6 +36,7 @@ from a machine that is not the database host.
 """
 
 import logging
+import re
 import subprocess  # nosec B404 — local dev tooling; args are passed as a list, never a shell string
 from typing import Any
 
@@ -44,6 +45,10 @@ from src.tools.database.tabular import PSQL_FORMAT_ARGS, parse_tabular_output
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 300
+
+
+# A host name, an IPv4 address or a bracket-free IPv6 address: never a leading "-".
+_HOST = re.compile(r"[A-Za-z0-9:][A-Za-z0-9.:-]{0,252}")
 
 
 class LocalPsqlExecutor:
@@ -101,8 +106,15 @@ class LocalPsqlExecutor:
             ]
             env = None
         else:
-            argv = [self.psql_path, "-h", host, "-p", str(port), *psql_args]
-            env = {"PGPASSWORD": self._password, "PATH": "/usr/bin:/bin:/usr/local/bin"}
+            # The host and port go to psql in its environment (PGHOST, PGPORT), like the
+            # password, so a value never reaches the command line.
+            if not isinstance(host, str) or not _HOST.fullmatch(host):
+                raise ValueError("database host must be a host name or an IP address")
+            if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+                raise ValueError("database port must be a number from 1 to 65535")
+            argv = [self.psql_path, *psql_args]
+            env = {"PGPASSWORD": self._password, "PGHOST": host, "PGPORT": str(port),
+                   "PATH": "/usr/bin:/bin:/usr/local/bin"}
 
         return self._run(argv, timeout, env)
 
