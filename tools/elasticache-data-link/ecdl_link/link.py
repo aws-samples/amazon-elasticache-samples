@@ -335,16 +335,9 @@ def _source_problems(source):
                 'source.username',
                 "is required for an external source: there is no RDS "
                 "MasterUsername to fall back to"))
-        if source.get('tls') is False:
-            # Nothing passes it on: the templates have no source TLS parameter,
-            # so Debezium and the loader connect with their drivers' defaults
-            # whatever this says. Accepting it would claim a setting that does
-            # not take effect.
-            problems.append(Problem(
-                'source.tls',
-                'cannot be turned off: the pipeline has no source TLS setting yet, '
-                "so Debezium and the loader would connect with their drivers' "
-                'defaults anyway. Remove it.'))
+        # tls: false is accepted since 0.2.34: both stacks have a SourceTLS
+        # parameter (Debezium and the loader), set from it. It used to be
+        # refused because nothing passed it on.
 
     return problems
 

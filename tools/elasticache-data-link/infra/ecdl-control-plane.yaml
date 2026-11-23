@@ -145,7 +145,7 @@ Parameters:
   # never followed a release and `release.sh pin` could not update it.
   ImageTag:
     Type: String
-    Default: 0.2.31
+    Default: 0.2.39
     Description: >
       Version tag of the control-plane images in this account's ECR, as
       published by ./release.sh push. `./release.sh pin` sets it to
@@ -242,9 +242,9 @@ Parameters:
       Optional. The source and target secrets pipeline tasks may read, comma
       separated (full ARNs; a trailing * is allowed). Applied through the task
       roles' permissions boundary, so no pipeline task can read any other
-      secret. Empty allows the secrets tagged ecdl:link (any value) instead:
-      tag each source and target secret, or list them here. ECDL's own broker
-      secrets are always allowed.
+      secret except the ones tagged ecdl:link (any value), which are allowed
+      whether or not this list is set: tag each source and target secret, or
+      list them here. ECDL's own broker secrets are always allowed.
 
 Rules:
   # A missing value would otherwise create a control plane that cannot be reached.
@@ -1003,11 +1003,10 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ManagedResourcePrefix}-*'
               - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${ManagedResourcePrefix}-*:*'
           # Pipeline secrets: the source credential, the target credential and
-          # the broker auth token. With PipelineSecretArns set, only those
-          # secrets and ECDL's own. With it empty, ECDL's own and any secret
-          # tagged ecdl:link (a customer's database secret can have any name,
-          # so the tag is what marks it for pipelines). This used to allow
-          # every secret in the account when the list was empty.
+          # the broker auth token: the ones in PipelineSecretArns, ECDL's own,
+          # and any secret tagged ecdl:link (a customer's database secret can
+          # have any name, so the tag is what marks it for pipelines). This used
+          # to allow every secret in the account when the list was empty.
           - Sid: ReadPipelineSecrets
             Effect: Allow
             Action: secretsmanager:GetSecretValue
@@ -1022,17 +1021,15 @@ Resources:
                     - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:BrokerAuthSecret-*'
               - - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ManagedResourcePrefix}-*'
                 - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:BrokerAuthSecret-*'
-          # The tag admits a secret only when the list is empty. With a list
-          # this statement is limited to ECDL's own secrets, which the one
-          # above already allows. (A conditional statement would be simpler,
-          # but the policy scanners then skip the whole boundary.)
+          # The tag admits a secret with or without a list. It used to count
+          # only when the list was empty, so an RDS-managed secret (named
+          # rds!...) that was tagged but not listed stopped the tasks at start.
+          # Tagging a secret takes permission on that secret, so the tag is its
+          # owner's opt-in.
           - Sid: ReadSecretsTaggedForEcdl
             Effect: Allow
             Action: secretsmanager:GetSecretValue
-            Resource: !If
-              - HasPipelineSecretArns
-              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ManagedResourcePrefix}-*'
-              - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*'
+            Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*'
             Condition:
               'Null':
                 aws:ResourceTag/ecdl:link: 'false'
@@ -1750,7 +1747,7 @@ Resources:
                 - AccessLoadBalancer
                 - '-e ECDL_ALLOWED_HOSTS="$ALLOWED_HOSTS" -e ECDL_ALLOWED_ORIGINS='
                 - '-e ECDL_ALLOWED_HOSTS="$ALLOWED_HOSTS"'
-            ReadyHandle: !Ref ReadyHandleV0x2x31
+            ReadyHandle: !Ref ReadyHandleV0x2x39
 
   # Jira story F179. A CreationPolicy gates only the instance's creation, and
   # CloudFormation re-evaluates no wait condition on an update, so an update
@@ -1763,13 +1760,13 @@ Resources:
   # no signal within the timeout rolls the update back, to the previous
   # images. A parameter-only update of the same release (another
   # BackendImage, say) is not gated.
-  ReadyHandleV0x2x31:
+  ReadyHandleV0x2x39:
     Type: AWS::CloudFormation::WaitConditionHandle
-  ReadyV0x2x31:
+  ReadyV0x2x39:
     Type: AWS::CloudFormation::WaitCondition
     DependsOn: Instance
     Properties:
-      Handle: !Ref ReadyHandleV0x2x31
+      Handle: !Ref ReadyHandleV0x2x39
       Count: 1
       # The restart, the image pulls and the 150s health check, with room.
       Timeout: '1200'

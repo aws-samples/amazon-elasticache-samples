@@ -1145,6 +1145,7 @@ def _deploy(body, action='deploy', source=None):
             deployer = Deployer(clients, template_body=_template_body,
                                 on_progress=progress, offset_probe=probe,
                                 reset_position=reset, pg_slot_dropped=pg_slot_dropped,
+                                allow_downgrade=bool(body.get('allow_downgrade')),
                                 **_deploy_settings())
             try:
                 result = deployer.run(plan_doc)

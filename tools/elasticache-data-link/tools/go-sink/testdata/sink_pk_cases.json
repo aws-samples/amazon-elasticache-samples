@@ -1,5 +1,5 @@
 {
-  "about": "The row identity in a cache key (<prefix><table>:<pk>), shared by the Go sink and the bulk loader. The sink derives <pk> from the change event's key (pkFromMsg, main.go); the loader from the row it read (sink_pk, data-plane/bulk-loader/bulk_loader.py). Both test suites read this file, so a change to either format fails the other's tests. key_columns is the primary key in declared order; key_json is the record key as Debezium sends it (columns in key order); row is the source row, where {\"$decimal\": \"...\"} is a DECIMAL/NUMERIC value. Composite values are joined with ':' in the sorted order of the column names, not key order.",
+  "about": "The row identity in a cache key (<prefix><table>:<pk>), shared by the Go sink and the bulk loader. The sink derives <pk> from the change event's key (pkFromMsg, main.go); the loader from the row it read (sink_pk, data-plane/bulk-loader/bulk_loader.py). Both test suites read this file, so a change to either format fails the other's tests. key_columns is the primary key in declared order; key_json is the record key as Debezium sends it (columns in key order); row is the source row, where {\"$decimal\": \"...\"} is a DECIMAL/NUMERIC value. Composite values are joined with ':' in the sorted order of the column names, not key order, each with '\\\\' doubled and ':' escaped as '\\\\:'.",
   "cases": [
     {"name": "single integer", "key_columns": ["id"],
      "row": {"id": 42, "name": "x"}, "key_json": "{\"id\":42}", "pk": "42"},
@@ -27,8 +27,16 @@
     {"name": "upper case sorts before lower case", "key_columns": ["b", "A"],
      "row": {"b": "lower", "A": "upper"},
      "key_json": "{\"b\":\"lower\",\"A\":\"upper\"}", "pk": "upper:lower"},
-    {"name": "a value containing the separator", "key_columns": ["k1", "k2"],
+    {"name": "a value containing the separator is escaped", "key_columns": ["k1", "k2"],
      "row": {"k1": "a:b", "k2": "c"}, "key_json": "{\"k1\":\"a:b\",\"k2\":\"c\"}",
-     "pk": "a:b:c"}
+     "pk": "a\\:b:c"},
+    {"name": "so the row it used to collide with keeps its own key", "key_columns": ["k1", "k2"],
+     "row": {"k1": "a", "k2": "b:c"}, "key_json": "{\"k1\":\"a\",\"k2\":\"b:c\"}",
+     "pk": "a:b\\:c"},
+    {"name": "a backslash in a composite value is doubled", "key_columns": ["k1", "k2"],
+     "row": {"k1": "a\\", "k2": ":c"}, "key_json": "{\"k1\":\"a\\\\\",\"k2\":\":c\"}",
+     "pk": "a\\\\:\\:c"},
+    {"name": "a single column is never escaped", "key_columns": ["sku"],
+     "row": {"sku": "AB:1\\x"}, "key_json": "{\"sku\":\"AB:1\\\\x\"}", "pk": "AB:1\\x"}
   ]
 }

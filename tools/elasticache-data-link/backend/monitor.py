@@ -3332,7 +3332,7 @@ def integrity_verdict(dlq_len, evicted, retrying, stuck_ms, mem_pct,
 
 
 INTEGRITY_HEADLINE = {
-    'loss': 'ENTRIES LOST — dead-lettered or evicted, see below',
+    'loss': 'ENTRIES LOST — dead-lettered, evicted, or wrong in the cache, see below',
     'stalled': 'BACKLOG NOT DRAINING — nothing is consuming; entries are queued, '
                'not lost, but the broker will fill',
     'stuck': 'entries stuck past the retry window — not progressing on their own',
@@ -3344,6 +3344,39 @@ INTEGRITY_HEADLINE = {
     'unknown': 'integrity unknown — a stream could not be read, so loss cannot '
                'be ruled out',
 }
+
+
+# Loss the broker cannot show, in the last hour: from the sink (keys the target
+# evicted, pending changes deleted before they were applied, dead letters
+# dropped at DLQ_MAX_LEN) and from the sampled cache check (rows missing,
+# different or still cached although gone; data-plane/bulk-loader/verify.py).
+LOSS_SIGNALS = ('target_evicted_keys', 'pending_vanished', 'dlq_dropped',
+                'verify_missing', 'verify_different', 'verify_extra')
+
+
+def delivery_losses(window=3600):
+    """{signal: count in the last `window` seconds}; a signal CloudWatch has
+    no datapoint for is None (not published, or this link has no loader)."""
+    sink = {'ClusterName': CFG['ecs_cluster'], 'ServiceName': CFG['sink_service']}
+    out = {}
+    for key, metric in (('target_evicted_keys', 'TargetEvictedKeys'),
+                        ('pending_vanished', 'PendingVanished'), ('dlq_dropped', 'DLQDropped')):
+        out[key] = _cw_sum('ECDL/CDCSink', metric, sink, window)
+    link = CFG.get('link_name') or ''
+    if link:
+        for key, metric in (('verify_missing', 'RowsMissing'), ('verify_different', 'RowsDifferent'),
+                            ('verify_extra', 'RowsExtra')):
+            # The latest check counts, not a sum: each run samples anew.
+            out[key] = cw_latest('ECDL/Verify', metric, {'Link': link}, stat='Maximum',
+                                 period=window, window=window)
+        out['verify_checked'] = cw_latest('ECDL/Verify', 'RowsChecked', {'Link': link},
+                                          stat='Maximum', period=window, window=window)
+    return out
+
+
+def _cw_sum(namespace, metric, dimensions, window):
+    value = cw_latest(namespace, metric, dimensions, stat='Sum', period=window, window=window)
+    return None if value is None else int(value)
 
 
 def integrity_for_stream(broker, spec):
@@ -3535,13 +3568,20 @@ def collect_integrity():
     out = with_broker(read)
     rows = out.get('tables') or []
     healthy = [r for r in rows if r.get('ok')]
+    # Review finding H5: the verdict could say "no loss" while data was lost.
+    # Its only eviction input was the BROKER's evicted_keys (the broker runs
+    # noeviction, so always 0), and it never saw the losses the sink and the
+    # cache check count. These are link-wide, so every table sees them.
+    lost = soft(delivery_losses)
+    out['delivery_losses'] = lost
+    lost_now = sum(int(lost.get(k) or 0) for k in LOSS_SIGNALS)
 
     # Per-table verdict FIRST, using the same pure function, so a table cannot be
     # reported clean because the others are. The memory and eviction signals are
     # link-wide, so every table sees them.
     for row in healthy:
         row['verdict'] = integrity_verdict(
-            row.get('dead_lettered'), out.get('evicted_keys'), row.get('retrying'),
+            row.get('dead_lettered'), (out.get('evicted_keys') or 0) + lost_now, row.get('retrying'),
             row.get('oldest_unacked_ms'), out.get('broker_used_pct'),
             backlog=row.get('undelivered'), applied_per_sec=row.get('drained_per_sec'),
             still_sec=row.get('undelivered_still_sec'),
@@ -3599,6 +3639,10 @@ def collect_integrity():
         if bad:
             out['affected_tables'] = bad
             out['headline'] = '{} ({})'.format(out['headline'], ', '.join(bad))
+    if lost_now:
+        out['loss_note'] = 'in the last hour: ' + ', '.join(
+            '{} {}'.format(k.replace('_', ' '), int(lost[k]))
+            for k in LOSS_SIGNALS if int(lost.get(k) or 0))
     if unreadable:
         out['unreadable_streams'] = [r['stream'] for r in unreadable]
         out['stream_note'] = (

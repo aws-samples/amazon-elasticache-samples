@@ -592,6 +592,24 @@ class CaptureStreamingTest(unittest.TestCase):
         self.assertEqual(d.capture_state, 'running')
         self.assertFalse(d.capture_verified)
 
+    def test_no_heartbeat_quotes_what_debezium_logged(self):
+        class Logs(object):
+            calls = []
+            def filter_log_events(self, **kw):
+                self.calls.append(kw['logGroupName'])
+                return {'events': [{'message': '2026-11-21 12:42:46,306 ERROR [io.deb.pip.ErrorHandler] '
+                                               'Producer failure: SQLServerException: error 313'}]}
+        logs = Logs()
+        ecs = FakeECS(clusters=['ecdl-checkout'], running={'ecdl-checkout-cdc-debezium': [0, 1]})
+        d = Deployer(Clients(cloudformation=_handoff_cfn(), ecs=ecs, logs=logs),
+                     template_body=lambda name: 'T', poll_seconds=1, sleep=lambda _s: None,
+                     offset_probe=self.probe([self.START - 60_000]), capture_wait_seconds=2)
+        with self.assertRaises(DeployError) as caught:
+            d.run(_handoff_plan())
+        self.assertIn('Producer failure: SQLServerException: error 313', caught.exception.hint)
+        self.assertIn('/ecs/ecdl-checkout-cdc/debezium', logs.calls)
+        self.assertIn('Debezium log group', caught.exception.hint)
+
     def test_no_heartbeat_stream_at_all_also_fails(self):
         _d, _ecs, _events, _result, err = self.run_handoff(self.probe([0]), wait=2)
         self.assertIn('no heartbeat', str(err))

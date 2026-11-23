@@ -16,18 +16,15 @@
 //   * the pipeline IS the link
 // So one page defines a link, and everything else reports on it.
 //
-// The old pages are kept, behind a collapsed group labelled as superseded, so
-// the records in them can still be read and edited (the Randomizer uses the
-// data sources). They can no longer generate or deploy anything: those
-// endpoints put database and cache credentials in plain text into the files
-// and EC2 user data they produced, and were removed.
+// The old pages were removed (review finding H10). They deployed nothing, and
+// the data-source endpoints behind them connected to any host a user typed
+// in, with a secret the control plane's role read.
 // ═══════════════════════════════════════════════════════════════════════════
 import React, { useState } from 'react';
 import './Sidebar.css';
 
 function Sidebar({ activeView, setActiveView }) {
   const [adminExpanded, setAdminExpanded] = useState(false);
-  const [legacyExpanded, setLegacyExpanded] = useState(false);
 
   const item = (view, label) => (
     <button
@@ -62,33 +59,6 @@ function Sidebar({ activeView, setActiveView }) {
 
       {/* "4. Test" (the Randomizer, a data generator that writes to the source
           database) is hidden until it is ready. App.wiring.test.js keeps it out. */}
-
-      {/* Superseded by Links. Collapsed, and labelled, so that a user does not start here by
-          accident and then wonder why their pipeline does not exist. */}
-      <div className="sidebar-group">
-        <div
-          className="group-title-collapsible"
-          onClick={() => setLegacyExpanded(!legacyExpanded)}
-        >
-          <span className="group-title-legacy">Superseded by Links</span>
-          <span className={`expand-arrow ${legacyExpanded ? 'expanded' : ''}`}>▶</span>
-        </div>
-        {legacyExpanded && (
-          <>
-            <p className="sidebar-note">
-              These describe a source, connector, broker, target and pipeline as
-              separate objects. A link replaces all five. Kept for reference.
-            </p>
-            {item('sources', 'Data Sources')}
-            {item('connectors', 'Connectors')}
-            {item('brokers', 'Brokers')}
-            {item('targets', 'Valkey Targets')}
-            {item('pipelines', 'Pipelines')}
-            {item('deployments', 'Pipeline Deployments')}
-            {item('monitor', 'Monitor')}
-          </>
-        )}
-      </div>
 
       <div className="sidebar-group">
         <div

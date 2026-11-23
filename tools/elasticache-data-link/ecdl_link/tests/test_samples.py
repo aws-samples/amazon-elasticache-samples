@@ -50,7 +50,8 @@ class SampleLinkTest(unittest.TestCase):
 
 class SampleSafetyTest(unittest.TestCase):
     def test_no_real_account_or_secret(self):
-        for name in os.listdir(SAMPLES):
+        # Files only: running the suite leaves a __pycache__ directory here.
+        for name in sorted(n for n in os.listdir(SAMPLES) if os.path.isfile(os.path.join(SAMPLES, n))):
             text = read(name)
             for account in re.findall(r'\b\d{12}\b', text):
                 self.assertEqual(account, '111122223333', name)

@@ -188,6 +188,11 @@ def _cdc_parameters(resolved, images, sink, network, debezium, debezium_desired)
         params['PgSlotName'] = pg_slot_name(resolved['name'])
         params['PgPublicationName'] = pg_publication_name(resolved['name'])
 
+    # Debezium verifies TLS to the source unless the link turns it off, which
+    # only an external source can (as for the loader, _loader_parameters).
+    if src.get('external') and src.get('tls') is False:
+        params['SourceTLS'] = 'false'
+
     transforms = _transforms_json(resolved)
     if transforms:
         params['TransformsJson'] = transforms
@@ -1023,6 +1028,12 @@ def _loader_parameters(resolved, images, loader, network):
     # which only an external source can. Sent only then, as an override.
     if src.get('external') and src.get('tls') is False:
         params['SourceTLS'] = 'false'
+    # The sampled cache check (review finding C1) only means something while
+    # capture keeps the cache up to date: a one-time load drifts by design.
+    if resolved.get('mode') == 'initial_load':
+        params['VerifyIntervalMinutes'] = '0'
+    if src['engine'] == 'postgresql':
+        params['PgSlotName'] = pg_slot_name(resolved['name'])
     if loader.get('fetch_batch'):
         params['FetchBatch'] = str(loader['fetch_batch'])
     # The load alarm (a load task that stops with an error) follows the

@@ -19,6 +19,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Properties;
@@ -29,7 +30,8 @@ import io.debezium.server.redis.EcdlOffsetBackingStore.SlotState;
 public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
 
     static final String DRIVER = "org.postgresql.Driver";
-    static final String QUERY = "SELECT database, plugin FROM pg_replication_slots WHERE slot_name = ?";
+    // SELECT *: wal_status exists from PostgreSQL 13 only.
+    static final String QUERY = "SELECT * FROM pg_replication_slots WHERE slot_name = ?";
     /** Debezium's default slot.name. */
     static final String DEFAULT_SLOT = "debezium";
     private static final int TIMEOUT_SECONDS = 10;
@@ -82,6 +84,17 @@ public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
         return "'" + slot + "' on " + host + ":" + port + "/" + database;
     }
 
+    /** A column's value, or null when this PostgreSQL version has no such column. */
+    static String column(ResultSet rs, String name) throws SQLException {
+        ResultSetMetaData md = rs.getMetaData();
+        for (int i = 1; i <= md.getColumnCount(); i++) {
+            if (name.equalsIgnoreCase(md.getColumnName(i))) {
+                return rs.getString(i);
+            }
+        }
+        return null;
+    }
+
     @Override
     public SlotResult check() {
         try {
@@ -98,7 +111,13 @@ public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
                 if (!rs.next()) {
                     return new SlotResult(SlotState.ABSENT, "not in pg_replication_slots");
                 }
-                return new SlotResult(SlotState.PRESENT, "database " + rs.getString(1) + ", plugin " + rs.getString(2));
+                String walStatus = column(rs, "wal_status");
+                String detail = "database " + rs.getString("database") + ", plugin " + rs.getString("plugin")
+                        + (walStatus == null ? "" : ", wal_status " + walStatus);
+                // Review finding H6: PostgreSQL invalidates a slot that fell
+                // more than max_slot_wal_keep_size behind. It is still listed,
+                // but the WAL it needs is gone, so it looked present.
+                return new SlotResult("lost".equals(walStatus) ? SlotState.LOST : SlotState.PRESENT, detail);
             }
         }
         catch (SQLException e) {

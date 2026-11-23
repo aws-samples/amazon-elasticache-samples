@@ -96,7 +96,12 @@ func planMessage(msg redis.XMessage, eventFormat, streamTable string) (key strin
 		// No op in a flat event, so a placeholder is dropped without a warning
 		// (see unavailable.go); a flat write is always a merge.
 		row, _ = dropUnavailable(row)
-		out, keep := transformSpec.Apply(streamTable, stringifyRow(row))
+		flat := stringifyRow(row)
+		if f := transformSpec.MissingFilterField(streamTable, flat); f != "" {
+			filterUnreadable(streamTable, f)
+			return "", nil, false, true, false
+		}
+		out, keep := transformSpec.Apply(streamTable, flat)
 		if !keep {
 			return key, nil, true, false, false // filtered out -> delete
 		}
@@ -130,7 +135,12 @@ func planMessage(msg redis.XMessage, eventFormat, streamTable string) (key strin
 	// left out, so the cached value stays; see unavailable.go.
 	after, dropped := dropUnavailable(evt.After)
 	warnUnavailable(evt.Source.Table, evt.Op, dropped)
-	out, keep := transformSpec.Apply(evt.Source.Table, stringifyRow(after))
+	row := stringifyRow(after)
+	if f := transformSpec.MissingFilterField(evt.Source.Table, row); f != "" {
+		filterUnreadable(evt.Source.Table, f)
+		return "", nil, false, true, false
+	}
+	out, keep := transformSpec.Apply(evt.Source.Table, row)
 	if !keep {
 		return key, nil, true, false, false // filtered out / pushed out of scope -> delete
 	}
@@ -138,8 +148,16 @@ func planMessage(msg redis.XMessage, eventFormat, streamTable string) (key strin
 	for k, v := range out {
 		f[k] = v
 	}
-	// A replace would delete the value a dropped field leaves in the cache.
-	return key, f, false, false, evt.Op == "r" && len(dropped) == 0
+	// Review finding M10: an insert, update or snapshot read carries the whole
+	// row (binlog_row_image=FULL, pgoutput, the CDC tables, LogMiner with
+	// supplemental logging), so it replaces the key. Updates used to merge, so a
+	// field the row no longer has -- a column renamed or dropped at the source,
+	// or one the transform no longer produces -- stayed in the cache for good.
+	// Not with a placeholder: a replace would delete the value a dropped field
+	// leaves in the cache. Tables in a denormalize rule go through
+	// processDenorm, which keeps the fields it embeds.
+	whole := evt.Op == "r" || evt.Op == "c" || evt.Op == "u"
+	return key, f, false, false, whole && len(dropped) == 0
 }
 
 // processOne applies a single message to the target. Returns:
@@ -235,6 +253,14 @@ func processOne(ctx context.Context, target redis.UniversalClient, msg redis.XMe
 func deadLetter(ctx context.Context, broker redis.UniversalClient, m redis.XMessage, stream, group, reason string,
 	retries int64, cause error) error {
 	val, _ := m.Values["value"].(string)
+	if reason == "poison" {
+		if table, field := missingFilterFieldOf(val); field != "" {
+			// Parseable, and replayable once the link's filter is fixed.
+			reason = "filter-field-missing"
+			cause = fmt.Errorf("table %s: no field %q, which the filter reads; fix the filter, "+
+				"apply the link, then replay", table, field)
+		}
+	}
 	// Why it failed, so the dead letter says what to fix before a replay.
 	why := ""
 	if cause != nil {

@@ -362,7 +362,7 @@ class CpuArchitectureTest(unittest.TestCase):
     def test_every_task_definition_sets_a_runtime_platform(self):
         root = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))))
-        for name, count in (('ecdl-cdc-ecs.yaml', 2), ('ecdl-loader-ecs.yaml', 1)):
+        for name, count in (('ecdl-cdc-ecs.yaml', 2), ('ecdl-loader-ecs.yaml', 2)):
             with open(os.path.join(root, 'infra', name)) as handle:
                 src = handle.read()
             self.assertEqual(src.count('Type: AWS::ECS::TaskDefinition'), count, name)
@@ -1219,6 +1219,19 @@ class SourceTLSTest(unittest.TestCase):
     def test_the_change_is_a_setting_not_an_unexplained_refusal(self):
         from ecdl_link.change import SECTION
         self.assertEqual(SECTION.get('SourceTLS'), 'source.tls')
+    def cdc_params(self, **source):
+        r = resolution('initial_load_and_cdc')
+        r['source'].update(source)
+        if source.get('external'):
+            r['source']['security_group_ids'] = []
+        return steps_by_id(plan(r))['cdc']['parameters']
+    def test_debezium_follows_the_same_rule(self):
+        # Review finding H1: Debezium verifies TLS too, and the CDC stack has the
+        # same SourceTLS parameter, sent only to turn it off.
+        self.assertNotIn('SourceTLS', self.cdc_params())
+        self.assertNotIn('SourceTLS', self.cdc_params(external=True, tls=True))
+        self.assertNotIn('SourceTLS', self.cdc_params(tls=False))
+        self.assertEqual(self.cdc_params(external=True, tls=False)['SourceTLS'], 'false')
 
 
 class FetchBatchTest(unittest.TestCase):

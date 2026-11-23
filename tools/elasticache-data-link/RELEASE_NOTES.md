@@ -1,4 +1,135 @@
 # Release notes
+## 0.2.39
+### Check before you upgrade
+- **The pages superseded by links are gone**: Data Sources, Connectors,
+  Brokers, Targets, Pipelines, Pipeline Deployments, the old Monitor and the
+  Randomizer, with their API (`/api/sources`, `/api/connectors`,
+  `/api/brokers`, `/api/targets`, `/api/pipelines`, `/api/deployments`,
+  `/api/randomizer`). Links replace them. Their records stay in the control
+  plane's database; a backup still includes them.
+### Changed
+- CI runs the integration suites against real Valkey servers (a primary with a
+  replica, a cluster) and the Debezium broker writer's unit and integration
+  tests, which used to be skipped or run only by hand.
+## 0.2.38
+Supersedes 0.2.37, whose loader stopped on a uuid or uniqueidentifier key.
+### Fixed
+- The load of a table keyed by a PostgreSQL uuid or a SQL Server
+  uniqueidentifier stopped at once: neither type has MIN/MAX. The key range
+  is now read from the ends of the index.
+## 0.2.37
+### Check before you upgrade
+- **Update the control plane before any link**, as for 0.2.29.
+- **The deploy preflight blocks more**: a MySQL user without `REPLICATION
+  SLAVE`/`REPLICATION CLIENT` or a source with `binlog_row_value_options=
+  PARTIAL_JSON`; a PostgreSQL user without replication, a publication that does
+  not publish updates or deletes, and a partitioned table whose publication
+  does not publish via the partition root. Each finding prints the fix.
+- An update with an older release than a stack runs is refused; use
+  `--allow-downgrade` to go back on purpose.
+### Fixed
+- Tables whose key is not an integer (uuid, text, date) can be loaded. The
+  load stopped with `FATAL: ... split into integer ranges`.
+- One deploy of a link at a time, whether from the CLI or the control plane
+  (a lock in the link's broker that expires 2 minutes after its holder stops).
+- Every insert and update replaces the cached row, so a column renamed or
+  dropped at the source no longer leaves its old field in the cache.
+- Partitioned PostgreSQL tables are listed; the preflight said they did not
+  exist.
+## 0.2.36
+### Check before you upgrade
+- **Update the control plane before any link**, as for 0.2.29.
+- **MySQL tables with `BIGINT UNSIGNED` values of 2^63 or more**: reload them;
+  their values and keys were negative and are now exact.
+- A link whose source ARN is a read replica or an Aurora instance is refused at
+  the next apply; point it at the primary or the cluster ARN.
+### Fixed
+- MySQL `BIGINT UNSIGNED` is cached exactly. 18446744073709551615 was cached
+  as `-1`, by the loader and by CDC.
+- A read replica's ARN, or an Aurora instance's ARN, is refused as a source
+  with the ARN to use instead. Capture failed on a replica, and stayed on an
+  Aurora instance after a failover made it a reader.
+## 0.2.35
+Observability: a regular check of the cache against the source, loss the
+monitor could not see, and the sources' own capture health.
+### Check before you upgrade
+- **Update the control plane before any link**, as for 0.2.29. Then apply each
+  link once, so its loader stack gets the check's task definition.
+### Added
+- **The cache is checked against the source** every 15 minutes, read only, for
+  links that load and then stream. It samples about 150 rows per table from
+  random primary keys and about 50 cache keys, works out what the cache should
+  hold with the loader's own rules (a row the filter drops must be absent),
+  and reports only rows still wrong 5 and 30 seconds later. Metrics
+  `ECDL/Verify` `RowsMissing`, `RowsDifferent`, `RowsExtra`; see
+  docs/operations.md, Checking the cache against the source. About $1 a month
+  per link.
+- The same run reports PostgreSQL replication-slot lag and `wal_status`
+  (`SourceSlotLagBytes`) and the age of the SQL Server capture job's newest
+  change (`SourceCaptureAgeSeconds`), with an ERROR line when the slot is
+  about to be or was invalidated, or the capture job is stopped.
+### Fixed
+- The Pipeline Monitor's integrity verdict said "no loss" while the sink
+  counted evicted target keys, vanished entries or dropped dead letters. Those,
+  and the cache check's findings, now make it `loss`.
+- Debezium refuses to start on a PostgreSQL slot that was invalidated
+  (`wal_status` lost); it was listed, so it looked present.
+- A stopping sink task publishes its last interval of counters.
+## 0.2.34
+Fixes the review findings that let the cache hold wrong data with no error,
+and verifies TLS from Debezium to the source.
+### Check before you upgrade
+- **Update the control plane before any link**, as for 0.2.29.
+- **External sources without a CA-signed certificate need `source.tls: false`.**
+  Debezium now verifies the source certificate and host name. A server with
+  a self-signed certificate, or one reached by IP address, fails with a
+  certificate error until its link sets `tls: false` (now accepted).
+- **SQL Server and Oracle links: run `ecdl signal ddl <link>.yaml` again**
+  for the new signalling collection name. The table is the same.
+- **Composite primary keys whose values contain `:` or `\`**: reload those
+  tables and delete their old keys; the key format of such rows changed.
+### Fixed
+- Two links whose cache keys nest (table `shop`, and another link with
+  `key_prefix: shop`) are refused like links with equal keys. A reload of
+  one deleted the other's rows.
+- A change without the column a filter reads (the column was renamed or
+  dropped, or an unchanged TOAST/LOB value) is dead-lettered with reason
+  `filter-field-missing`, replayable after the filter is fixed. It used to
+  delete the row from the cache.
+- MySQL: a table in another database (`Sales.orders`) is captured. It was
+  loaded and then never updated.
+- SQL Server and Oracle: signals name `database.schema.table`, as Debezium
+  3.0 needs. Every signal was ignored, so an added table or a changed
+  transform was never back-filled.
+- A composite key with `:` in a value no longer shares a cache key with
+  another row.
+- Debezium verifies TLS to the source: MySQL `verify_identity`, PostgreSQL
+  `verify-full`, SQL Server encrypted with a truststore (it was plaintext).
+- A redeploy after a failed update quoted the old update's failure.
+## 0.2.33
+- A failed deploy quoted the entrypoint's start-up lines (JVM heap, source
+  engine) as if they were the cause. It now quotes only error lines, and the
+  missing `source.secret_json_key` message names the fix on its first line.
+## 0.2.32
+Fixes three defects found in end-to-end tests of SQL Server 2022 on EC2 and
+Aurora PostgreSQL 16.
+### Check before you upgrade
+- **Update the control plane before any link**, as for 0.2.29.
+- **SQL Server links: run `ecdl signal ddl <link>.yaml` again** and apply the
+  `GRANT INSERT, DELETE` it prints (not needed for `sa` or `db_owner`).
+### Fixed
+- SQL Server: a link deployed on a source with no writes since CDC was
+  enabled failed every poll with error 313 and never streamed. Debezium now
+  writes and deletes one row in the link's signalling table 20 seconds after
+  it starts and then every 5 minutes, so the capture job always has a recent
+  transaction. A failed write is one WARN and never stops capture.
+- Secrets: a secret tagged `ecdl:link` was denied to link tasks as soon as
+  `PipelineSecretArns` held any ARN, and the task failed with
+  `ResourceInitializationError`. The tag is now honoured either way.
+- Deploy errors: a stack failure or a capture that never streams now quotes
+  why ECS stopped the task and the task log's last ERROR, FATAL and `ECDL:`
+  lines, instead of only "ECS Deployment Circuit Breaker was triggered" or
+  "no heartbeat".
 ## 0.2.31
 Fixes the known vulnerabilities in the images and their dependencies.
 (0.2.30 was published with the same changes except the Alpine Python

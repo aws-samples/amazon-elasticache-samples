@@ -635,6 +635,7 @@ def cmd_apply(args):
                             on_progress=show, offset_probe=probe,
                             allow_unverified_offset=bool(getattr(args, "offset_checked", False)),
                             reset_position=reset, pg_slot_dropped=slot_dropped,
+                            allow_downgrade=bool(getattr(args, "allow_downgrade", False)),
                             # None: the link's advanced.loader.timeout_minutes,
                             # else six hours (Jira story F068).
                             load_timeout_seconds=load_timeout * 60 if load_timeout else None)
@@ -721,6 +722,9 @@ def cmd_signal(args):
             from ecdl_link.signals import mysql_signal_grant_sql
             print("-- Debezium writes its snapshot markers into the signalling table:")
             print(mysql_signal_grant_sql(collection, resolution["source"].get("username")))
+        if engine == "sqlserver":
+            from ecdl_link.signals import sqlserver_prerequisite_sql
+            print(sqlserver_prerequisite_sql(collection, resolution["source"].get("username")))
         if engine == "postgresql":
             from ecdl_link.signals import pg_prerequisite_sql
             publication, problem = _link_publication(args, resolution["name"])
@@ -734,8 +738,10 @@ def cmd_signal(args):
         return
 
     # snapshot
-    known = {t["table"]: t["qualified"] for t in resolution["tables"]}
-    known.update({t["input"]: t["qualified"] for t in resolution["tables"]})
+    # As a signal names them: database.schema.table on SQL Server and Oracle.
+    from ecdl_link.signals import data_collection
+    known = {t["table"]: data_collection(engine, t) for t in resolution["tables"]}
+    known.update({t["input"]: data_collection(engine, t) for t in resolution["tables"]})
     if args.tables:
         wanted = [t.strip() for t in args.tables.split(",") if t.strip()]
         unknown = [t for t in wanted if t not in known]
@@ -748,7 +754,7 @@ def cmd_signal(args):
             if known[t] not in collections:
                 collections.append(known[t])
     else:
-        collections = [t["qualified"] for t in resolution["tables"]]
+        collections = [data_collection(engine, t) for t in resolution["tables"]]
 
     signal = snapshot_signal(collections)
     sql, values = insert_statement(engine, collection, signal)
@@ -825,7 +831,10 @@ def _snapshot_watch(args, resolution, collections):
                 "log group instead")
     if not cdc:
         return "the link has no CDC stack"
-    streams = [t["stream"] for t in resolution["tables"] if t["qualified"] in collections]
+    from ecdl_link.signals import data_collection
+    engine = resolution["source"]["engine"]
+    streams = [t["stream"] for t in resolution["tables"]
+               if data_collection(engine, t) in collections]
     return (broker, streams, cdc.get("OffsetKey") or offset_key(resolution["name"]),
             stream_positions(broker, streams))
 
@@ -934,6 +943,10 @@ def main():
                         "or the source does (a missing table or column, GTIDs off, "
                         "a load longer than the log retention). It does not override "
                         "a key clash with another pipeline.")
+    p.add_argument("--allow-downgrade", action="store_true",
+                   help="update a link whose stacks run a newer release than this "
+                        "CLI's templates (refused otherwise, so an old checkout "
+                        "cannot move a link back to older images by accident)")
     p.add_argument("--offset-checked", action="store_true",
                    help="Pause capture for a load even though this machine cannot "
                         "read the broker to confirm Debezium committed a log "

@@ -71,9 +71,12 @@ def signal_collection(engine, link_name, database, schema=None, override=None):
     other three by schema. Getting this wrong is silent: the connector starts
     normally, never finds the table, and every signal is ignored indefinitely.
     """
-    if override:
-        return _checked_collection(override)
     facts = ENGINE_FACTS.get(engine)
+    if override:
+        override = _checked_collection(override)
+        if engine in _DATABASE_QUALIFIED and override.count('.') == 1 and database:
+            override = _with_database(engine, database, override)
+        return override
     if not facts:
         raise SignalError('unsupported engine {!r}'.format(engine))
     table = signal_table_name(link_name)
@@ -90,8 +93,52 @@ def signal_collection(engine, link_name, database, schema=None, override=None):
     if engine == 'oracle':
         # Oracle folds unquoted identifiers to upper case, so the collection name
         # the connector matches on is upper case too.
-        return _checked_collection('{}.{}'.format(qualifier.upper(), table.upper()))
-    return _checked_collection('{}.{}'.format(qualifier, table))
+        name = '{}.{}'.format(qualifier.upper(), table.upper())
+    else:
+        name = '{}.{}'.format(qualifier, table)
+    if engine in _DATABASE_QUALIFIED:
+        if not database:
+            raise SignalError(
+                'the signalling collection needs the source database name for {}'.format(engine))
+        name = _with_database(engine, database, name)
+    return _checked_collection(name)
+
+
+# Debezium 3.0 names SQL Server and Oracle data collections
+# database.schema.table, in signal.data.collection and in a signal's
+# data-collections, although table.include.list takes schema.table. They used
+# to be schema.table here, so Debezium never matched the signalling table: every
+# signal was ignored, and adding a table or changing a transform never
+# back-filled (review finding C3; on SQL Server 2022 not one of the
+# keep-alive's log signals was logged). For Oracle the database is
+# database.dbname, upper case (a PDB name once multitenant is supported).
+_DATABASE_QUALIFIED = ('sqlserver', 'oracle')
+
+
+def _with_database(engine, database, schema_table):
+    if engine == 'oracle':
+        database = database.upper()
+    return '{}.{}'.format(database, schema_table)
+
+
+def data_collection(engine, table_entry):
+    """A resolved table as a signal names it (data-collections)."""
+    if engine in _DATABASE_QUALIFIED and table_entry.get('database'):
+        return _with_database(engine, table_entry['database'], table_entry['qualified'])
+    return table_entry['qualified']
+
+
+def sql_name(engine, collection):
+    """The signalling table as SQL on the source names it.
+
+    Oracle SQL has no database part (ORCL.ADMIN.T is not a table name there),
+    so the database Debezium puts first is left out. SQL Server accepts
+    database.schema.table, MySQL and PostgreSQL names have no extra part.
+    """
+    collection = _checked_collection(collection)
+    if engine == 'oracle' and collection.count('.') == 2:
+        return collection.split('.', 1)[1]
+    return collection
 
 
 def _checked_collection(collection):
@@ -194,7 +241,7 @@ def signal_table_ddl(engine, collection):
     """
     if engine not in ENGINE_FACTS:
         raise SignalError('unsupported engine {!r}'.format(engine))
-    collection = _checked_collection(collection)
+    collection = sql_name(engine, collection)
     template = {'mysql': _MYSQL_DDL, 'postgresql': _POSTGRES_DDL,
                 'sqlserver': _SQLSERVER_DDL}.get(engine, _ORACLE_DDL)
     # Qualified on every engine. MySQL's used to be cut to the bare table name
@@ -283,6 +330,30 @@ def pg_prerequisite_sql(publication, tables, collection, user):
     ])
 
 
+# ── SQL Server: the signalling table's capture instance and grant ─────────
+def sqlserver_prerequisite_sql(collection, user):
+    """Comment-annotated SQL for `ecdl signal ddl` on SQL Server.
+    Debezium reads signals from the table's change table, so the table must be
+    enabled for CDC. The connector's user needs INSERT for incremental-snapshot
+    window markers, and INSERT and DELETE for the idle-source keep-alive
+    (SqlServerKeepAlive), which writes and removes one row every 5 minutes.
+    """
+    collection = _checked_collection(collection)
+    parts = collection.split('.')
+    schema, table = (parts[-2], parts[-1]) if len(parts) > 1 else ('dbo', parts[-1])
+    who = '[{}]'.format(user) if sqlident.is_safe(user or '') else '[<the CDC user>]'
+    # sp_cdc_enable_table and GRANT act on the current database.
+    use = ['USE [{}];'.format(parts[0])] if len(parts) == 3 else []
+    return '\n'.join(use + [
+        '-- Debezium reads signals from the change table, so enable CDC on it:',
+        "EXEC sys.sp_cdc_enable_table @source_schema = N'{}', @source_name = N'{}', "
+        '@role_name = NULL;'.format(schema, table),
+        '-- Snapshot markers and the idle-source keep-alive write to it. Skip this',
+        '-- for a member of db_owner (or sa), which has both already:',
+        'GRANT INSERT, DELETE ON {}.{} TO {};'.format(schema, table, who),
+    ])
+
+
 # ── building signals ──────────────────────────────────────────────────────
 
 def snapshot_signal(collections, signal_id=None, additional_conditions=None,
@@ -366,7 +437,7 @@ def insert_statement(engine, collection, signal):
     """
     marks = sqlident.binds(3, ':' if engine == 'oracle' else '%s')
     sql = sqlident.render('bare', 'INSERT INTO {t} (id, type, data) VALUES ({marks})',
-                          t=_checked_collection(collection), marks=marks)
+                          t=sql_name(engine, collection), marks=marks)
     return sql, (signal['id'], signal['type'], signal['data'])
 
 

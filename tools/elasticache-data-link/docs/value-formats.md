@@ -22,7 +22,7 @@ writes the same text (`data-plane/bulk-loader/cdc_values.py`).
 | Oracle `TIMESTAMP WITH LOCAL TIME ZONE` | ISO 8601 in UTC, trailing zeros dropped | `2024-03-05T06:07:08.12Z` |
 | MySQL zero date (`0000-00-00`, or a zero month or day) in `DATE` / `DATETIME` | empty (NULL) if the column is nullable, else `0` | |
 | MySQL zero `TIMESTAMP` | the epoch | `1970-01-01T00:00:00Z` |
-| MySQL `BIGINT UNSIGNED` | the 64 bits as a signed number: 2^63 and above are negative | `-1` for 18446744073709551615 |
+| MySQL `BIGINT UNSIGNED` | the exact value | `18446744073709551615` |
 | PostgreSQL `bit(1)` | `true` / `false` | `true` |
 | PostgreSQL `bit(n)`, `varbit` | the bits as a little-endian number, base64, no leading zero bytes (all zeros is empty) | `BQ==` for `101` |
 | PostgreSQL `money` | plain decimal | `-1234.56` |
@@ -42,11 +42,10 @@ writes the same text (`data-plane/bulk-loader/cdc_values.py`).
 
 Limits. A NULL and an empty string are stored the same way. SQL Server
 `datetime2(7)` and Oracle `TIMESTAMP(7-9)` keep only microseconds when loaded,
-because the Python drivers return no more. MySQL `BIGINT UNSIGNED` above
-2^63-1 is sent by Debezium as a negative number (`bigint.unsigned.handling.mode=long`),
-and the loader writes it the same way, including in keys. Setting the mode to
-`precise` would not help: with these settings Debezium then sends every
-`BIGINT UNSIGNED` value, and key, as base64 bytes. A NOT NULL MySQL zero date
+because the Python drivers return no more. MySQL `BIGINT UNSIGNED` is
+exact since 0.2.36 (`bigint.unsigned.handling.mode=precise` with the JSON
+converter's `decimal.format=NUMERIC`); before, values from 2^63 were cached as
+negative numbers, keys included: reload a table with such values. A NOT NULL MySQL zero date
 whose column has a non-zero `DEFAULT` is written as the epoch; CDC may send the
 default instead. Oracle `TIMESTAMP WITH TIME ZONE` and PostgreSQL types not
 listed here (for example `point` or PostGIS) are written as the driver prints

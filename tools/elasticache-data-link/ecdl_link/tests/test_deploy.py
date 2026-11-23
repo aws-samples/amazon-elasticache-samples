@@ -615,6 +615,118 @@ class RecycleFailedStackTest(unittest.TestCase):
         self.assertEqual(len(cfn.updated), 1)
 
 
+class ServiceDiagnosisTest(unittest.TestCase):
+    """A pipeline task that crashes or never streams: the deploy error names
+    what the task said (ECS stop reason, last ERROR/FATAL/ECDL: lines), not
+    only "ECS Deployment Circuit Breaker was triggered"."""
+
+    class Logs(object):
+        def __init__(self, messages, fail=False):
+            self.messages, self.fail, self.calls = messages, fail, []
+
+        def filter_log_events(self, **kw):
+            self.calls.append(kw)
+            if self.fail:
+                raise RuntimeError('AccessDenied')
+            return {'events': [{'message': m} for m in self.messages]}
+
+    def _failed_cdc(self, logs, stop_reason=None, ecs_class=None):
+        cfn = FakeCloudFormation(
+            states={'ecdl-checkout-broker': ['CREATE_COMPLETE', 'CREATE_COMPLETE'],
+                    'ecdl-checkout-cdc': ['CREATE_FAILED']},
+            outputs={'ecdl-checkout-broker': BROKER_OUTPUTS})
+        cfn.events['ecdl-checkout-cdc'] = [{
+            'LogicalResourceId': 'DebeziumService', 'ResourceStatus': 'CREATE_FAILED',
+            'ResourceStatusReason': "Error occurred during operation 'ECS Deployment "
+                                    "Circuit Breaker was triggered'."}]
+        ecs = (ecs_class or FakeECS)(clusters=['ecdl-checkout'])
+        ecs.service_tasks['ecdl-checkout-cdc-debezium'] = ['arn:task/1']
+        if stop_reason:
+            ecs.tasks = [{'tasks': [{'stoppedReason': stop_reason}]}]
+        d = Deployer(Clients(cloudformation=cfn, ecs=ecs, logs=logs),
+                     template_body=lambda name: 'Template: ' + name,
+                     poll_seconds=0, sleep=lambda _s: None, offset_probe=confirmed_offset)
+        with self.assertRaises(DeployError) as caught:
+            d.run(plan(resolution('cdc')))
+        return caught.exception, ecs
+
+    def test_the_task_log_is_quoted(self):
+        logs = self.Logs(['ECDL: SOURCE_DB_PASSWORD is a JSON document, not a password: set '
+                          'source.secret_json_key in the link.',
+                          "ECDL: JVM heap up to 75% of the container's memory, exit on OutOfMemoryError",
+                          "ECDL: source engine 'sqlserver' (config: application.properties + ...)"])
+        exc, _ = self._failed_cdc(logs)
+        self.assertNotIn('JVM heap', exc.hint)
+        self.assertNotIn('source engine', exc.hint)
+        self.assertIn('Circuit Breaker', exc.hint)
+        self.assertIn('/ecs/ecdl-checkout-cdc/debezium', exc.hint)
+        self.assertIn('secret_json_key', exc.hint)
+        self.assertEqual(logs.calls[0]['logGroupName'], '/ecs/ecdl-checkout-cdc/debezium')
+        self.assertIn('?"ECDL:"', logs.calls[0]['filterPattern'])
+
+    def test_the_ecs_stop_reason_is_quoted(self):
+        why = ('ResourceInitializationError: unable to pull secrets: AccessDeniedException: '
+               'not authorized to perform: secretsmanager:GetSecretValue')
+        exc, ecs = self._failed_cdc(self.Logs([]), stop_reason=why)
+        self.assertIn('ECS stopped the debezium task: ResourceInitializationError', exc.hint)
+
+    def test_repeated_retries_are_quoted_once(self):
+        line = '2026-11-21 12:42:{:02d},260 ERROR [io.deb.pip.ErrorHandler] Producer failure: error 313'
+        logs = self.Logs([line.format(i) for i in range(40)])
+        exc, _ = self._failed_cdc(logs)
+        self.assertEqual(exc.hint.count('Producer failure'), 1)
+
+    def test_unreadable_logs_leave_the_failure_as_it_was(self):
+        exc, _ = self._failed_cdc(self.Logs([], fail=True))
+        self.assertIn('Circuit Breaker', exc.hint)
+        self.assertNotIn('ends with', exc.hint)
+
+    def test_an_earlier_operations_failure_is_not_quoted(self):
+        cfn = FakeCloudFormation(
+            states={'ecdl-checkout-broker': ['CREATE_COMPLETE', 'CREATE_COMPLETE'],
+                    'ecdl-checkout-cdc': ['UPDATE_ROLLBACK_COMPLETE']},
+            outputs={'ecdl-checkout-broker': BROKER_OUTPUTS})
+        stack = {'LogicalResourceId': 'ecdl-checkout-cdc', 'ResourceType': 'AWS::CloudFormation::Stack'}
+        cfn.events['ecdl-checkout-cdc'] = [   # newest first, as CloudFormation lists them
+            dict(stack, ResourceStatus='UPDATE_ROLLBACK_COMPLETE'),
+            {'LogicalResourceId': 'SinkService', 'ResourceStatus': 'UPDATE_FAILED',
+             'ResourceStatusReason': 'this update failed'},
+            dict(stack, ResourceStatus='UPDATE_IN_PROGRESS'),
+            dict(stack, ResourceStatus='UPDATE_ROLLBACK_COMPLETE'),
+            {'LogicalResourceId': 'DebeziumService', 'ResourceStatus': 'UPDATE_FAILED',
+             'ResourceStatusReason': 'an earlier update failed'},
+            dict(stack, ResourceStatus='UPDATE_IN_PROGRESS')]
+        d = Deployer(Clients(cloudformation=cfn, ecs=FakeECS(clusters=['ecdl-checkout']), logs=self.Logs([])),
+                     template_body=lambda name: 'Template: ' + name,
+                     poll_seconds=0, sleep=lambda _s: None, offset_probe=confirmed_offset)
+        with self.assertRaises(DeployError) as caught:
+            d.run(plan(resolution('cdc')))
+        self.assertIn('this update failed', caught.exception.hint)
+        self.assertNotIn('an earlier update failed', caught.exception.hint)
+
+    def test_unreadable_ecs_tasks_are_named(self):
+        class Denied(FakeECS):
+            def list_tasks(self, **_kw):
+                raise RuntimeError('AccessDenied')
+        exc, _ = self._failed_cdc(self.Logs(['ERROR boom']), ecs_class=Denied)
+        self.assertIn('Circuit Breaker', exc.hint)
+        self.assertIn('Could not read why ECS stopped the debezium task: RuntimeError', exc.hint)
+        self.assertIn('ERROR boom', exc.hint)
+
+    def test_other_failures_read_no_task_logs(self):
+        cfn = FakeCloudFormation(states={'ecdl-checkout-broker': ['CREATE_FAILED']})
+        cfn.events['ecdl-checkout-broker'] = [{
+            'LogicalResourceId': 'BrokerCluster', 'ResourceStatus': 'CREATE_FAILED',
+            'ResourceStatusReason': 'subnet group missing'}]
+        logs = self.Logs(['ERROR x'])
+        d = Deployer(Clients(cloudformation=cfn, ecs=FakeECS(clusters=['ecdl-checkout']), logs=logs),
+                     template_body=lambda name: 'Template: ' + name,
+                     poll_seconds=0, sleep=lambda _s: None, offset_probe=confirmed_offset)
+        with self.assertRaises(DeployError):
+            d.run(plan(resolution('cdc')))
+        self.assertEqual(logs.calls, [])
+
+
 if __name__ == '__main__':
     result = unittest.main(exit=False, verbosity=0).result
     print('ok: {} deploy tests passed'.format(result.testsRun)

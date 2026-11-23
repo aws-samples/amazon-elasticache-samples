@@ -104,6 +104,8 @@ class FakeRds(object):
             'VpcSecurityGroups': c['VpcSecurityGroups'],
             'BackupRetentionPeriod': c['BackupRetentionPeriod'],
             'DBInstanceStatus': 'available',
+            # Review finding M7: a replica or an Aurora member is refused.
+            **(getattr(self, 'instance_extra', None) or {}),
             # The object form, which is what instances actually return.
             'DBSubnetGroup': {
                 'DBSubnetGroupName': 'db-subnets',
@@ -497,6 +499,19 @@ class ResolveTest(unittest.TestCase):
         self.assertEqual(r['source']['kind'], 'db')
         self.assertEqual(r['source']['port'], 1433)
 
+    def test_a_replica_or_an_aurora_member_instance_is_refused(self):
+        for extra, words in (({'ReadReplicaSourceDBInstanceIdentifier': 'primary-db'},
+                              ('read replica of primary-db', 'ARN of primary-db')),
+                             ({'DBClusterIdentifier': 'shop-cluster'},
+                              ('Aurora cluster shop-cluster', 'cluster:shop-cluster'))):
+            clients, rds, ec, sm = fakes(engine='aurora-mysql')
+            rds.instance_extra = extra
+            with self.assertRaises(ResolutionError) as caught:
+                resolve_link(link(source={'arn': SRC_INST_ARN, 'database': 'Inventory',
+                                          'secret_arn': SEC_ARN}), clients=clients)
+            text = str(caught.exception) + ' ' + (caught.exception.hint or '')
+            for w in words:
+                self.assertIn(w, text)
     def test_explicit_username_and_schema_win(self):
         clients, rds, ec, sm = fakes(engine='aurora-postgresql')
         r = resolve_link(link(source={'arn': SRC_ARN, 'database': 'Inventory',

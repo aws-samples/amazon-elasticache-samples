@@ -447,6 +447,7 @@ func main() {
 	case <-time.After(grace):
 		fmt.Printf("  shutdown: workers still busy after %v; unacked entries stay pending for the other tasks\n", grace)
 	}
+	flushFinalMetrics()
 	elapsed := time.Since(start).Seconds()
 	w := atomic.LoadInt64(&writes)
 	c := atomic.LoadInt64(&cycles)
@@ -772,6 +773,19 @@ func startHealthServer(port string) {
 	fmt.Printf("  Health server on %s\n", addr)
 }
 
+// escapeKeyPart makes one value of a composite key safe to join with ":".
+// Unescaped, (a:b, c) and (a, b:c) both became a:b:c, one cache key for two
+// rows, each overwriting the other (review finding M4). "\" becomes "\\" and
+// ":" becomes "\:"; a value with neither is unchanged, so existing keys stay
+// valid. A single-column key is not escaped: it is never split.
+// sink_pk in data-plane/bulk-loader/bulk_loader.py does the same.
+func escapeKeyPart(s string) string {
+	if !strings.ContainsAny(s, `\:`) {
+		return s
+	}
+	return strings.NewReplacer(`\`, `\\`, `:`, `\:`).Replace(s)
+}
+
 // pkFromMsg derives the row identity from the Debezium record key (the table's
 // primary key), supporting single and composite keys. Falls back to the row's
 // "id" field if the key field is absent.
@@ -792,7 +806,7 @@ func pkFromMsg(msg redis.XMessage, row map[string]interface{}) string {
 			sort.Strings(names)
 			parts := make([]string, 0, len(names))
 			for _, name := range names {
-				parts = append(parts, fmt.Sprintf("%v", keyObj[name]))
+				parts = append(parts, escapeKeyPart(fmt.Sprintf("%v", keyObj[name])))
 			}
 			return strings.Join(parts, ":")
 		}

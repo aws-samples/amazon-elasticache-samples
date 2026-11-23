@@ -68,16 +68,20 @@ func TestPlanMessageRouting(t *testing.T) {
 
 		// ---- good outcomes on the CDC envelope ----
 		{
-			name:       "create becomes an HSET",
-			msg:        msgWithValue(`{"op":"c","after":{"id":1,"name":"widget"},"source":{"table":"products"}}`),
-			wantKey:    "products:1",
-			wantFields: true,
+			// Review finding M10: the whole row, so the key is replaced.
+			name:        "create replaces the key",
+			msg:         msgWithValue(`{"op":"c","after":{"id":1,"name":"widget"},"source":{"table":"products"}}`),
+			wantKey:     "products:1",
+			wantFields:  true,
+			wantReplace: true,
 		},
 		{
-			name:       "update becomes an HSET",
-			msg:        msgWithValue(`{"op":"u","after":{"id":2,"name":"gadget"},"source":{"table":"products"}}`),
-			wantKey:    "products:2",
-			wantFields: true,
+			// Review finding M10: the whole row, so the key is replaced.
+			name:        "update replaces the key",
+			msg:         msgWithValue(`{"op":"u","after":{"id":2,"name":"gadget"},"source":{"table":"products"}}`),
+			wantKey:     "products:2",
+			wantFields:  true,
+			wantReplace: true,
 		},
 		{
 			name:        "snapshot read becomes a full replace",
@@ -175,5 +179,54 @@ func TestPlanMessageFilteredRowBecomesDelete(t *testing.T) {
 	if keptPoison || keptDelete || keptFields == nil {
 		t.Errorf("active row should be a kept HSET: delete=%v poison=%v fieldsNil=%v",
 			keptDelete, keptPoison, keptFields == nil)
+	}
+}
+
+// TestPlanMessageMissingFilterFieldIsDeadLettered: review finding H2. A change
+// without the filter's field (the source column renamed or dropped, or a TOAST
+// placeholder removed) used to read "" and delete the row from the cache. It
+// is now a dead letter: nothing is deleted and the change can be replayed.
+func TestPlanMessageMissingFilterFieldIsDeadLettered(t *testing.T) {
+	spec, err := LoadTransformSpec([]byte(
+		`{"tables":{"products":{"filter":{"field":"status","op":"=","value":"active"}}}}`))
+	if err != nil {
+		t.Fatalf("load spec: %v", err)
+	}
+	transformSpec = spec
+	t.Cleanup(func() { transformSpec = nil })
+
+	for name, value := range map[string]string{
+		"renamed column": `{"op":"u","after":{"id":7,"state":"active"},"source":{"table":"products"}}`,
+		"placeholder":    `{"op":"u","after":{"id":7,"status":"__debezium_unavailable_value"},"source":{"table":"products"}}`,
+		"snapshot read":  `{"op":"r","after":{"id":7,"state":"active"},"source":{"table":"products"}}`,
+	} {
+		_, fields, isDelete, poison, _ := planMessage(msgWithValue(value), "", "products")
+		if !poison || isDelete || fields != nil {
+			t.Errorf("%s: poison=%v delete=%v fields=%v, want a dead letter and no delete",
+				name, poison, isDelete, fields)
+		}
+	}
+	// Flat events take the same path.
+	flat := redis.XMessage{ID: "1-0", Values: map[string]interface{}{
+		"value": `{"id":7,"state":"active"}`, "key": `{"id":7}`}}
+	if _, _, isDelete, poison, _ := planMessage(flat, "flat", "products"); !poison || isDelete {
+		t.Errorf("flat: poison=%v delete=%v, want a dead letter", poison, isDelete)
+	}
+	// NULL is a value: the field is present, so the filter decides (and drops it).
+	null := msgWithValue(`{"op":"u","after":{"id":7,"status":null},"source":{"table":"products"}}`)
+	if _, _, isDelete, poison, _ := planMessage(null, "", "products"); poison || !isDelete {
+		t.Errorf("null status: poison=%v delete=%v, want a filtered delete", poison, isDelete)
+	}
+	// The dead letter names the cause, so `dlq list` says what to fix.
+	if table, field := missingFilterFieldOf(`{"op":"u","after":{"id":7,"state":"x"},"source":{"table":"products"}}`); table != "products" || field != "status" {
+		t.Errorf("missingFilterFieldOf = %q %q, want products status", table, field)
+	}
+	if _, field := missingFilterFieldOf(`not json`); field != "" {
+		t.Errorf("unparseable: field %q, want none", field)
+	}
+	// A deletion needs no filter.
+	del := msgWithValue(`{"op":"d","before":{"id":7},"source":{"table":"products"}}`)
+	if _, _, isDelete, poison, _ := planMessage(del, "", "products"); poison || !isDelete {
+		t.Errorf("delete: poison=%v delete=%v", poison, isDelete)
 	}
 }

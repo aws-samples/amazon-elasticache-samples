@@ -228,30 +228,30 @@ class MySQLZeroDateTest(unittest.TestCase):
 
 
 class MySQLUnsignedBigintTest(unittest.TestCase):
-    """Jira story F073 (unsigned part): BIGINT UNSIGNED as Debezium's default
-    bigint.unsigned.handling.mode=long sends it, the 64 bits as a signed long
-    (BinlogValueConverters: convertBigInt). Values Java."""
+    """Review finding M9: BIGINT UNSIGNED is its exact value, as Debezium sends
+    it with bigint.unsigned.handling.mode=precise. It used to be the 64 bits
+    as a signed long (Jira story F073), so the largest value was cached as -1."""
     COLS = [{'name': 'u', 'type': 'bigint', 'column_type': 'bigint unsigned'},
             {'name': 'z', 'type': 'bigint', 'column_type': 'bigint(20) unsigned zerofill'},
             {'name': 's', 'type': 'bigint', 'column_type': 'bigint'}]
-
     def test_values(self):
-        for value, want in [(0, '0'), (12345, '12345'),
-                            (9223372036854775807, '9223372036854775807'),
-                            (9223372036854775808, '-9223372036854775808'),
-                            (18446744073709551615, '-1')]:
-            self.assertEqual(enc('mysql', self.COLS, {'u': value, 'z': value})['u'], want)
-            self.assertEqual(enc('mysql', self.COLS, {'z': value})['z'], want)
+        for value in (0, 12345, 9223372036854775807, 9223372036854775808, 18446744073709551615):
+            self.assertEqual(enc('mysql', self.COLS, {'u': value, 'z': value})['u'], str(value))
+            self.assertEqual(enc('mysql', self.COLS, {'z': value})['z'], str(value))
         self.assertEqual(enc('mysql', self.COLS, {'s': -5}), {'s': '-5'})
-
     def test_the_key_is_the_one_cdc_uses(self):
         import bulk_loader
         row = cv.row_encoder('mysql', [{'name': 'id', 'type': 'bigint',
                                         'column_type': 'bigint unsigned'}])(
             {'id': 18446744073709551615})
-        self.assertEqual(bulk_loader.sink_pk(row, ['id']), '-1')
-
-
+        self.assertEqual(bulk_loader.sink_pk(row, ['id']), '18446744073709551615')
+    def test_debezium_is_told_to_send_the_exact_value(self):
+        here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(here, 'debezium-server', 'application-mysql.properties')) as f:
+            text = f.read()
+        for line in ('bigint.unsigned.handling.mode=precise', 'format.value.decimal.format=NUMERIC',
+                     'format.key.decimal.format=NUMERIC'):
+            self.assertIn(line, text)
 class PostgreSQLTypesTest(unittest.TestCase):
     """Jira story F075: bit, money, interval, hstore and temporal arrays."""
 

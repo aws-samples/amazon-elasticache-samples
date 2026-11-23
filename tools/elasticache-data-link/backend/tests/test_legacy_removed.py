@@ -13,7 +13,6 @@ path the UI calls is one the backend serves.
 
 Run with:  python3 tests/test_legacy_removed.py     (from the backend/ directory)
 """
-import json
 import os
 import re
 import sys
@@ -37,17 +36,24 @@ REMOVED = (
     ('POST', '/api/connectors/1/apply-changes'),
     ('POST', '/api/smart-builder/chat'),
     ('GET', '/api/sink-templates'),
+    # Review finding H10: the superseded object model and the Randomizer.
+    ('GET', '/api/sources'),
+    ('GET', '/api/sources/1/scan-tables'),
+    ('GET', '/api/sources/1/tables'),
+    ('POST', '/api/randomizer/start'),
+    ('GET', '/api/connectors'),
+    ('GET', '/api/brokers'),
+    ('GET', '/api/targets'),
+    ('GET', '/api/pipelines'),
+    ('GET', '/api/deployments'),
 )
 
 # What the current UI and CLI still use. Not exhaustive; one per area, so a
 # deletion that went too far fails here.
 KEPT = (
     ('GET', '/api/auth/status'),
-    ('GET', '/api/sources'),
-    ('GET', '/api/sources/1/tables'),
-    ('POST', '/api/randomizer/start'),
-    ('GET', '/api/deployments'),
     ('GET', '/api/health'),
+    ('GET', '/api/maintenance/backup'),
     ('POST', '/api/links/deploy'),
     ('POST', '/api/links/destroy'),
     ('GET', '/api/links/discover'),
@@ -127,63 +133,6 @@ class RemovedTest(unittest.TestCase):
             self.assertNotIn('templates', handle.read())
 
 
-class SourcePasswordTest(unittest.TestCase):
-    """Creating a source writes no Secrets Manager secret and stores no password.
-    It wrote ecdl/sources/<name> with put_secret_value when the name existed,
-    overwriting whatever secret had that name. After that it kept the password
-    in plain text in SQLite. Now a source names a secret the operator owns
-    (password_secret_arn) and a plain password is refused (Jira story F153; the full
-    behaviour is tested in test_app_hardening.py).
-    """
-    ARN = 'arn:aws:secretsmanager:us-east-2:111122223333:secret:shop-db-AbCdEf'
-    def setUp(self):
-        import tempfile
-        self.tmp = tempfile.mkdtemp()
-        self._saved = {k: os.environ.get(k) for k in
-                       ('DATABASE_PATH', 'ECDL_AUTH_DISABLED')}
-        os.environ['DATABASE_PATH'] = os.path.join(self.tmp, 'app.db')
-        os.environ['ECDL_AUTH_DISABLED'] = 'true'
-    def tearDown(self):
-        import shutil
-        for key, value in self._saved.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-        shutil.rmtree(self.tmp)
-    def test_create_stores_the_arn_and_calls_no_secrets_manager(self):
-        import sqlite3
-        from unittest import mock
-        import boto3
-        real_client = boto3.client
-        asked = []
-        def client(name, *args, **kwargs):
-            asked.append(name)
-            if name == 'secretsmanager':
-                raise AssertionError('create_source must not use Secrets Manager')
-            return real_client(name, *args, **kwargs)
-        app = _app()
-        import app as app_module
-        app_module.init_db()
-        body = {'name': 'shop', 'engine': 'postgres', 'host': 'db.example',
-                'database_name': 'shop', 'username': 'cdc'}
-        with mock.patch('boto3.client', side_effect=client):
-            refused = app.test_client().post('/api/sources', json=dict(
-                body, password='s3cret'))  # nosec B106 - fake test credential
-            res = app.test_client().post('/api/sources', json=dict(
-                body, password_secret_arn=self.ARN))
-        self.assertEqual(refused.status_code, 400, refused.data)
-        self.assertEqual(res.status_code, 201, res.data)
-        self.assertNotIn('secretsmanager', asked)
-        conn = sqlite3.connect(os.environ['DATABASE_PATH'])
-        rows = conn.execute(
-            'SELECT password, password_secret_arn FROM sources').fetchall()
-        conn.close()
-        self.assertEqual(rows, [(None, self.ARN)])
-        listed = app.test_client().get('/api/sources').get_json()
-        self.assertTrue(listed[0]['has_password'])
-        self.assertNotIn('password', listed[0])
-        self.assertNotIn('s3cret', json.dumps(listed))
 # `${API_URL}/api/...` (or ${apiUrl}) in the UI sources, up to the closing
 # backtick, a quote or the query string.
 _UI_CALL = re.compile(r'\$\{(?:API_URL|apiUrl)\}(/api/[^`\'"\s?]*)')

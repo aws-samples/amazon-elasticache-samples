@@ -239,6 +239,28 @@ class PublicationPreflight(unittest.TestCase):
     def test_complete_publication_passes(self):
         self.assertEqual(self.check(catalogue(publications=FULL)), [])
 
+    def test_m8_a_publication_without_updates_or_deletes_blocks(self):
+        cat = catalogue(publications=FULL)
+        cat['publication_options'] = {'ecdl_shop_pub': {'insert': True, 'update': False,
+                                                        'delete': False, 'via_root': False}}
+        out = self.check(cat)
+        self.assertEqual([f.level for f in out], [BLOCK])
+        self.assertIn('does not publish update, delete', out[0].message)
+        self.assertIn("SET (publish = 'insert, update, delete, truncate')", out[0].message)
+
+    def test_m8_a_partitioned_table_needs_publish_via_partition_root(self):
+        cat = catalogue(publications={'ecdl_shop_pub': ['public.orders_2026', 'public.items', SIGNAL]})
+        cat['tables'][0]['partitioned'] = True          # orders
+        cat['publication_options'] = {'ecdl_shop_pub': {'insert': True, 'update': True,
+                                                        'delete': True, 'via_root': False}}
+        out = self.check(cat)
+        self.assertEqual([f.level for f in out], [BLOCK])
+        self.assertIn('publish_via_partition_root = true', out[0].message)
+        self.assertNotIn('ADD TABLE', messages(out))
+        cat['publication_options']['ecdl_shop_pub']['via_root'] = True
+        cat['publications'] = FULL
+        self.assertEqual(self.check(cat), [])
+
     def test_missing_link_table_blocks_with_the_alter(self):
         out = self.check(catalogue(publications={'ecdl_shop_pub': ['public.orders', SIGNAL]}))
         self.assertEqual([f.level for f in out], [BLOCK])
