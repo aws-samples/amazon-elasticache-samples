@@ -34,10 +34,9 @@ More in the [one-pager](docs/one-pager.md).
 **Status:** release 0.2.40 (`VERSION`). All four source engines have run end
 to end, bulk load and live change capture with every row delivered: Aurora
 MySQL 8.0, Aurora PostgreSQL 16, SQL Server 2022 and RDS Oracle 19c (see
-[Benchmark results](docs/benchmark-results.md)). This release was also tested
-live on Aurora MySQL 3 with an ElastiCache for Valkey cluster: bulk load,
-inserts, updates and deletes, filters, computed fields, renames, denormalize,
-reload, failovers of the broker and the target, and secret rotation. See
+[Benchmark results](docs/benchmark-results.md)). This release was tested
+end to end on Aurora MySQL, Aurora PostgreSQL and SQL Server with 1.5 million
+rows each: bulk load, change capture, filters and denormalize. See
 [Limitations](#limitations).
 
 **Contents:** [What you need](#what-you-need) · [Deploy in five steps](#deploy-in-five-steps) ·
