@@ -20,8 +20,8 @@ from ecdl_link.preflight import (PIPELINE_ARNS_ENV, PIPELINE_READ_TAG, WARN,  # 
                                  pipeline_secret_list, secret_findings)
 from ecdl_link.resolve import confirm_secret  # noqa: E402
 from ecdl_link.tests.policy_render import WORST_CASE, render  # noqa: E402
-from ecdl_link.tests.test_control_plane_iam import (LINK_TEMPLATES, _CfnLoader,  # noqa: E402
-                                                    _template)
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
+from ecdl_link.tests.test_control_plane_iam import LINK_TEMPLATES, _template  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VALUES = dict(WORST_CASE, **{'AWS::Partition': 'aws', 'AWS::Region': 'us-east-2',
@@ -177,7 +177,7 @@ class PreflightTest(unittest.TestCase):
 # ── Trust and PassRole ───────────────────────────────────────────────────────
 def _load(name):
     with open(os.path.join(ROOT, 'infra', name)) as handle:
-        return yaml.load(handle, Loader=_CfnLoader)  # nosec B506 - SafeLoader subclass
+        return load_cfn(handle)
 
 
 class TrustTest(unittest.TestCase):

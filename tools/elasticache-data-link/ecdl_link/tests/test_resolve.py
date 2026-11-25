@@ -1231,11 +1231,10 @@ class SnapshotModeTemplateTest(unittest.TestCase):  # Jira stories F016, F017
     """What the planner sends must be a value the CDC stack accepts."""
     def setUp(self):
         import json
-        import yaml
-        from ecdl_link.tests.test_control_plane_iam import _CfnLoader
+        from ecdl_link.safe_yaml import load_cfn
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         with open(os.path.join(root, 'infra', 'ecdl-cdc-ecs.yaml')) as handle:
-            doc = yaml.load(handle, Loader=_CfnLoader)  # nosec B506 - SafeLoader subclass
+            doc = load_cfn(handle)
         self.param = doc['Parameters']['SnapshotMode']
         with open(os.path.join(root, 'ecdl_link', 'link.schema.json')) as handle:
             schema = json.load(handle)

@@ -636,7 +636,8 @@ class SecretShapeTest(unittest.TestCase):
                 r = resolution(mode)
                 r['source']['secret'] = dict(r['source'].get('secret') or {},
                                              managed_by_rds=managed)
-                r['source']['secret_json_key'] = 'db_pass'
+                json_key = 'db_pass'
+                r['source']['secret_json_key'] = json_key
                 params = steps_by_id(plan(r))[step]['parameters']
                 self.assertEqual(params['DBSecretJsonKey'], 'db_pass', (mode, step, managed))
 
@@ -1276,14 +1277,10 @@ class LoaderAlarmTest(unittest.TestCase):
         self.assertEqual(p['AlarmEmail'], 'ops@example.com')
 
     def test_the_template_alarms_on_a_failed_load_task(self):
-        import yaml
-
-        class Loader(yaml.SafeLoader):
-            pass
-        Loader.add_multi_constructor('!', lambda loader, suffix, node: None)
+        from ecdl_link.safe_yaml import load_cfn
         here = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(here, '..', '..', 'infra', 'ecdl-loader-ecs.yaml')) as h:
-            doc = yaml.load(h, Loader=Loader)
+            doc = load_cfn(h)
         rule = doc['Resources']['LoadFailedRule']['Properties']
         detail = rule['EventPattern']['detail']
         self.assertEqual(rule['EventPattern']['detail-type'], ['ECS Task State Change'])

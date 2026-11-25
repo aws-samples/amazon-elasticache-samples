@@ -410,7 +410,13 @@ func TestHelperRunMain(t *testing.T) {
 // Used for configuration that must stop the sink before it connects anywhere.
 func runMain(t *testing.T, env ...string) (int, string) {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperRunMain$")
+	// The test binary itself, re-run to execute main() alone. exec.Cmd rather than
+	// exec.Command: the program is this process's own executable, not a name to look up.
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	cmd := &exec.Cmd{Path: self, Args: []string{self, "-test.run=^TestHelperRunMain$"}}
 	cmd.Env = append([]string{"ECDL_RUN_MAIN=1", "HEALTH_PORT=18617", "BROKER_HOST=127.0.0.1", "BROKER_PORT=1",
 		"PATH=" + os.Getenv("PATH")}, env...)
 	out, err := cmd.CombinedOutput()

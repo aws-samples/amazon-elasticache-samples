@@ -13,14 +13,14 @@ import re
 import sys
 import unittest
 
-import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from ecdl_link import problems_for  # noqa: E402
 from ecdl_link.change import INVERSE, apply_settings, review_update  # noqa: E402
 from ecdl_link.provision import plan  # noqa: E402
 from ecdl_link.tests.policy_render import WORST_CASE, render  # noqa: E402
-from ecdl_link.tests.test_control_plane_iam import _CfnLoader, _template  # noqa: E402
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
+from ecdl_link.tests.test_control_plane_iam import _template  # noqa: E402
 from ecdl_link.tests.test_deploy import FakeCloudFormation, FakeECS, deployer  # noqa: E402
 from ecdl_link.tests.test_link import minimal  # noqa: E402
 from ecdl_link.tests.test_provision import resolution  # noqa: E402
@@ -31,7 +31,7 @@ BROKER = os.path.join(ROOT, 'infra', 'ecdl-broker-quickstart.yaml')
 
 def _broker_template():
     with open(BROKER) as handle:
-        return yaml.load(handle, Loader=_CfnLoader)  # nosec B506 - SafeLoader subclass
+        return load_cfn(handle)
 
 
 def _minutes(hhmm):

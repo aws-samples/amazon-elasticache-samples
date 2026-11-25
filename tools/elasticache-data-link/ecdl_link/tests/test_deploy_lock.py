@@ -160,6 +160,12 @@ class DowngradeTest(unittest.TestCase):
         self.assertEqual(deploy.template_release(self.TEMPLATE), '0.2.30')
         self.assertEqual(deploy.template_release("  ImageTag:\n    Type: String\n    Default: '1.0.0'\n"), '1.0.0')
         self.assertIsNone(deploy.template_release('Parameters: {}'))
+        self.assertEqual(deploy.template_release('  ImageTag:\n    Default: "0.3.0-rc1" # c\n'), '0.3.0-rc1')
+        self.assertIsNone(deploy.template_release('  ImageTag:\n    Default: latest\n'))
+        # Another parameter's Default is not ImageTag's.
+        self.assertIsNone(deploy.template_release('  ImageTag:\n    Type: String\n  Next:\n    Default: 7\n'))
+        # Linear on a long parameter body (the regex it replaced could backtrack).
+        self.assertIsNone(deploy.template_release('  ImageTag:\n' + '    x\n' * 200000 + 'y'))
         self.assertGreater(deploy._release_key('0.2.36'), deploy._release_key('0.2.9'))
 
 

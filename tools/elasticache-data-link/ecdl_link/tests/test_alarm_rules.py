@@ -21,11 +21,10 @@ import re
 import sys
 import unittest
 
-import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
-from ecdl_link.tests.test_control_plane_iam import _CfnLoader  # noqa: E402
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
 
 CDC = os.path.join(ROOT, 'infra', 'ecdl-cdc-ecs.yaml')
 OPS = os.path.join(ROOT, 'docs', 'operations.md')
@@ -34,7 +33,7 @@ SINK = os.path.join(ROOT, 'tools', 'go-sink')
 
 def _cdc():
     with open(CDC) as handle:
-        return yaml.load(handle, Loader=_CfnLoader)  # nosec B506 - SafeLoader subclass
+        return load_cfn(handle)
 
 
 def _ops_anchors():

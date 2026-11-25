@@ -418,14 +418,32 @@ _LOCK_RELEASE_LUA = ("local v = redis.call('GET', KEYS[1]) "
                      "return redis.call('DEL', KEYS[1]) end return 0")
 
 
-_IMAGE_TAG_DEFAULT = re.compile(
-    r'^  ImageTag:\s*\n(?:    .*\n)*?    Default:\s*[\'"]?([0-9][0-9A-Za-z.\-]*)', re.M)
+_TAG_CHARS = frozenset('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-')
 
 
 def template_release(text):
-    """The release a template pins (its ImageTag parameter default), or None."""
-    m = _IMAGE_TAG_DEFAULT.search(text or '')
-    return m.group(1) if m else None
+    """The release a template pins (its ImageTag parameter default), or None.
+
+    Read line by line (no backtracking regex): the `  ImageTag:` parameter, then
+    its `    Default:` among the lines indented under it."""
+    lines = (text or '').splitlines()
+    for i, line in enumerate(lines):
+        if line.rstrip() != '  ImageTag:':
+            continue
+        for body in lines[i + 1:]:
+            if not body.startswith('    '):
+                break
+            if body.startswith('    Default:'):
+                value = body[len('    Default:'):].lstrip()
+                if value[:1] in ('"', "'"):
+                    value = value[1:]
+                end = 0
+                while end < len(value) and value[end] in _TAG_CHARS:
+                    end += 1
+                tag = value[:end]
+                return tag if tag[:1].isdigit() else None
+        return None
+    return None
 
 
 def _release_key(tag):

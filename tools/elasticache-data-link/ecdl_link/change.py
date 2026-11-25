@@ -343,15 +343,10 @@ def describe_review(review):
 def template_body_defaults(body):
     """{param: default} of a template's text, read locally. (GetTemplateSummary
     with a TemplateBody is not scoped to a stack, which the control plane's
-    policy does not grant.) Intrinsic tags (!Ref, !Sub) are read as plain
-    values; only Parameters.*.Default is used."""
-    import yaml
-
-    class Loader(yaml.SafeLoader):
-        pass
-
-    Loader.add_multi_constructor('!', lambda loader, suffix, node: None)
-    doc = yaml.load(body, Loader=Loader) or {}  # nosec B506 - SafeLoader subclass
+    policy does not grant.) Intrinsic tags (!Ref, !Sub) are read as
+    {'Ref': ...} values; only Parameters.*.Default is used."""
+    from ecdl_link.safe_yaml import load_cfn
+    doc = load_cfn(body) or {}
     out = {}
     for name, spec in (doc.get('Parameters') or {}).items():
         if isinstance(spec, dict) and 'Default' in spec:

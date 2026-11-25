@@ -65,8 +65,11 @@ def _run(mode, ui_host_names='', metadata=None):
             handle.write('\n'.join(lines) + '\n')
         os.chmod(curl, 0o755)  # nosec B103 - a test stub in a private temp dir
         program = 'set -euo pipefail\n{}\nprintf "%s\\n" {}\n'.format(snippet, env_args)
+        script = os.path.join(tmp, 'program.sh')
+        with open(script, 'w') as handle:
+            handle.write(program)
         out = subprocess.run(  # nosec B603 B607 - fixed program, test only
-            ['bash', '-c', program], capture_output=True, text=True,
+            ['bash', script], capture_output=True, text=True,
             env={'PATH': tmp + os.pathsep + os.environ.get('PATH', '')}, check=True)
     finally:
         shutil.rmtree(tmp)

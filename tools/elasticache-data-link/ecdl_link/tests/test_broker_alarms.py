@@ -13,11 +13,10 @@ import re
 import sys
 import unittest
 
-import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from ecdl_link.tests.test_broker_snapshots import deploy_role_allows  # noqa: E402
-from ecdl_link.tests.test_control_plane_iam import _CfnLoader  # noqa: E402
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CDC = os.path.join(ROOT, 'infra', 'ecdl-cdc-ecs.yaml')
@@ -34,7 +33,7 @@ def _as_list(value):
 
 def _cdc():
     with open(CDC) as handle:
-        return yaml.load(handle, Loader=_CfnLoader)  # nosec B506 - SafeLoader subclass
+        return load_cfn(handle)
 
 
 def _sub(value, **extra):

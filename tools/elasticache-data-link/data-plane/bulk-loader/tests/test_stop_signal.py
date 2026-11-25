@@ -50,7 +50,9 @@ class StopSignalTest(unittest.TestCase):
         path = os.path.join(out, 'tree.py')
         with open(path, 'w') as f:
             f.write(SCRIPT.format(loader=LOADER, out=out, install=install))
-        proc = subprocess.Popen([sys.executable, path], stdout=subprocess.PIPE, text=True)
+        # executable= runs this same interpreter; 'python3' is only its argv[0].
+        proc = subprocess.Popen(['python3', '-u', path], executable=sys.executable,  # nosec B603 - the test's own script
+                                stdout=subprocess.PIPE, text=True)
         self.addCleanup(lambda: proc.poll() is None and proc.kill())
         self.assertEqual(proc.stdout.readline().strip(), 'ready')
         deadline = time.time() + 20

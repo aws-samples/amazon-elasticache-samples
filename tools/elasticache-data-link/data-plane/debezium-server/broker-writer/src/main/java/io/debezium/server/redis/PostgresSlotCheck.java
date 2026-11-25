@@ -13,8 +13,6 @@
  */
 package io.debezium.server.redis;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -62,6 +60,11 @@ public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
         put("socketTimeout", String.valueOf(TIMEOUT_SECONDS));
         put("loginTimeout", String.valueOf(TIMEOUT_SECONDS));
         put("ApplicationName", "ecdl-slot-check");
+        // Host, port and database as connection properties, not in the URL: a value
+        // with URL syntax in it ('?', '&', '/') stays a value and cannot add settings.
+        put("PGHOST", host);
+        put("PGPORT", port);
+        put("PGDBNAME", database);
     }
 
     /** Only the PostgreSQL connector reads a slot. */
@@ -75,8 +78,12 @@ public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
         }
     }
 
-    String url() {
-        return "jdbc:postgresql://" + host + ":" + port + "/" + URLEncoder.encode(database, StandardCharsets.UTF_8);
+    /** The driver's URL: no host, port or database in it; those are properties. */
+    static final String URL = "jdbc:postgresql://";
+
+    /** A connection property, for the tests. */
+    String setting(String name) {
+        return connection.getProperty(name);
     }
 
     @Override
@@ -103,7 +110,7 @@ public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
         catch (ClassNotFoundException e) {
             return new SlotResult(SlotState.UNKNOWN, "the PostgreSQL JDBC driver is not on the classpath");
         }
-        try (Connection c = DriverManager.getConnection(url(), connection);
+        try (Connection c = DriverManager.getConnection(URL, connection);
                 PreparedStatement q = c.prepareStatement(QUERY)) {
             q.setQueryTimeout(TIMEOUT_SECONDS);
             q.setString(1, slot);

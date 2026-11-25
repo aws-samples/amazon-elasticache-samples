@@ -20,9 +20,9 @@ import subprocess  # nosec B404 - runs bash on the template's own user data
 import tempfile
 import unittest
 
-import yaml
 
-from ecdl_link.tests.test_control_plane_iam import ROOT, _CfnLoader, _template
+from ecdl_link.safe_yaml import load_cfn
+from ecdl_link.tests.test_control_plane_iam import ROOT, _template
 
 # A presigned S3 URL, with the characters a shell could mangle.
 HANDLE = ('https://cloudformation-waitcondition-us-east-2.s3.us-east-2.amazonaws.com/'
@@ -101,8 +101,11 @@ esac'''.format('exit 0' if api_up else 'exit 7'))
             os.path.join(tmp, 'signals'), os.path.join(tmp, 'signals')))
         script = (_script().replace('/opt/aws/bin/cfn-signal', signal)
                   .replace('/var/lib/ecdl/data', os.path.join(tmp, 'data')))
+        path = os.path.join(tmp, 'user-data.sh')
+        with open(path, 'w') as handle:
+            handle.write(script)
         proc = subprocess.run(  # nosec B603 B607 - the template's script, test only
-            ['bash', '-c', script], capture_output=True, text=True,
+            ['bash', path], capture_output=True, text=True,
             env={'PATH': bin_dir + os.pathsep + os.environ.get('PATH', ''), 'HOME': tmp})
         signals = []
         if os.path.exists(os.path.join(tmp, 'signals')):
@@ -182,7 +185,7 @@ class ReleaseNamesTest(unittest.TestCase):
             self.text = handle.read()
 
     def test_the_wait_condition_is_named_for_the_pinned_image_tag(self):
-        t = yaml.load(self.text, Loader=_CfnLoader)  # nosec B506
+        t = load_cfn(self.text)
         tag = re.sub(r'[^A-Za-z0-9]', 'x', str(t['Parameters']['ImageTag']['Default']))
         res = t['Resources']
         handle, wait = 'ReadyHandleV' + tag, 'ReadyV' + tag
@@ -211,7 +214,7 @@ class ReleaseNamesTest(unittest.TestCase):
         finally:
             shutil.rmtree(tmp)
         self.assertEqual(_ready_names(pinned), ['ReadyHandleV1x2x30', 'ReadyV1x2x30'])
-        t = yaml.load(pinned, Loader=_CfnLoader)  # nosec B506
+        t = load_cfn(pinned)
         self.assertEqual(t['Parameters']['ImageTag']['Default'], '1.2.30')
         self.assertEqual(t['Resources']['ReadyV1x2x30']['Properties']['Handle'],
                          {'Ref': 'ReadyHandleV1x2x30'})

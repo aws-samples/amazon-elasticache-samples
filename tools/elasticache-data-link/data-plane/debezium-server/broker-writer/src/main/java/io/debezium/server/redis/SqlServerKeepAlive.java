@@ -80,6 +80,15 @@ public class SqlServerKeepAlive {
         // Verified like the connector's own connection (application-sqlserver.properties).
         put("trustStore", props.get("database.trustStore"));
         put("trustStorePassword", props.get("database.trustStorePassword"));
+        // Every setting as a connection property, none in the URL: a ';' in a host or
+        // database name stays part of that value and cannot add or change a setting.
+        put("serverName", host);
+        put("portNumber", port);
+        put("databaseName", database);
+        put("encrypt", String.valueOf(encrypt));
+        put("trustServerCertificate", String.valueOf(trustCertificate));
+        put("loginTimeout", String.valueOf(TIMEOUT_SECONDS));
+        put("applicationName", "ecdl-keepalive");
     }
 
     /** Only the SQL Server connector polls change tables. */
@@ -120,10 +129,12 @@ public class SqlServerKeepAlive {
         }
     }
 
-    String url() {
-        return "jdbc:sqlserver://" + host + ":" + port + ";databaseName=" + database
-                + ";encrypt=" + encrypt + ";trustServerCertificate=" + trustCertificate
-                + ";loginTimeout=" + TIMEOUT_SECONDS + ";applicationName=ecdl-keepalive";
+    /** The driver's URL: no settings in it; they are all properties. */
+    static final String URL = "jdbc:sqlserver://";
+
+    /** A connection property, for the tests. */
+    String setting(String name) {
+        return connection.getProperty(name);
     }
 
     String insertSql() {
@@ -168,7 +179,7 @@ public class SqlServerKeepAlive {
             return;
         }
         String id = "ecdl-ka-" + UUID.randomUUID().toString().substring(0, 30);
-        try (Connection c = DriverManager.getConnection(url(), connection)) {
+        try (Connection c = DriverManager.getConnection(URL, connection)) {
             try (PreparedStatement insert = c.prepareStatement(insertSql())) {
                 insert.setQueryTimeout(TIMEOUT_SECONDS);
                 insert.setString(1, id);

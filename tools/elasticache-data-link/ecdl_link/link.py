@@ -115,6 +115,8 @@ def loads(text, source=None):
                          '(pip install PyYAML), or write the file as JSON')],
             source)
     try:
+        from ecdl_link.safe_yaml import check_plain
+        check_plain(text, allow_aliases=True)
         doc = yaml.safe_load(text)
     except Exception as exc:
         raise LinkValidationError(

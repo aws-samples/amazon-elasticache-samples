@@ -540,7 +540,11 @@ public final class EcdlOffsetBackingStoreTest {
         check("config.pg-slot-check", pg.slotCheck instanceof PostgresSlotCheck, "" + pg.slotCheck);
         if (pg.slotCheck instanceof PostgresSlotCheck) {
             PostgresSlotCheck c = (PostgresSlotCheck) pg.slotCheck;
-            check("config.pg-url", c.url().equals("jdbc:postgresql://db.example:5433/shop+db"), c.url());
+            check("config.pg-url", PostgresSlotCheck.URL.equals("jdbc:postgresql://"), PostgresSlotCheck.URL);
+            check("config.pg-host", "db.example".equals(c.setting("PGHOST")), c.setting("PGHOST"));
+            check("config.pg-port", "5433".equals(c.setting("PGPORT")), c.setting("PGPORT"));
+            check("config.pg-db", "shop db".equals(c.setting("PGDBNAME")), c.setting("PGDBNAME"));
+            check("config.pg-password-a-property", "secret".equals(c.setting("password")), "missing");
             check("config.pg-describe", c.describe().equals("'ecdl_t' on db.example:5433/shop db"), c.describe());
             check("config.pg-no-password-in-describe", !c.describe().contains("secret"), c.describe());
         }
@@ -565,9 +569,13 @@ public final class EcdlOffsetBackingStoreTest {
             SqlServerKeepAlive k = ms.keepAlive;
             check("keepalive.default-interval", k.seconds == SqlServerKeepAlive.DEFAULT_SECONDS, "" + k.seconds);
             check("keepalive.usable", k.unusable() == null, k.unusable());
-            check("keepalive.url", k.url().equals("jdbc:sqlserver://10.0.0.5:1444;databaseName=inventory;encrypt=true;"
-                    + "trustServerCertificate=false;loginTimeout=10;applicationName=ecdl-keepalive"), k.url());
-            check("keepalive.no-password-in-url", !k.url().contains("secret"), k.url());
+            check("keepalive.url", SqlServerKeepAlive.URL.equals("jdbc:sqlserver://"), SqlServerKeepAlive.URL);
+            String[][] want = {{"serverName", "10.0.0.5"}, {"portNumber", "1444"}, {"databaseName", "inventory"},
+                    {"encrypt", "true"}, {"trustServerCertificate", "false"}, {"loginTimeout", "10"},
+                    {"applicationName", "ecdl-keepalive"}, {"user", "sa"}, {"password", "secret"}};
+            for (String[] w : want) {
+                check("keepalive.property " + w[0], w[1].equals(k.setting(w[0])), k.setting(w[0]));
+            }
             check("keepalive.insert", k.insertSql().startsWith("INSERT INTO [dbo].[ecdl_signal_x] (id, type, data) "
                     + "VALUES (?, 'log', "), k.insertSql());
             check("keepalive.delete", k.deleteSql().equals("DELETE FROM [dbo].[ecdl_signal_x] WHERE id = ?"), k.deleteSql());
@@ -577,8 +585,17 @@ public final class EcdlOffsetBackingStoreTest {
                 "signal.data.collection", "inv.sales.sig"));
         check("keepalive.three-part", three.schema.equals("sales") && three.table.equals("sig"),
                 three.schema + "." + three.table);
-        check("keepalive.defaults-no-encrypt", three.url().contains(";encrypt=false;trustServerCertificate=true;"),
-                three.url());
+        check("keepalive.defaults-no-encrypt", "false".equals(three.setting("encrypt"))
+                && "true".equals(three.setting("trustServerCertificate")),
+                three.setting("encrypt") + " " + three.setting("trustServerCertificate"));
+        // A ';' in a name stays in that one property; it adds no setting.
+        SqlServerKeepAlive semi = new SqlServerKeepAlive(props("database.hostname", "h;encrypt=false",
+                "database.names", "inv;trustServerCertificate=true", "database.encrypt", "true",
+                "database.trustServerCertificate", "false", "signal.data.collection", "dbo.sig"));
+        check("keepalive.semicolon-host-is-one-value", "h;encrypt=false".equals(semi.setting("serverName"))
+                && "true".equals(semi.setting("encrypt")), semi.setting("serverName") + " " + semi.setting("encrypt"));
+        check("keepalive.semicolon-db-is-one-value", "inv;trustServerCertificate=true".equals(semi.setting("databaseName"))
+                && "false".equals(semi.setting("trustServerCertificate")), semi.setting("databaseName"));
         check("keepalive.off", new SqlServerKeepAlive(props("database.hostname", "h", "database.names", "inv",
                 "signal.data.collection", "dbo.sig", SqlServerKeepAlive.INTERVAL, "0")).unusable() != null, "usable");
         check("keepalive.no-host", new SqlServerKeepAlive(props("database.names", "inv",

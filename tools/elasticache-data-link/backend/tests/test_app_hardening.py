@@ -82,8 +82,9 @@ class HealthMonitorRemovedTest(unittest.TestCase):
             'app.init_db()\n'
             'print(threading.active_count() - before)\n'
         ).format(backend=_BACKEND, db=os.path.join(_TMP, 'threads.db'))
-        out = subprocess.run([sys.executable, '-c', code], capture_output=True,
-                             text=True, check=True, timeout=60)  # nosec B603
+        # executable= runs this same interpreter; 'python3' is only its argv[0].
+        out = subprocess.run(['python3', '-c', code], executable=sys.executable, capture_output=True,
+                             text=True, check=True, timeout=60)  # nosec B603 - this interpreter, the test's own code
         self.assertEqual(out.stdout.strip().splitlines()[-1], '0', out.stderr)
 
 
@@ -114,8 +115,8 @@ class LinksFallbackTest(unittest.TestCase):
     def _run(self):
         code = _NO_ECDL_LINK.format(backend=_BACKEND,
                                     db=os.path.join(_TMP, 'fallback.db'))
-        out = subprocess.run([sys.executable, '-c', code], capture_output=True,
-                             text=True, timeout=60)  # nosec B603
+        out = subprocess.run(['python3', '-c', code], executable=sys.executable, capture_output=True,
+                             text=True, timeout=60)  # nosec B603 - this interpreter, the test's own code
         self.assertEqual(out.returncode, 0, out.stderr[-2000:])
         return json.loads(out.stdout.strip().splitlines()[-1])
 
@@ -207,8 +208,10 @@ def _app_db(conn, extra_sql=()):
                  "engine TEXT, host TEXT, port INTEGER, database_name TEXT, schema_name TEXT, "
                  "username TEXT, password TEXT, ssl_mode TEXT, status TEXT, created DATE, "
                  "notes TEXT)")
-    for table in ('connectors', 'brokers', 'pipelines', 'deployments'):
-        conn.execute('CREATE TABLE {} (id INTEGER PRIMARY KEY)'.format(table))
+    conn.execute('CREATE TABLE connectors (id INTEGER PRIMARY KEY)')
+    conn.execute('CREATE TABLE brokers (id INTEGER PRIMARY KEY)')
+    conn.execute('CREATE TABLE pipelines (id INTEGER PRIMARY KEY)')
+    conn.execute('CREATE TABLE deployments (id INTEGER PRIMARY KEY)')
     conn.execute('CREATE TABLE targets (id INTEGER PRIMARY KEY, auth_token TEXT)')
     conn.execute('CREATE TABLE settings (key TEXT PRIMARY KEY, flag INTEGER, '
                  'i_value INTEGER, s_value TEXT, f_value REAL)')

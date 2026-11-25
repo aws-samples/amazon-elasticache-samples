@@ -11,13 +11,12 @@ import os
 import sys
 import unittest
 
-import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from ecdl_link.tests.policy_eval import allows  # noqa: E402
 from ecdl_link.tests.policy_render import render  # noqa: E402
-from ecdl_link.tests.test_control_plane_iam import _CfnLoader  # noqa: E402
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
 
 REGION, ACCOUNT = 'us-east-2', '111122223333'
 KEY = 'arn:aws:kms:{}:{}:key/1234abcd-12ab-34cd-56ef-1234567890ab'.format(REGION, ACCOUNT)
@@ -33,7 +32,7 @@ DB, TARGET, BROKER = _secret('shop-db'), _secret('shop-target'), _secret('Broker
 
 def _policy(template, target=True, broker=True):
     with open(os.path.join(ROOT, 'infra', template)) as handle:
-        resources = yaml.load(handle, Loader=_CfnLoader)['Resources']  # nosec B506
+        resources = load_cfn(handle)['Resources']
     values = {'AWS::Partition': 'aws', 'AWS::Region': REGION, 'AWS::AccountId': ACCOUNT,
               'AWS::StackName': 'ecdl-shop-cdc', 'DBSecretArn': DB,
               'TargetSecretArn': TARGET if target else '',

@@ -49,7 +49,7 @@ class EntrypointCase(unittest.TestCase):
                 base.pop(key, None)
             else:
                 base[key] = value
-        return subprocess.run(['bash', ENTRYPOINT] + list(args), env=base,
+        return subprocess.run(['bash', ENTRYPOINT, *args], env=base,  # nosec B603 - the repo's entrypoint, test only
                               capture_output=True, text=True, timeout=30)
 
     def java_opts(self, proc):

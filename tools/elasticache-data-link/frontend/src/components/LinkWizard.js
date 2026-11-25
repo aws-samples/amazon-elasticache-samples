@@ -14,7 +14,7 @@
 // and two definitions drift -- which is exactly the file-versus-UI split this
 // work exists to close.
 //
-// Two consequences worth knowing:
+// Two consequences:
 //   * There is no YAML writer in here. Rendering goes through POST
 //     /api/links/format so the file is written by the same library that reads it.
 //   * There is no validation in here either. Every verdict comes from the API,
@@ -161,7 +161,7 @@ function Choice({ selected, disabled, onSelect, title, right, lines, notes }) {
 // This replaced a list of cards, one per resource, each showing an identifier, an
 // engine, a status and a full endpoint. With six databases that is eighteen lines
 // of mostly-irrelevant text to scroll past before reaching the fields underneath,
-// and the one detail worth reading -- which of them you picked -- was the hardest
+// and the one important detail -- which of them you picked -- was the hardest
 // to see. A dropdown is one line, and the detail of the CHOSEN item is shown
 // beneath it where it means something.
 //
@@ -267,8 +267,8 @@ function LinkWizard({ document: doc, onChange, onDone, tokenMissing,
   // -- they are only the column names the form offers.
   const [manualColumns, setManualColumns] = useState({});
   // Deploying costs money and creates infrastructure, so it takes a second,
-  // deliberate action. Not a modal: a modal is something to dismiss, and the point
-  // is to be read.
+  // deliberate action. It is not a modal dialog: people close a dialog without
+  // reading it, and this text must be read.
   const [armed, setArmed] = useState(false);
 
   // Memoised because these feed useCallback dependency lists. Without it each
@@ -352,9 +352,9 @@ function LinkWizard({ document: doc, onChange, onDone, tokenMissing,
   const effectiveEngine = sourceKind === 'external'
     ? source.engine
     : (chosenSource && chosenSource.engine);
-  // The shared "About this link" block (database, name, mode) needs enough of a
-  // source to be worth showing: a resolved AWS source, or an external one with
-  // its engine and host filled in.
+  // The shared "About this link" block (database, name, mode) is shown only when
+  // the source is known: a resolved AWS source, or an external one with its
+  // engine and host filled in.
   const sourceReady = sourceKind === 'external'
     ? Boolean(source.engine && source.host)
     : Boolean(chosenSource);
@@ -542,11 +542,11 @@ function LinkWizard({ document: doc, onChange, onDone, tokenMissing,
       )}
 
       <div className="wz-body">
-        {/* The source list comes FIRST and everything else appears underneath the
-            choice. It used to open with Name and mode above a long scrolling list,
-            so after scrolling down to pick a database the "name the link" blocker
-            referred to a field that was no longer visible. A field appears
-            only once there is something to fill it in for. */}
+        {/* The source list comes FIRST and the other fields appear below it, after
+            a source is chosen. The step used to start with Name and mode above a
+            long list, so after the user picked a database further down, the
+            "name the link" message pointed to a field they could no longer see.
+            Each field is shown only when it applies. */}
         {STEPS[step].id === 'source' && (
           <section>
             <h2>

@@ -143,13 +143,16 @@ class ChunkBoundsTest(unittest.TestCase):
             self.assertIn('still keyed by the primary key (sku)', msg)
 
 
+def _echo(value):
+    """Runs in a worker process: returns what it was sent."""
+    return value
+
+
 class OrderedBoundsTest(unittest.TestCase):
     """Review finding M6, found live: PostgreSQL has no MIN/MAX for uuid
     (SQL Server none for uniqueidentifier), so the bounds are the first and
     last key in index order instead."""
     def test_no_min_for_the_type_reads_the_ends_of_the_index(self):
-        import pickle
-
         class Cursor(object):
             def __enter__(self):
                 return self
@@ -176,8 +179,11 @@ class OrderedBoundsTest(unittest.TestCase):
         self.assertTrue(all('ORDER BY' in q for q in seen), seen)
         a.query_rows = lambda sql, params: []
         self.assertEqual(a.bounds('public.t', 'id'), (None, None))
-        # A range start crosses to the worker processes.
-        self.assertEqual(pickle.loads(pickle.dumps(bulk_loader.After('x'))), bulk_loader.After('x'))
+        # A range start crosses to the worker processes, as load_chunk's argument.
+        from concurrent.futures import ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=1) as pool:
+            back = pool.submit(_echo, bulk_loader.After('x')).result(timeout=120)
+        self.assertEqual(back, bulk_loader.After('x'))
 
 
 class ResumePositionTest(unittest.TestCase):

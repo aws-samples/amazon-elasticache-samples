@@ -22,7 +22,9 @@ def read(name):
 class SampleLinkTest(unittest.TestCase):
     def test_both_links_validate(self):
         for name in ('link-mysql.yaml', 'link-postgresql.yaml'):
-            run = subprocess.run([sys.executable, CLI, 'validate', os.path.join(SAMPLES, name)],  # nosec B603
+            # executable= runs this same interpreter; 'python3' is only its argv[0].
+            run = subprocess.run(['python3', '-u', CLI, 'validate', os.path.join(SAMPLES, name)],  # nosec B603
+                                 executable=sys.executable,
                                  capture_output=True, text=True, cwd=ROOT)
             self.assertEqual(run.returncode, 0, name + run.stdout + run.stderr)
 
