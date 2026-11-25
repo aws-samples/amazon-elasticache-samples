@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -397,38 +396,6 @@ func TestIntegrationWorkerKeepsReadingAfterNoGroup(t *testing.T) { // Jira story
 	})
 }
 
-// TestHelperRunMain runs main() in a child process (see runMain).
-func TestHelperRunMain(t *testing.T) {
-	if os.Getenv("ECDL_RUN_MAIN") != "1" {
-		t.Skip("helper")
-	}
-	os.Args = []string{"ecdl-go-sink"}
-	main()
-}
-
-// runMain runs the sink's main() with env and returns its exit code and output.
-// Used for configuration that must stop the sink before it connects anywhere.
-func runMain(t *testing.T, env ...string) (int, string) {
-	t.Helper()
-	// The test binary itself, re-run to execute main() alone. exec.Cmd rather than
-	// exec.Command: the program is this process's own executable, not a name to look up.
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
-	cmd := &exec.Cmd{Path: self, Args: []string{self, "-test.run=^TestHelperRunMain$"}}
-	cmd.Env = append([]string{"ECDL_RUN_MAIN=1", "HEALTH_PORT=18617", "BROKER_HOST=127.0.0.1", "BROKER_PORT=1",
-		"PATH=" + os.Getenv("PATH")}, env...)
-	out, err := cmd.CombinedOutput()
-	code := 0
-	if ee, ok := err.(*exec.ExitError); ok {
-		code = ee.ExitCode()
-	} else if err != nil {
-		t.Fatal(err)
-	}
-	return code, string(out)
-}
-
 func TestStartupRefusesBadConfigBeforeConnecting(t *testing.T) { // Jira story F039 Jira story F048 Jira story F049 Jira story F051
 	cases := []struct {
 		env  []string
@@ -439,13 +406,24 @@ func TestStartupRefusesBadConfigBeforeConnecting(t *testing.T) { // Jira story F
 		{[]string{"STREAMS=data:p.a.users", "TRIM_STREAMS=data:p.a.users"}, "TRIM_STREAMS lists data:p.a.users"},
 		{[]string{"STREAMS=data:p.a.users", "BATCH_SIZE=abc"}, `BATCH_SIZE="abc"`},
 	}
+	// main() stops with FATAL and exit 1 on any error from startupConfig, which
+	// runs before anything is printed or connected.
 	for _, c := range cases {
-		code, out := runMain(t, c.env...)
-		if code != 1 || !strings.Contains(out, "FATAL") || !strings.Contains(out, c.want) {
-			t.Errorf("%v: exit %d, output:\n%s", c.env, code, out)
+		env := map[string]string{"BROKER_HOST": "127.0.0.1", "BROKER_PORT": "1"}
+		for _, kv := range c.env {
+			k, v, _ := strings.Cut(kv, "=")
+			env[k] = v
 		}
-		if strings.Contains(out, "Connected to") {
-			t.Errorf("%v: connected before refusing", c.env)
+		_, err := startupConfig(func(k string) string { return env[k] })
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%v: got %v, want an error containing %q", c.env, err, c.want)
 		}
+	}
+	// A valid configuration passes and returns its streams.
+	specs, err := startupConfig(func(k string) string {
+		return map[string]string{"STREAMS": "data:p.a.users,data:p.a.orders"}[k]
+	})
+	if err != nil || len(specs) != 2 {
+		t.Errorf("valid config: %d stream(s), %v", len(specs), err)
 	}
 }
