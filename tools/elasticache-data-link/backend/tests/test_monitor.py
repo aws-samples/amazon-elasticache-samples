@@ -3836,6 +3836,31 @@ def test_integrity_verdict_is_per_table_and_names_the_bad_one():
     check_true('integ.headline_names_it', 'customers' in out['headline'])
 
 
+def test_h5_loss_the_broker_cannot_see_is_loss():
+    """Review finding H5: the verdict read only the broker's evicted_keys
+    (always 0 under noeviction). The sink's and the cache check's losses
+    count too, for every table."""
+    saved = monitor.delivery_losses
+    try:
+        monitor.delivery_losses = lambda: {'verify_missing': 2, 'target_evicted_keys': 0}
+        out = _with_two_streams(monitor.collect_integrity)
+        rows = {r['table']: r for r in out['tables']}
+        check('h5.clean_table_now_loss', rows['orders']['verdict'], 'loss')
+        check_true('h5.note', 'verify missing 2' in (out.get('loss_note') or ''))
+        monitor.delivery_losses = lambda: {'verify_missing': 0, 'pending_vanished': None}
+        out = _with_two_streams(monitor.collect_integrity)
+        check('h5.nothing_lost', {r['table']: r for r in out['tables']}['orders']['verdict'], 'ok')
+        check('h5.no_note', out.get('loss_note'), None)
+
+        def unreadable():
+            raise RuntimeError('cloudwatch down')
+        monitor.delivery_losses = unreadable
+        out = _with_two_streams(monitor.collect_integrity)
+        check_true('h5.unreadable_is_reported', 'error' in out.get('delivery_losses', {}))
+    finally:
+        monitor.delivery_losses = saved
+
+
 def test_integrity_totals_sum_across_tables():
     out = _with_two_streams(monitor.collect_integrity)
     check('integ.dlq_total', out['dead_lettered'], 3)

@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -195,6 +196,30 @@ func backlogMetricsLoop(ctx context.Context, broker redis.UniversalClient, specs
 	// running total since the task started, which no alarm could use.
 	var last deliveryCounts
 	var lastErrs map[string]int64
+	// Counters are published from here and once more at shutdown (M2), so the
+	// two never send the same interval twice.
+	var countersMu sync.Mutex
+	publishCounters := func(ctx context.Context) error {
+		countersMu.Lock()
+		defer countersMu.Unlock()
+		now, nowErrs := readDeliveryCounts(), errLog.errorTotals()
+		if _, err := cw.PutMetricData(ctx, &cloudwatch.PutMetricDataInput{
+			Namespace: aws.String(ns), MetricData: append(now.minus(last).datums(dims), errorDatums(dims, nowErrs, lastErrs)...),
+		}); err != nil {
+			return err // keep `last`, so the next publish carries this interval too
+		}
+		last, lastErrs = now, nowErrs
+		return nil
+	}
+	setFinalMetrics(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := publishCounters(ctx); err != nil {
+			logErr("metric-put", fmt.Errorf("final counters not published: %w", err))
+			return
+		}
+		fmt.Println("  shutdown: final metrics published")
+	})
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
@@ -240,9 +265,6 @@ func backlogMetricsLoop(ctx context.Context, broker redis.UniversalClient, specs
 			}
 		}
 		perTask := float64(backlog) / float64(tasks)
-		now := readDeliveryCounts()
-		delta := now.minus(last)
-		nowErrs := errLog.errorTotals()
 		atomic.StoreInt64(&metricBacklogPerTask, int64(perTask))
 		levels := levelDatums(dims, readErr == nil, perTask, backlog, tasks, dlqDepth, oldestMs,
 			atomic.LoadInt64(&metricTargetUp))
@@ -258,13 +280,34 @@ func backlogMetricsLoop(ctx context.Context, broker redis.UniversalClient, specs
 			logErr("metric-put", err)
 			continue // keep `last`, so the next publish carries this interval too
 		}
-		if _, err := cw.PutMetricData(ctx, &cloudwatch.PutMetricDataInput{
-			Namespace: aws.String(ns), MetricData: append(delta.datums(dims), errorDatums(dims, nowErrs, lastErrs)...),
-		}); err != nil {
+		if err := publishCounters(ctx); err != nil {
 			logErr("metric-put", err)
-			continue
 		}
-		last, lastErrs = now, nowErrs
+	}
+}
+
+// finalMetrics publishes the counters of the last interval at shutdown (review
+// finding M2). A task stopping lost up to METRIC_INTERVAL_SEC of them (dead
+// letters, vanished entries, evictions), so a scale-in right after a loss could
+// hide it from the alarms.
+var finalMetrics struct {
+	sync.Mutex
+	publish func()
+}
+
+func setFinalMetrics(f func()) {
+	finalMetrics.Lock()
+	finalMetrics.publish = f
+	finalMetrics.Unlock()
+}
+
+// flushFinalMetrics is called by main once the workers have finished.
+func flushFinalMetrics() {
+	finalMetrics.Lock()
+	f := finalMetrics.publish
+	finalMetrics.Unlock()
+	if f != nil {
+		f()
 	}
 }
 

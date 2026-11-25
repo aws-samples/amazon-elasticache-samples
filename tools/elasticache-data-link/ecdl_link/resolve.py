@@ -602,6 +602,28 @@ def describe_source(clients, arn):
             raise ResolutionError(
                 'no database instance matches {}'.format(arn))
         d = items[0]
+        # Review finding M7. Change capture reads the primary's log (the MySQL
+        # binlog, a PostgreSQL replication slot, SQL Server and Oracle change
+        # data), which a replica does not serve; and an Aurora instance can
+        # stop being the writer at the next failover. Both used to resolve
+        # and then fail at capture, or capture from the wrong node.
+        replica_of = (d.get('ReadReplicaSourceDBInstanceIdentifier')
+                      or d.get('ReadReplicaSourceDBClusterIdentifier'))
+        if replica_of:
+            raise ResolutionError(
+                '{} is a read replica of {}; change capture reads the primary'.format(
+                    identifier, replica_of),
+                'Use the ARN of {} instead.'.format(replica_of))
+        if d.get('DBClusterIdentifier'):
+            cluster_arn = 'arn:{}:rds:{}:{}:cluster:{}'.format(
+                parsed.get('partition') or 'aws', parsed.get('region') or '<region>',
+                parsed.get('account') or '<account>', d['DBClusterIdentifier'])
+            raise ResolutionError(
+                '{} is an instance of the Aurora cluster {}; an instance stops '
+                'being the writer at a failover, and a reader serves no change '
+                'capture'.format(identifier, d['DBClusterIdentifier']),
+                'Use the cluster ARN: {}. Its endpoint always leads to the '
+                'writer.'.format(cluster_arn))
         endpoint_block = d.get('Endpoint') or {}
         info = {
             'endpoint': endpoint_block.get('Address'),

@@ -78,24 +78,39 @@ def deployed_key_owners(cloudformation, exclude_link=None):
     return owners
 
 
-def key_conflicts(cloudformation, link_name, target_host, prefixes):
-    """Other links that already write any of `prefixes` into `target_host`.
+def overlaps(a, b):
+    """True when keys under one prefix can also be under the other.
 
-    Returns [{'link': name, 'key_prefixes': [...]}], sorted, empty when clear.
+    Equal prefixes collide, and so do nested ones: table `shop` with no key
+    prefix owns shop:*, which includes every key of a link whose key_prefix is
+    `shop` (shop:orders:1). A bulk-load sweep or a TRUNCATE of `shop` scans
+    shop:* and deletes the other link's rows (review finding C2). Prefixes end
+    in ':', so products: and products2: never overlap.
+    """
+    return a.startswith(b) or b.startswith(a)
+
+
+def key_conflicts(cloudformation, link_name, target_host, prefixes):
+    """Other links whose keys in `target_host` overlap any of `prefixes`.
+
+    Returns [{'link': name, 'key_prefixes': [...]}] with the other link's
+    overlapping prefixes, sorted, empty when clear.
     """
     owners = deployed_key_owners(cloudformation, exclude_link=link_name)
     host = (target_host or '').strip().lower()
     clash = {}
-    for prefix in prefixes:
-        for other in owners.get((host, prefix), ()):
-            clash.setdefault(other, set()).add(prefix)
+    for (owner_host, owned), links in owners.items():
+        if owner_host == host and any(overlaps(p, owned) for p in prefixes):
+            for other in links:
+                clash.setdefault(other, set()).add(owned)
     return [{'link': other, 'key_prefixes': sorted(found)}
             for other, found in sorted(clash.items())]
 
 
 def describe_conflict(conflict, target_host):
-    return ('pipeline {!r} already writes {} into this cache ({}). Both would '
-            'write the same keys and overwrite each other\'s rows.'.format(
+    return ('pipeline {!r} already writes {} into this cache ({}). The two '
+            'links\' keys overlap: they would overwrite each other\'s rows, and a '
+            'reload of either would delete the other\'s.'.format(
                 conflict['link'],
                 ', '.join(p + '*' for p in conflict['key_prefixes']),
                 target_host))

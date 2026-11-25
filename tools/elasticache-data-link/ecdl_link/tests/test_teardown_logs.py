@@ -9,13 +9,12 @@ import os
 import sys
 import unittest
 
-import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from ecdl_link import teardown  # noqa: E402
 from ecdl_link.teardown import Destroyer, destroy_plan, log_groups_of  # noqa: E402
-from ecdl_link.tests.test_control_plane_iam import _CfnLoader  # noqa: E402
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
 from ecdl_link.tests.test_teardown import FakeCloudFormation, FakeECS, _Clients  # noqa: E402
 
 NOW = 1_750_000_000.0
@@ -166,7 +165,7 @@ class GroupNamesTest(unittest.TestCase):
         for step, template in (('cdc', 'ecdl-cdc-ecs.yaml'), ('loader', 'ecdl-loader-ecs.yaml'),
                                ('broker', 'ecdl-broker-quickstart.yaml')):
             with open(os.path.join(ROOT, 'infra', template)) as handle:
-                res = yaml.load(handle, Loader=_CfnLoader)['Resources']  # nosec B506
+                res = load_cfn(handle)['Resources']
             names = sorted(r['Properties']['LogGroupName']['Sub'].replace('${AWS::StackName}', 'S')
                            for r in res.values() if r['Type'] == 'AWS::Logs::LogGroup')
             self.assertEqual(sorted(log_groups_of(step, 'S')), names, template)

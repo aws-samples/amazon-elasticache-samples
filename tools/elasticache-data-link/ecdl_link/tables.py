@@ -240,12 +240,16 @@ SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_KEY
  ORDER BY TABLE_NAME, ORDINAL_POSITION
 """
 
+# relkind 'p' is a partitioned table (review finding M8): it holds no rows of
+# its own, but is what a link names and what the loader reads. It used to be
+# left out, so the preflight said such a table did not exist.
 _PG_TABLES = """
 SELECT c.relname,
-       CASE WHEN c.reltuples < 0 THEN NULL ELSE c.reltuples::bigint END
+       CASE WHEN c.reltuples < 0 THEN NULL ELSE c.reltuples::bigint END,
+       c.relkind
   FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace
- WHERE n.nspname = %s AND c.relkind = 'r'
+ WHERE n.nspname = %s AND c.relkind IN ('r', 'p')
  ORDER BY c.relname
 """
 
@@ -334,9 +338,12 @@ def _mysql_catalogue(connection, database):
 
 def _postgresql_catalogue(connection, schema):
     tables = {}
-    for name, row_estimate in _rows(connection, _PG_TABLES, (schema,)):
+    for row in _rows(connection, _PG_TABLES, (schema,)):
+        name, row_estimate = row[0], row[1]
         tables[name] = {'table': name, 'row_estimate': row_estimate,
                         'columns': [], 'primary_key': []}
+        if len(row) > 2 and row[2] == 'p':
+            tables[name]['partitioned'] = True
     for name, column, data_type, nullable in _rows(
             connection, _PG_COLUMNS, (schema,)):
         entry = tables.get(name)
@@ -386,6 +393,26 @@ def _postgresql_capture_details(connection, schema, tables):
         _rollback(connection)
         for entry in tables.values():
             entry.pop('toastable_columns', None)
+
+
+# What each publication sends (review finding M8). publish without update or
+# delete drops those changes silently; publish_via_partition_root (13+) makes
+# a partitioned table's changes arrive under its own name, which is the name
+# the link captures, instead of each partition's.
+_PG_PUBLICATION_OPTIONS = ('SELECT pubname, pubinsert, pubupdate, pubdelete, pubviaroot '
+                           'FROM pg_publication')
+_PG_PUBLICATION_OPTIONS_OLD = 'SELECT pubname, pubinsert, pubupdate, pubdelete, NULL FROM pg_publication'
+
+
+def _postgresql_publication_options(connection):
+    """{publication: {insert, update, delete, via_root}}, or None when unreadable."""
+    for sql in (_PG_PUBLICATION_OPTIONS, _PG_PUBLICATION_OPTIONS_OLD):
+        try:
+            return {r[0]: {'insert': bool(r[1]), 'update': bool(r[2]), 'delete': bool(r[3]),
+                           'via_root': r[4]} for r in _rows(connection, sql)}
+        except Exception:  # noqa: BLE001
+            _rollback(connection)
+    return None
 
 
 def _postgresql_publications(connection):
@@ -443,7 +470,56 @@ def _mysql_prerequisites(connection):
     })
     checks.append(_mysql_binlog_retention(connection))
     checks.append(_mysql_gtid(connection))
+    checks.extend(c for c in (_mysql_row_value_options(connection),
+                              _mysql_replication_grants(connection)) if c)
     return checks
+
+
+def _mysql_row_value_options(connection):
+    """Review finding M8: PARTIAL_JSON logs only the changed part of a JSON
+    column, which Debezium cannot turn into the whole value."""
+    try:
+        rows = _rows(connection, 'SELECT @@binlog_row_value_options')
+        value = rows[0][0] if rows and len(rows[0]) == 1 else None
+    except Exception:  # noqa: BLE001
+        return None    # MySQL 5.7 has no such setting
+    if value is not None and not isinstance(value, str):
+        return None
+    partial = 'PARTIAL_JSON' in str(value or '').upper()
+    return {
+        'name': 'binlog_row_value_options is empty',
+        'ok': not partial,
+        'block': True,
+        'detail': 'binlog_row_value_options={}'.format(value or "''"),
+        'fix': None if not partial else
+               "Set binlog_row_value_options to '' (empty). With PARTIAL_JSON an "
+               'update of a JSON column logs only the change, and the cached '
+               'value would be wrong.',
+    }
+
+
+def _mysql_replication_grants(connection):
+    """Review finding M8: without REPLICATION SLAVE and REPLICATION CLIENT the
+    deploy went ahead and Debezium failed reading the binlog."""
+    try:
+        grants = ' '.join(str(r[0]) for r in _rows(connection, 'SHOW GRANTS FOR CURRENT_USER()')).upper()
+    except Exception:  # noqa: BLE001
+        return None
+    if 'GRANT ' not in grants:
+        return None    # nothing readable: not checked, rather than failed
+    everything = 'ALL PRIVILEGES ON *.*' in grants
+    slave = everything or 'REPLICATION SLAVE' in grants or 'REPLICATION REPLICA' in grants
+    client = everything or 'REPLICATION CLIENT' in grants
+    ok = slave and client
+    return {
+        'name': 'the user may read the binlog',
+        'ok': ok,
+        'block': True,
+        'detail': 'REPLICATION SLAVE: {}, REPLICATION CLIENT: {}'.format(
+            'yes' if slave else 'no', 'yes' if client else 'no'),
+        'fix': None if ok else
+               "GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO '<the CDC user>'@'%';",
+    }
 
 
 def _mysql_gtid(connection):
@@ -563,6 +639,70 @@ def _postgresql_prerequisites(connection):
                'Without it PostgreSQL emits no logical decoding stream.',
     })
     checks.extend(_postgresql_slot_checks(connection))
+    checks.extend(c for c in (_postgresql_replication_role(connection),) if c)
+    return checks
+
+
+_PG_REPLICATION_ROLE = """
+SELECT r.rolreplication OR r.rolsuper OR EXISTS (
+         SELECT 1 FROM pg_roles g
+          WHERE g.rolname = 'rds_replication' AND pg_has_role(r.oid, g.oid, 'member'))
+  FROM pg_roles r WHERE r.rolname = current_user
+"""
+
+
+def _postgresql_replication_role(connection):
+    """Review finding M8: a user without REPLICATION (rds_replication on RDS)
+    cannot open the replication connection Debezium reads changes on."""
+    try:
+        rows = _rows(connection, _PG_REPLICATION_ROLE)
+    except Exception:  # noqa: BLE001
+        _rollback(connection)
+        return None
+    if not rows or not isinstance(rows[0][0], bool):
+        return None
+    ok = rows[0][0]
+    return {
+        'name': 'the user may replicate',
+        'ok': ok,
+        'block': True,
+        'detail': 'REPLICATION or rds_replication: {}'.format('yes' if ok else 'no'),
+        'fix': None if ok else
+               'GRANT rds_replication TO <the CDC user>; (outside RDS: ALTER ROLE '
+               '<the CDC user> REPLICATION;)',
+    }
+
+
+def _postgresql_capacity(connection):
+    """Review finding M8: every link needs a free replication slot and a free
+    WAL sender. With none, Debezium failed at start ("all replication slots
+    are in use" / "number of requested standby connections exceeds
+    max_wal_senders") after the deploy had already paused nothing to load."""
+    checks = []
+    try:
+        row = _rows(connection, "SELECT current_setting('max_replication_slots')::int, "
+                                "(SELECT count(*) FROM pg_replication_slots), "
+                                "current_setting('max_wal_senders')::int, "
+                                "(SELECT count(*) FROM pg_stat_replication)")[0]
+        slots, used, senders, active = (int(v) for v in row)
+    except Exception:  # noqa: BLE001
+        _rollback(connection)
+        return checks
+    checks.append({
+        'name': 'a replication slot is free',
+        'ok': used < slots,
+        'detail': '{} of max_replication_slots={} in use'.format(used, slots),
+        'fix': None if used < slots else
+               'Raise max_replication_slots in the parameter group (reboot), or drop '
+               'a slot no link uses. A link that is already deployed has its slot.',
+    })
+    checks.append({
+        'name': 'a WAL sender is free',
+        'ok': active < senders,
+        'detail': '{} of max_wal_senders={} in use'.format(active, senders),
+        'fix': None if active < senders else
+               'Raise max_wal_senders in the parameter group (reboot).',
+    })
     return checks
 
 
@@ -606,6 +746,7 @@ def _postgresql_slot_checks(connection):
             "WHERE NOT active AND slot_type = 'logical'")]
     except Exception:  # noqa: BLE001
         idle = None
+    checks.extend(_postgresql_capacity(connection))
     if idle is not None:
         checks.append({
             'name': 'no abandoned replication slots',
@@ -714,7 +855,7 @@ def list_tables(source_arn, secret_arn, database=None, schema=None, region=None,
                                       source.get('port'), username, password))
 
     try:
-        publications = None
+        publications = publication_options = None
         if family == 'mysql':
             tables = _mysql_catalogue(connection, namespace)
             prerequisites = _mysql_prerequisites(connection)
@@ -726,6 +867,7 @@ def list_tables(source_arn, secret_arn, database=None, schema=None, region=None,
             # Last, so a failure here cannot abort the queries above.
             _postgresql_capture_details(connection, namespace, tables)
             publications = _postgresql_publications(connection)
+            publication_options = _postgresql_publication_options(connection)
     except Exception as exc:  # noqa: BLE001
         return dict(base, stage='query',
                     error='connected, but could not read the catalogue: {}'.format(
@@ -758,7 +900,8 @@ def list_tables(source_arn, secret_arn, database=None, schema=None, region=None,
     if family == 'postgresql':
         # For the preflight's publication and grant checks. The user is the
         # one these checks ran as: the link's own credential.
-        extra = {'publications': publications, 'user': username}
+        extra = {'publications': publications, 'user': username,
+                 'publication_options': publication_options}
     return dict(base, listed=True, tables=listed, schemas=schemas,
                 prerequisites=prerequisites,
                 count=len(listed), **extra)

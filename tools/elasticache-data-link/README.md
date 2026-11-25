@@ -31,13 +31,12 @@ log is work each team ends up doing alone.
 
 More in the [one-pager](docs/one-pager.md).
 
-**Status:** release 0.2.31 (`VERSION`). All four source engines have run end
+**Status:** release 0.2.40 (`VERSION`). All four source engines have run end
 to end, bulk load and live change capture with every row delivered: Aurora
 MySQL 8.0, Aurora PostgreSQL 16, SQL Server 2022 and RDS Oracle 19c (see
-[Benchmark results](docs/benchmark-results.md)). This release was also tested
-live on Aurora MySQL 3 with an ElastiCache for Valkey cluster: bulk load,
-inserts, updates and deletes, filters, computed fields, renames, denormalize,
-reload, failovers of the broker and the target, and secret rotation. See
+[Benchmark results](docs/benchmark-results.md)). This release was tested
+end to end on Aurora MySQL, Aurora PostgreSQL and SQL Server with 1.5 million
+rows each: bulk load, change capture, filters and denormalize. See
 [Limitations](#limitations).
 
 **Contents:** [What you need](#what-you-need) · [Deploy in five steps](#deploy-in-five-steps) ·
@@ -86,7 +85,7 @@ app.diagrams.net).
 | Need | Notes |
 |---|---|
 | A source database: Aurora MySQL 3 / MySQL 8, or Aurora PostgreSQL / PostgreSQL | set up as in [Prepare the database](#prepare-the-database) |
-| Its credential in Secrets Manager | an RDS-managed secret works as is |
+| Its credential in Secrets Manager, tagged `ecdl:link` | an RDS-managed secret works as is once tagged; or list it in the control plane's `PipelineSecretArns` |
 | A target ElastiCache for Valkey cache, in the same VPC as the pipeline | ECDL never creates the target |
 | Subnets that reach ECR, Secrets Manager, CloudWatch and SSM | a NAT gateway or VPC endpoints |
 | Permission to create IAM roles (`CAPABILITY_NAMED_IAM`) | the control plane creates its own roles |
@@ -191,6 +190,14 @@ behind each setting are in [Prerequisites](docs/prerequisites.md).
 3. `ecdl signal ddl <link>.yaml` prints the signalling table, its grant and
    the link's publication (`CREATE PUBLICATION ecdl_<link>_pub ...`); run them.
 4. Each captured table needs a primary key, or `REPLICA IDENTITY FULL`.
+**SQL Server**
+1. SQL Server Agent running; CDC enabled on the database
+   (`sys.sp_cdc_enable_db`) and on each table (`sys.sp_cdc_enable_table`).
+   Set the capture job's `@pollinginterval = 0` for low latency.
+2. `ecdl signal ddl <link>.yaml` prints the signalling table, the statement
+   that enables CDC on it and its `GRANT INSERT, DELETE`; run them. Debezium
+   writes one row to it every 5 minutes and deletes it again, so an idle
+   source always has a recent transaction to read up to.
 
 The deploy preflight checks these and names any that is missing.
 
@@ -401,7 +408,7 @@ complete example.
 | `AssignPublicIp` | `false` | for a subnet with no NAT gateway |
 | `ImageTag` | the release (`VERSION`) | the image version every stack pulls |
 | `InstanceType` | `t3.small` | the control-plane instance |
-| `PipelineSecretArns` | `''` | extra secrets link tasks may read; otherwise only secrets tagged `ecdl:link` |
+| `PipelineSecretArns` | `''` | secrets link tasks may read besides those tagged `ecdl:link`, which are always allowed |
 | `MonitorSourceSecretArns` | `''` | source secrets the monitor may read to show row values; empty shows none |
 
 **Link settings** (`advanced.*` in the link file; the full list is in
@@ -517,10 +524,10 @@ ecdl-<link>-<broker|cdc|loader>`. For a task error, the log groups below.
 | `already deployed` | The link exists. Confirm to update it in place; nothing is reloaded unless you ask for a reload. |
 | `CannotPullContainerError` | The pipeline images are not in this account and region at the stack's `ImageTag` (step 1). |
 | Debezium log: `Access denied`, `binlog`, `replication slot`, `wal_level` | The source is not set up for change capture, or the user lacks grants: [Prerequisites, sections 3–5](docs/prerequisites.md#4-change-capture-must-be-enabled-on-the-source). |
-| `ResourceInitializationError ... secretsmanager` | The task cannot read the source or target secret. Tag the secret `ecdl:link` (when the control plane's `PipelineSecretArns` is empty) or add it to `PipelineSecretArns`, or check the subnet's route to Secrets Manager. |
+| `ResourceInitializationError ... secretsmanager` | The task cannot read the source or target secret. Tag the secret `ecdl:link` or add it to the control plane's `PipelineSecretArns`, or check the subnet's route to Secrets Manager. |
 | Loader log: `FATAL: ... will not fit in the target cache` | The target is too small for the tables. Use a larger node type or more shards. |
 | Loader log: `FATAL: ... no primary key` | Add a primary key to the table. CDC keys rows by it, so the loader needs it too. |
-| Loader log: `FATAL: ... split into integer ranges` | The primary key's first column is not an integer. Name an indexed integer column with `advanced.loader.primary_keys`; rows are still keyed by the whole primary key. |
+| Loader log: `FATAL: ... split into integer ranges` | Releases before 0.2.37 load only tables whose split column is an integer. Upgrade, or name an indexed integer column with `advanced.loader.primary_keys`; rows are still keyed by the whole primary key. |
 | Timeouts connecting to the source or the cache | Security groups or routing between the pipeline subnets and the source or cache: [Prerequisites](docs/prerequisites.md). |
 | `ended in CREATE_FAILED` | The stack is kept so its events can be read, and what it created is billed until it is deleted. Fix the cause and deploy again, or delete the link. |
 | `is in UPDATE_ROLLBACK_FAILED and cannot be updated` | Finish the rollback first: `aws cloudformation continue-update-rollback --stack-name <stack>` (with `--resources-to-skip` for a resource the stack events name). |
@@ -588,8 +595,13 @@ Your source database and target cache are billed as before.
 - **Secrets stay in Secrets Manager.** Tasks read the source and target
   credentials at start; they are never in a link file, a stack parameter or a
   log. A new secret value restarts the tasks that use it.
-- **TLS everywhere.** To the source (certificate and host name verified
-  against the RDS CA bundle), the broker and the cache.
+- **TLS to the broker and the cache, and to the source.** Debezium and the bulk
+  loader verify the source's certificate and host name against the RDS CA
+  bundle and the system CAs on MySQL and PostgreSQL; Debezium does on SQL
+  Server too. Not yet verified: the bulk loader's SQL Server connection (the
+  driver negotiates encryption), and Oracle, which connects without TLS. An
+  external source can turn TLS off with `source.tls: false`, for a server with
+  a self-signed certificate or one reached by IP address.
 - **Least privilege.** Each link's tasks may read only their own secrets, and
   the control plane's roles are scoped to ECDL's own resources (`ecdl-*`).
 - **The cache holds the rows you choose.** Treat the target cache and the
@@ -685,5 +697,4 @@ This project is licensed under the MIT-0 License. See the [LICENSE](LICENSE) fil
 The container images it builds include third-party software under its own
 licenses, listed in [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES) (see also
 [NOTICE](NOTICE)).
-To report a security issue, see
-[CONTRIBUTING](https://github.com/aws-samples/amazon-elasticache-samples/blob/main/CONTRIBUTING.md#security-issue-notifications).
+To report a security issue, see [CONTRIBUTING](https://github.com/aws-samples/amazon-elasticache-samples/blob/main/CONTRIBUTING.md#security-issue-notifications).

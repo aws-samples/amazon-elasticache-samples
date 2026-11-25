@@ -13,12 +13,11 @@
  */
 package io.debezium.server.redis;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Properties;
@@ -29,7 +28,8 @@ import io.debezium.server.redis.EcdlOffsetBackingStore.SlotState;
 public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
 
     static final String DRIVER = "org.postgresql.Driver";
-    static final String QUERY = "SELECT database, plugin FROM pg_replication_slots WHERE slot_name = ?";
+    // SELECT *: wal_status exists from PostgreSQL 13 only.
+    static final String QUERY = "SELECT * FROM pg_replication_slots WHERE slot_name = ?";
     /** Debezium's default slot.name. */
     static final String DEFAULT_SLOT = "debezium";
     private static final int TIMEOUT_SECONDS = 10;
@@ -60,6 +60,11 @@ public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
         put("socketTimeout", String.valueOf(TIMEOUT_SECONDS));
         put("loginTimeout", String.valueOf(TIMEOUT_SECONDS));
         put("ApplicationName", "ecdl-slot-check");
+        // Host, port and database as connection properties, not in the URL: a value
+        // with URL syntax in it ('?', '&', '/') stays a value and cannot add settings.
+        put("PGHOST", host);
+        put("PGPORT", port);
+        put("PGDBNAME", database);
     }
 
     /** Only the PostgreSQL connector reads a slot. */
@@ -73,13 +78,28 @@ public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
         }
     }
 
-    String url() {
-        return "jdbc:postgresql://" + host + ":" + port + "/" + URLEncoder.encode(database, StandardCharsets.UTF_8);
+    /** The driver's URL: no host, port or database in it; those are properties. */
+    static final String URL = "jdbc:postgresql://";
+
+    /** A connection property, for the tests. */
+    String setting(String name) {
+        return connection.getProperty(name);
     }
 
     @Override
     public String describe() {
         return "'" + slot + "' on " + host + ":" + port + "/" + database;
+    }
+
+    /** A column's value, or null when this PostgreSQL version has no such column. */
+    static String column(ResultSet rs, String name) throws SQLException {
+        ResultSetMetaData md = rs.getMetaData();
+        for (int i = 1; i <= md.getColumnCount(); i++) {
+            if (name.equalsIgnoreCase(md.getColumnName(i))) {
+                return rs.getString(i);
+            }
+        }
+        return null;
     }
 
     @Override
@@ -90,7 +110,7 @@ public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
         catch (ClassNotFoundException e) {
             return new SlotResult(SlotState.UNKNOWN, "the PostgreSQL JDBC driver is not on the classpath");
         }
-        try (Connection c = DriverManager.getConnection(url(), connection);
+        try (Connection c = DriverManager.getConnection(URL, connection);
                 PreparedStatement q = c.prepareStatement(QUERY)) {
             q.setQueryTimeout(TIMEOUT_SECONDS);
             q.setString(1, slot);
@@ -98,7 +118,13 @@ public class PostgresSlotCheck implements EcdlOffsetBackingStore.SlotCheck {
                 if (!rs.next()) {
                     return new SlotResult(SlotState.ABSENT, "not in pg_replication_slots");
                 }
-                return new SlotResult(SlotState.PRESENT, "database " + rs.getString(1) + ", plugin " + rs.getString(2));
+                String walStatus = column(rs, "wal_status");
+                String detail = "database " + rs.getString("database") + ", plugin " + rs.getString("plugin")
+                        + (walStatus == null ? "" : ", wal_status " + walStatus);
+                // Review finding H6: PostgreSQL invalidates a slot that fell
+                // more than max_slot_wal_keep_size behind. It is still listed,
+                // but the WAL it needs is gone, so it looked present.
+                return new SlotResult("lost".equals(walStatus) ? SlotState.LOST : SlotState.PRESENT, detail);
             }
         }
         catch (SQLException e) {

@@ -11,19 +11,21 @@ CloudFormation's !Sub would put in, so the tests check what it does, not only
 what the YAML says.
 """
 import contextlib
+import importlib.util
 import io
 import os
 import re
+import shutil
 import sys
+import tempfile
 import types
 import unittest
 
-import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from ecdl_link.tests.policy_eval import allows  # noqa: E402
-from ecdl_link.tests.test_control_plane_iam import _CfnLoader  # noqa: E402
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
 from ecdl_link.tests.test_control_plane_least_privilege import _arn, _statements  # noqa: E402
 
 CDC = os.path.join(ROOT, 'infra', 'ecdl-cdc-ecs.yaml')
@@ -34,7 +36,7 @@ TARGET = 'arn:aws:secretsmanager:us-east-2:111122223333:secret:ecdl-shop-target-
 
 def _cdc():
     with open(CDC) as handle:
-        return yaml.load(handle, Loader=_CfnLoader)  # nosec B506 - SafeLoader subclass
+        return load_cfn(handle)
 
 
 class _FakeEcs:
@@ -45,6 +47,27 @@ class _FakeEcs:
         if self.fail:
             raise self.fail
         self.calls.append(kwargs)
+
+
+def _module(name, code):
+    """The template's inline Lambda code as a module, the way Lambda loads index.py."""
+    folder = tempfile.mkdtemp()
+    path = os.path.join(folder, name + '.py')
+    with open(path, 'w') as handle:
+        handle.write(code)
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    saved, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = saved
+        shutil.rmtree(folder, ignore_errors=True)
+    return module
+
+
+# TargetSecretArn of a target without auth.
+NO_TARGET_AUTH = ''
 
 
 def run_function(event, target_secret=TARGET, ecs=None, log=None):
@@ -63,8 +86,7 @@ def run_function(event, target_secret=TARGET, ecs=None, log=None):
     saved = sys.modules.get('boto3')
     sys.modules['boto3'] = fake
     try:
-        scope = {}
-        exec(compile(code, 'index.py', 'exec'), scope)  # nosec B102 - the template's own code
+        scope = _module('index', code).__dict__
         with contextlib.redirect_stdout(log if log is not None else io.StringIO()):
             scope['handler'](event, None)
     finally:
@@ -103,9 +125,9 @@ class FunctionTest(unittest.TestCase):
     def test_no_target_secret_matches_nothing(self):
         # TargetSecretArn is empty for a target without auth: '' must not
         # match an event, even one with no resources or an empty one.
-        self.assertEqual(run_function(_event(''), target_secret=''), [])
-        self.assertEqual(run_function({'resources': []}, target_secret=''), [])
-        self.assertEqual(len(run_function(_event(SOURCE), target_secret='')), 1)
+        self.assertEqual(run_function(_event(''), target_secret=NO_TARGET_AUTH), [])
+        self.assertEqual(run_function({'resources': []}, target_secret=NO_TARGET_AUTH), [])
+        self.assertEqual(len(run_function(_event(SOURCE), target_secret=NO_TARGET_AUTH)), 1)
 
     def test_one_secret_for_both_restarts_both(self):
         both = run_function(_event(SOURCE), target_secret=SOURCE)

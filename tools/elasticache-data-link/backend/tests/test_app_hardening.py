@@ -82,8 +82,9 @@ class HealthMonitorRemovedTest(unittest.TestCase):
             'app.init_db()\n'
             'print(threading.active_count() - before)\n'
         ).format(backend=_BACKEND, db=os.path.join(_TMP, 'threads.db'))
-        out = subprocess.run([sys.executable, '-c', code], capture_output=True,
-                             text=True, check=True, timeout=60)  # nosec B603
+        # executable= runs this same interpreter; 'python3' is only its argv[0].
+        out = subprocess.run(['python3', '-c', code], executable=sys.executable, capture_output=True,
+                             text=True, check=True, timeout=60)  # nosec B603 - this interpreter, the test's own code
         self.assertEqual(out.stdout.strip().splitlines()[-1], '0', out.stderr)
 
 
@@ -114,8 +115,8 @@ class LinksFallbackTest(unittest.TestCase):
     def _run(self):
         code = _NO_ECDL_LINK.format(backend=_BACKEND,
                                     db=os.path.join(_TMP, 'fallback.db'))
-        out = subprocess.run([sys.executable, '-c', code], capture_output=True,
-                             text=True, timeout=60)  # nosec B603
+        out = subprocess.run(['python3', '-c', code], executable=sys.executable, capture_output=True,
+                             text=True, timeout=60)  # nosec B603 - this interpreter, the test's own code
         self.assertEqual(out.returncode, 0, out.stderr[-2000:])
         return json.loads(out.stdout.strip().splitlines()[-1])
 
@@ -136,299 +137,52 @@ class LinksFallbackTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
 
 
-ARN = 'arn:aws:secretsmanager:eu-west-1:111122223333:secret:shop-db-AbCdEf'
-SOURCE = {'name': 'shop', 'engine': 'postgres', 'host': 'db.example',
-          'database_name': 'shop', 'username': 'row-user'}
-
-
 def _db():
     return sqlite3.connect(app_module.DATABASE_PATH)
 
 
-class _FakeSecrets:
-    def __init__(self, value=None, error=None):
-        self.value, self.error, self.asked = value, error, []
-
-    def get_secret_value(self, SecretId):  # noqa: N803 - boto3's name
-        self.asked.append(SecretId)
-        if self.error:
-            raise self.error
-        return {'SecretString': self.value}
-
-
-class SourcePasswordTest(unittest.TestCase):
-    """Jira story F153."""
-
-    def setUp(self):
-        app_module.init_db()
-        conn = _db()
-        conn.execute('DELETE FROM sources')
-        conn.commit()
-        conn.close()
-
-    def _rows(self):
-        conn = _db()
-        rows = conn.execute('SELECT name, password, password_secret_arn FROM sources').fetchall()
-        conn.close()
-        return rows
-
-    def _create(self, **over):
-        return _client().post('/api/sources', headers=AUTH, json=dict(SOURCE, **over))
-
-    def test_create_with_a_password_is_refused_and_stores_nothing(self):
-        res = self._create(password='s3cret')  # nosec B106 - fake test value
-        self.assertEqual(res.status_code, 400)
-        self.assertIn('Secrets Manager', res.get_json()['error'])
-        self.assertEqual(self._rows(), [])
-
-    def test_create_with_an_empty_password_and_an_arn_stores_only_the_arn(self):
-        res = self._create(password='', password_secret_arn=ARN)  # nosec B106 - fake test value
-        self.assertEqual(res.status_code, 201, res.data)
-        self.assertEqual(self._rows(), [('shop', None, ARN)])
-        listed = _client().get('/api/sources').get_json()
-        self.assertTrue(listed[0]['has_password'])
-        self.assertEqual(listed[0]['password_secret_arn'], ARN)
-        self.assertNotIn('password', listed[0])
-
-    def test_create_without_a_secret_has_no_password(self):
-        self.assertEqual(self._create().status_code, 201)
-        self.assertFalse(_client().get('/api/sources').get_json()[0]['has_password'])
-
-    def test_a_malformed_arn_is_refused(self):
-        for bad in ('shop-db', 'arn:aws:s3:::bucket', ARN + "' OR 1=1",
-                    'arn:aws:secretsmanager:eu-west-1:1234:secret:x', 42):
-            res = self._create(password_secret_arn=bad)
-            self.assertEqual(res.status_code, 400, bad)
-        self.assertEqual(self._rows(), [])
-
-    def test_update_refuses_a_password_and_keeps_clears_or_sets_the_arn(self):
-        self._create(password_secret_arn=ARN)
-        sid = _client().get('/api/sources').get_json()[0]['id']
-        put = lambda **b: _client().put('/api/sources/{}'.format(sid), headers=AUTH,  # noqa: E731
-                                        json=dict(SOURCE, **b))
-        self.assertEqual(put(password='new').status_code, 400)  # nosec B106 - fake test value
-        self.assertEqual(self._rows(), [('shop', None, ARN)])
-        self.assertEqual(put().status_code, 200)                 # key absent: kept
-        self.assertEqual(self._rows(), [('shop', None, ARN)])
-        self.assertEqual(put(password_secret_arn='bad').status_code, 400)  # nosec B106 - fake test value
-        self.assertEqual(self._rows(), [('shop', None, ARN)])
-        other = ARN.replace('shop-db', 'other')
-        self.assertEqual(put(password_secret_arn=other).status_code, 200)
-        self.assertEqual(self._rows(), [('shop', None, other)])
-        self.assertEqual(put(password_secret_arn='').status_code, 200)  # nosec B106 - fake test value
-        self.assertEqual(self._rows(), [('shop', None, '')])
-
-    def test_init_db_blanks_passwords_an_older_version_stored(self):
-        conn = _db()
-        conn.execute("INSERT INTO sources (name, engine, host, database_name, password, "
-                     "password_secret_arn, created) VALUES "
-                     "('old', 'postgres', 'h', 'd', 'plain', '', '2026-01-01'), "
-                     "('empty', 'postgres', 'h', 'd', '', '', '2026-01-01')")
-        conn.commit()
-        conn.close()
-        app_module.init_db()
-        self.assertEqual(sorted(self._rows()), [('empty', '', ''), ('old', None, '')])
-
-    def test_credentials_come_from_the_secret_in_the_arns_region(self):
-        fake = _FakeSecrets(json.dumps({'username': 'secret-user', 'password': 'pw1'}))  # nosec B105 - fake test value
-        with mock.patch.object(app_module.boto3, 'client', return_value=fake) as client:
-            got = app_module.source_credentials(dict(SOURCE, password_secret_arn=ARN))
-        self.assertEqual(got, ('secret-user', 'pw1'))
-        self.assertEqual(client.call_args, mock.call('secretsmanager', region_name='eu-west-1'))
-        self.assertEqual(fake.asked, [ARN])
-
-    def test_a_plain_text_secret_uses_the_sources_username(self):
-        fake = _FakeSecrets('pw2')
-        with mock.patch.object(app_module.boto3, 'client', return_value=fake):
-            got = app_module.source_credentials(dict(SOURCE, password_secret_arn=ARN))
-        self.assertEqual(got, ('row-user', 'pw2'))
-
-    def test_no_secret_fails_closed_even_with_a_stored_password(self):
-        src = dict(SOURCE, password='plain', password_secret_arn='')  # nosec B106 - fake test value
-        with mock.patch.object(app_module.boto3, 'client') as client:
-            with self.assertRaises(app_module.SourceCredentialError):
-                app_module.source_credentials(src)
-            with self.assertRaises(app_module.SourceCredentialError):
-                app_module._connect_source_db(dict(src, port=5432))
-        client.assert_not_called()
-
-    def test_an_unreadable_secret_is_an_error_with_the_reason(self):
-        fake = _FakeSecrets(error=Exception('AccessDeniedException: not authorized'))
-        with mock.patch.object(app_module.boto3, 'client', return_value=fake):
-            with self.assertRaises(app_module.SourceCredentialError) as caught:
-                app_module.source_credentials(dict(SOURCE, password_secret_arn=ARN))
-        self.assertIn('not permitted', str(caught.exception))
-
-    def test_scan_tables_without_a_secret_is_400_before_connecting(self):
-        self._create()
-        sid = _client().get('/api/sources').get_json()[0]['id']
-        res = _client().get('/api/sources/{}/scan-tables'.format(sid))
-        self.assertEqual(res.status_code, 400)
-        self.assertIn('no password secret', res.get_json()['error'])
-
-
-RANDOMIZER_ROUTES = (
-    ('POST', '/api/randomizer/start'),
-    ('POST', '/api/randomizer/stop'),
+# Review finding H10: the superseded object model and the Randomizer were
+# removed. The data-source endpoints connected to any host a user had typed
+# in, with a secret the instance role read, and the Randomizer wrote rows into
+# those databases.
+SUPERSEDED = (
+    ('GET', '/api/sources'), ('POST', '/api/sources'), ('PUT', '/api/sources/1'),
+    ('DELETE', '/api/sources/1'), ('GET', '/api/sources/1/scan-tables'),
+    ('GET', '/api/sources/1/tables'), ('GET', '/api/sources/1/columns?table=t'),
+    ('POST', '/api/randomizer/start'), ('POST', '/api/randomizer/stop'),
     ('GET', '/api/randomizer/status?source_id=1'),
-    ('GET', '/api/sources/1/tables'),
-    ('GET', '/api/sources/1/columns?table=orders'),
+    ('GET', '/api/connectors'), ('GET', '/api/brokers'), ('GET', '/api/targets'),
+    ('GET', '/api/pipelines'), ('GET', '/api/deployments'),
+    ('PUT', '/api/deployments/1/status'),
 )
 
 
-def _start_body(**over):
-    body = {'source_id': 1, 'table': 'orders', 'schema': 'public',
-            'columns': [{'name': 'note', 'type': 'text'}],
-            'batch_size': 1, 'interval': 1}
-    body.update(over)
-    return body
+class SupersededRemovedTest(unittest.TestCase):
+    def test_every_superseded_route_is_gone(self):
+        client = _client()
+        for method, path in SUPERSEDED:
+            res = client.open(path, method=method, headers=AUTH, json={})
+            self.assertIn(res.status_code, (404, 405), '{} {}'.format(method, path))
 
+    def test_nothing_that_connects_to_a_source_is_left(self):
+        for name in ('source_credentials', '_connect_source_db', '_randomizer_worker',
+                     'scan_source_tables', 'ECDL_ENABLE_RANDOMIZER'):
+            self.assertNotIn(name, APP_CODE, name)
 
-class _FakeCursor:
-    def __init__(self, fail_inserts=False):
-        self.fail_inserts = fail_inserts
-        self.inserts = 0
-
-    def execute(self, sql, params=None):
-        if sql.startswith('INSERT'):
-            if self.fail_inserts:
-                raise RuntimeError('rejected')
-            self.inserts += 1
-
-    def fetchall(self):
-        return [('note',)]
-
-    def close(self):
-        pass
-
-
-class _FakeDb:
-    autocommit = True
-
-    def __init__(self, cursor):
-        self._cursor = cursor
-
-    def cursor(self):
-        return self._cursor
-
-    def rollback(self):
-        pass
-
-    def close(self):
-        pass
-
-
-class RandomizerSwitchTest(unittest.TestCase):
-    """Jira story F154. Off by default; bounded when on."""
-
-    def setUp(self):
-        os.environ.pop('ECDL_ENABLE_RANDOMIZER', None)
-        self.addCleanup(os.environ.pop, 'ECDL_ENABLE_RANDOMIZER', None)
-
-    def _call(self, method, path, body=None):
-        c = _client()
-        if method == 'POST':
-            return c.post(path, headers=AUTH, json=body or _start_body())
-        return c.get(path)
-
-    def test_every_randomizer_route_is_404_when_off(self):
-        before = dict(app_module._randomizer_threads)
-        for method, path in RANDOMIZER_ROUTES:
-            res = self._call(method, path)
-            self.assertEqual(res.status_code, 404, path)
-            self.assertIn('ECDL_ENABLE_RANDOMIZER', res.get_json()['hint'])
-        self.assertEqual(app_module._randomizer_threads, before)
-
-    def test_flag_values(self):
-        for value, on in (('true', True), ('1', True), ('YES', True), ('on', True),
-                          ('false', False), ('0', False), ('', False), ('maybe', False)):
-            os.environ['ECDL_ENABLE_RANDOMIZER'] = value
-            self.assertEqual(app_module.randomizer_enabled(), on, value)
-
-    def test_when_on_the_routes_answer(self):
-        os.environ['ECDL_ENABLE_RANDOMIZER'] = 'true'
-        res = self._call('GET', '/api/randomizer/status?source_id=999')
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.get_json()['status'], 'idle')
-
-    def test_limits_are_validated(self):
-        os.environ['ECDL_ENABLE_RANDOMIZER'] = 'true'
-        for over in ({'max_rows': 100001}, {'max_rows': -1}, {'max_seconds': 3601},
-                     {'max_seconds': -5}, {'source_id': 'x'}, {'source_id': True},
-                     {'source_id': None}):
-            res = self._call('POST', '/api/randomizer/start', _start_body(**over))
-            self.assertEqual(res.status_code, 400, over)
-
-    def test_defaults_are_applied(self):
-        req = app_module._randomizer_request(_start_body())
-        self.assertEqual(req['max_rows'], app_module.RANDOMIZER_DEFAULT_MAX_ROWS)
-        self.assertEqual(req['max_seconds'], app_module.RANDOMIZER_DEFAULT_MAX_SECONDS)
-        req = app_module._randomizer_request(_start_body(max_rows=5, max_seconds=7))
-        self.assertEqual((req['max_rows'], req['max_seconds']), (5, 7))
-
-
-class RandomizerBoundsTest(unittest.TestCase):
-    """Jira story F154. The worker loop, run synchronously against a fake source."""
-
-    def setUp(self):
+    def test_init_db_still_blanks_passwords_an_older_version_stored(self):
         app_module.init_db()
         conn = _db()
         conn.execute('DELETE FROM sources')
-        cur = conn.execute(
-            "INSERT INTO sources (name, engine, host, port, database_name, "
-            "password_secret_arn, created) VALUES ('gen', 'postgres', 'h', 5432, 'd', ?, "
-            "'2026-01-01')", (ARN,))
-        self.sid = cur.lastrowid
+        conn.execute("INSERT INTO sources (name, engine, host, database_name, password, "
+                     "password_secret_arn, created) VALUES "
+                     "('old', 'postgres', 'h', 'd', 'plain', '', '2026-01-01')")
         conn.commit()
         conn.close()
-
-    def _run(self, cursor, stop=False, **limits):
-        import threading
-        evt = threading.Event()
-        if stop:
-            evt.set()
-        app_module._randomizer_stop[self.sid] = evt
-        status = {'status': 'running', 'records_written': 0, 'errors': 0, 'last_error': None}
-        app_module._randomizer_threads[self.sid] = status
-        with mock.patch.object(app_module, '_connect_source_db', return_value=_FakeDb(cursor)):
-            # In a thread with a time limit, so a loop that does not stop is a
-            # failure rather than a test run that never ends.
-            worker = threading.Thread(target=app_module._randomizer_worker, args=(
-                self.sid, 'orders', [{'name': 'note', 'type': 'text'}],
-                10, 0, 'public'), kwargs=limits, daemon=True)
-            worker.start()
-            worker.join(20)
-            if worker.is_alive():
-                evt.set()
-                worker.join(5)
-                self.fail('the generator did not stop by itself: {}'.format(status))
-        return status
-
-    def test_stops_at_max_rows(self):
-        cur = _FakeCursor()
-        status = self._run(cur, max_rows=25, max_seconds=3600)
-        self.assertEqual((status['status'], status['stop_reason']), ('stopped', 'max_rows'))
-        self.assertEqual((status['records_written'], cur.inserts), (25, 25))
-
-    def test_failed_inserts_count_towards_max_rows(self):
-        status = self._run(_FakeCursor(fail_inserts=True), max_rows=7, max_seconds=3600)
-        self.assertEqual(status['stop_reason'], 'max_rows')
-        self.assertEqual((status['records_written'], status['errors']), (0, 7))
-
-    def test_stops_at_max_seconds(self):
-        clock = iter(range(0, 10 ** 6))
-        with mock.patch.object(app_module._time, 'monotonic', side_effect=lambda: next(clock)):
-            status = self._run(_FakeCursor(), max_rows=100000, max_seconds=5)
-        self.assertEqual(status['stop_reason'], 'max_seconds')
-        self.assertLess(status['records_written'], 10)
-
-    def test_default_limits_apply_when_none_are_given(self):
-        status = self._run(_FakeCursor())
-        self.assertEqual(status['records_written'], app_module.RANDOMIZER_DEFAULT_MAX_ROWS)
-
-    def test_a_stop_request_ends_it_with_nothing_written(self):
-        status = self._run(_FakeCursor(), stop=True, max_rows=5, max_seconds=60)
-        self.assertEqual((status['stop_reason'], status['records_written']), ('requested', 0))
+        app_module.init_db()
+        conn = _db()
+        rows = conn.execute('SELECT name, password FROM sources').fetchall()
+        conn.close()
+        self.assertEqual(rows, [('old', None)])
 
 
 def _sqlite_bytes(build):
@@ -446,6 +200,7 @@ def _sqlite_bytes(build):
     return data
 
 
+
 def _app_db(conn, extra_sql=()):
     """An ECDL database as an older version left it: no audit_log, no
     password_secret_arn, a stored source password."""
@@ -453,8 +208,10 @@ def _app_db(conn, extra_sql=()):
                  "engine TEXT, host TEXT, port INTEGER, database_name TEXT, schema_name TEXT, "
                  "username TEXT, password TEXT, ssl_mode TEXT, status TEXT, created DATE, "
                  "notes TEXT)")
-    for table in ('connectors', 'brokers', 'pipelines', 'deployments'):
-        conn.execute('CREATE TABLE {} (id INTEGER PRIMARY KEY)'.format(table))
+    conn.execute('CREATE TABLE connectors (id INTEGER PRIMARY KEY)')
+    conn.execute('CREATE TABLE brokers (id INTEGER PRIMARY KEY)')
+    conn.execute('CREATE TABLE pipelines (id INTEGER PRIMARY KEY)')
+    conn.execute('CREATE TABLE deployments (id INTEGER PRIMARY KEY)')
     conn.execute('CREATE TABLE targets (id INTEGER PRIMARY KEY, auth_token TEXT)')
     conn.execute('CREATE TABLE settings (key TEXT PRIMARY KEY, flag INTEGER, '
                  'i_value INTEGER, s_value TEXT, f_value REAL)')

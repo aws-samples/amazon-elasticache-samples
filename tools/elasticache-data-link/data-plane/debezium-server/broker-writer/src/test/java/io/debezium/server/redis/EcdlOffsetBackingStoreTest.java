@@ -476,6 +476,16 @@ public final class EcdlOffsetBackingStoreTest {
             check("slot." + c[0] + ".asked", slot.calls == ((Boolean) c[2] ? 1 : 0), "calls " + slot.calls);
             r.stop();
         }
+        // Review finding H6: a slot PostgreSQL invalidated is listed but useless.
+        Run lost = new Run();
+        lost.settings.expectOffset(true).slotCheck(new FakeSlot(SlotState.LOST));
+        lost.broker.hash.put(P, "{\"lsn\":1}");
+        lost.start();
+        String lm = String.valueOf(lost.startError == null ? null : lost.startError.getMessage());
+        check("slot.lost.refused", lost.startError != null, lm);
+        check("slot.lost.explains", lm.contains("invalidated") && lm.contains("max_slot_wal_keep_size")
+                && lm.contains("ecdl apply --reload"), lm);
+        lost.stop();
         // A missing offset is refused before the slot is even looked at.
         Run r = new Run();
         FakeSlot slot = new FakeSlot(SlotState.PRESENT);
@@ -530,7 +540,11 @@ public final class EcdlOffsetBackingStoreTest {
         check("config.pg-slot-check", pg.slotCheck instanceof PostgresSlotCheck, "" + pg.slotCheck);
         if (pg.slotCheck instanceof PostgresSlotCheck) {
             PostgresSlotCheck c = (PostgresSlotCheck) pg.slotCheck;
-            check("config.pg-url", c.url().equals("jdbc:postgresql://db.example:5433/shop+db"), c.url());
+            check("config.pg-url", PostgresSlotCheck.URL.equals("jdbc:postgresql://"), PostgresSlotCheck.URL);
+            check("config.pg-host", "db.example".equals(c.setting("PGHOST")), c.setting("PGHOST"));
+            check("config.pg-port", "5433".equals(c.setting("PGPORT")), c.setting("PGPORT"));
+            check("config.pg-db", "shop db".equals(c.setting("PGDBNAME")), c.setting("PGDBNAME"));
+            check("config.pg-password-a-property", "secret".equals(c.setting("password")), "missing");
             check("config.pg-describe", c.describe().equals("'ecdl_t' on db.example:5433/shop db"), c.describe());
             check("config.pg-no-password-in-describe", !c.describe().contains("secret"), c.describe());
         }
@@ -541,6 +555,73 @@ public final class EcdlOffsetBackingStoreTest {
                 dflt.slotCheck == null ? "null" : dflt.slotCheck.describe());
     }
 
+    static void sqlServerKeepAlive() {
+        Settings none = parse(props("connector.class", "io.debezium.connector.mysql.MySqlConnector"));
+        check("keepalive.not-mysql", none.keepAlive == null, "" + none.keepAlive);
+        Settings pg = parse(props("connector.class", "io.debezium.connector.postgresql.PostgresConnector"));
+        check("keepalive.not-pg", pg.keepAlive == null, "" + pg.keepAlive);
+        Settings ms = parse(props("connector.class", "io.debezium.connector.sqlserver.SqlServerConnector",
+                "database.hostname", "10.0.0.5", "database.port", "1444", "database.names", "inventory",
+                "database.user", "sa", "database.password", "secret", "database.encrypt", "true",
+                "database.trustServerCertificate", "false", "signal.data.collection", "dbo.ecdl_signal_x"));
+        check("keepalive.sqlserver", ms.keepAlive != null, "null");
+        if (ms.keepAlive != null) {
+            SqlServerKeepAlive k = ms.keepAlive;
+            check("keepalive.default-interval", k.seconds == SqlServerKeepAlive.DEFAULT_SECONDS, "" + k.seconds);
+            check("keepalive.usable", k.unusable() == null, k.unusable());
+            check("keepalive.url", SqlServerKeepAlive.URL.equals("jdbc:sqlserver://"), SqlServerKeepAlive.URL);
+            String[][] want = {{"serverName", "10.0.0.5"}, {"portNumber", "1444"}, {"databaseName", "inventory"},
+                    {"encrypt", "true"}, {"trustServerCertificate", "false"}, {"loginTimeout", "10"},
+                    {"applicationName", "ecdl-keepalive"}, {"user", "sa"}, {"password", "secret"}};
+            for (String[] w : want) {
+                check("keepalive.property " + w[0], w[1].equals(k.setting(w[0])), k.setting(w[0]));
+            }
+            check("keepalive.insert", k.insertSql().startsWith("INSERT INTO [dbo].[ecdl_signal_x] (id, type, data) "
+                    + "VALUES (?, 'log', "), k.insertSql());
+            check("keepalive.delete", k.deleteSql().equals("DELETE FROM [dbo].[ecdl_signal_x] WHERE id = ?"), k.deleteSql());
+        }
+        // database.schema.table, as Debezium documents it for SQL Server.
+        SqlServerKeepAlive three = new SqlServerKeepAlive(props("database.hostname", "h", "database.names", "inv",
+                "signal.data.collection", "inv.sales.sig"));
+        check("keepalive.three-part", three.schema.equals("sales") && three.table.equals("sig"),
+                three.schema + "." + three.table);
+        check("keepalive.defaults-no-encrypt", "false".equals(three.setting("encrypt"))
+                && "true".equals(three.setting("trustServerCertificate")),
+                three.setting("encrypt") + " " + three.setting("trustServerCertificate"));
+        // A ';' in a name stays in that one property; it adds no setting.
+        SqlServerKeepAlive semi = new SqlServerKeepAlive(props("database.hostname", "h;encrypt=false",
+                "database.names", "inv;trustServerCertificate=true", "database.encrypt", "true",
+                "database.trustServerCertificate", "false", "signal.data.collection", "dbo.sig"));
+        check("keepalive.semicolon-host-is-one-value", "h;encrypt=false".equals(semi.setting("serverName"))
+                && "true".equals(semi.setting("encrypt")), semi.setting("serverName") + " " + semi.setting("encrypt"));
+        check("keepalive.semicolon-db-is-one-value", "inv;trustServerCertificate=true".equals(semi.setting("databaseName"))
+                && "false".equals(semi.setting("trustServerCertificate")), semi.setting("databaseName"));
+        check("keepalive.off", new SqlServerKeepAlive(props("database.hostname", "h", "database.names", "inv",
+                "signal.data.collection", "dbo.sig", SqlServerKeepAlive.INTERVAL, "0")).unusable() != null, "usable");
+        check("keepalive.no-host", new SqlServerKeepAlive(props("database.names", "inv",
+                "signal.data.collection", "dbo.sig")).unusable() != null, "usable");
+        check("keepalive.unsafe-name", new SqlServerKeepAlive(props("database.hostname", "h", "database.names", "inv",
+                "signal.data.collection", "dbo.sig];DROP TABLE t--")).unusable() != null, "usable");
+        check("keepalive.no-collection", new SqlServerKeepAlive(props("database.hostname", "h",
+                "database.names", "inv")).unusable() != null, "usable");
+        check("keepalive.parse", SqlServerKeepAlive.parseSeconds("60") == 60 && SqlServerKeepAlive.parseSeconds(" 0 ") == 0
+                && SqlServerKeepAlive.parseSeconds(null) == 300 && SqlServerKeepAlive.parseSeconds("") == 300
+                && SqlServerKeepAlive.parseSeconds("-5") == 300 && SqlServerKeepAlive.parseSeconds("five") == 300, "");
+        // Never throws, even with no driver and no server; the timer must keep running.
+        SqlServerKeepAlive k = new SqlServerKeepAlive(props("database.hostname", "127.0.0.1", "database.port", "1",
+                "database.names", "inv", "signal.data.collection", "dbo.sig"));
+        try {
+            k.touch();
+            k.touch();
+            check("keepalive.touch-never-throws", true, "");
+        }
+        catch (RuntimeException e) {
+            check("keepalive.touch-never-throws", false, String.valueOf(e));
+        }
+        k.start();
+        k.stop();
+        check("keepalive.start-stop", true, "");
+    }
     static void slotCheckWithoutDriver() {
         // The image has the driver; this build stage does not. A check that
         // cannot run says so instead of answering ABSENT.
@@ -583,6 +664,7 @@ public final class EcdlOffsetBackingStoreTest {
         slotChecks();
         configuration();
         slotCheckWithoutDriver();
+        sqlServerKeepAlive();
         if (!failures.isEmpty()) {
             System.err.println("EcdlOffsetBackingStoreTest: " + failures.size() + " FAILED, " + passed + " passed");
             failures.forEach(f -> System.err.println("  FAIL " + f));

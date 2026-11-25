@@ -179,7 +179,7 @@ Parameters:
   # digest in one development account, which no other account could pull.
   ImageTag:
     Type: String
-    Default: 0.2.31
+    Default: 0.2.40
     Description: >
       Version tag of the default loader image in this account's ECR, as
       published by ./release.sh push. `./release.sh pin` sets it to
@@ -202,6 +202,19 @@ Parameters:
     Description: >
       Rows per read from the source (advanced.loader.fetch_batch). Empty = 50000,
       lowered for wide rows so every worker's batch fits in TaskMemory.
+  # How often the control plane runs the sampled cache check (VerifyTaskDef).
+  # 0 for a link that only loads once (mode initial_load): its cache is not
+  # kept up to date, so it would differ from the source by design.
+  VerifyIntervalMinutes:
+    Type: String
+    Default: '15'
+    AllowedValues: ['0', '5', '10', '15', '30', '60']
+  # PostgreSQL only: the link's replication slot, whose lag and wal_status
+  # the check reports (review finding H6). The CDC stack has the same value.
+  PgSlotName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^[a-z0-9_]*$'
   TaskCpu:
     Type: String
     Default: '2048'
@@ -243,6 +256,7 @@ Conditions:
   # ingress; an external source leaves it empty, so the rule is skipped.
   HasSourceSecurityGroup: !Not [!Equals [!Ref SourceSecurityGroupId, '']]
   HasLoaderImage: !Not [!Equals [!Ref LoaderImage, '']]
+  Verify: !Not [!Equals [!Ref VerifyIntervalMinutes, '0']]
 
 Resources:
   # ═══════════════════════════════════════════════════════════════
@@ -563,7 +577,140 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: loader
 
+  # ═══════════════════════════════════════════════════════════════
+  # The sampled check of the cache against the source (review finding C1;
+  # data-plane/bulk-loader/verify.py). The loader image in verify mode: it
+  # reads a few hundred rows of each table and the same keys in the cache,
+  # writes nothing, and logs one JSON line per run, which the filters below
+  # turn into ECDL/Verify metrics. A family of its own, so the deployer and
+  # the load alarm never take a check for a load. The control plane runs it
+  # every VerifyIntervalMinutes.
+  # ═══════════════════════════════════════════════════════════════
+  VerifyTaskDef:
+    Type: AWS::ECS::TaskDefinition
+    Condition: Verify
+    Properties:
+      Family: !Sub '${AWS::StackName}-verify'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform:
+        CpuArchitecture: !Ref CpuArchitecture
+        OperatingSystemFamily: LINUX
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: loader
+          Image: !If
+            - HasLoaderImage
+            - !Ref LoaderImage
+            - !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/ecdl/ecdl-loader:${ImageTag}'
+          Essential: true
+          LinuxParameters:
+            InitProcessEnabled: true
+          Environment:
+            - { Name: ECDL_MODE, Value: verify }
+            - { Name: SOURCE_ENGINE, Value: !Ref SourceEngine }
+            - { Name: SOURCE_DB_HOST, Value: !Ref SourceDBHost }
+            - { Name: SOURCE_DB_PORT, Value: !Ref SourceDBPort }
+            - { Name: SOURCE_DB_NAME, Value: !Ref SourceDBName }
+            - { Name: SOURCE_DB_USER, Value: !Ref SourceDBUser }
+            - { Name: SOURCE_TLS, Value: !Ref SourceTLS }
+            - { Name: VALKEY_HOST, Value: !Ref TargetHost }
+            - { Name: VALKEY_PORT, Value: !Ref TargetPort }
+            - { Name: VALKEY_SSL, Value: !Ref TargetSSL }
+            - { Name: VALKEY_CLUSTER, Value: !Ref TargetCluster }
+            - { Name: TRANSFORMS_JSON, Value: !Ref TransformsJson }
+            - { Name: TABLES, Value: !Ref Tables }
+            - { Name: SOURCE_TABLES, Value: !Ref SourceTables }
+            - { Name: LINK_KEY_PREFIX, Value: !Ref KeyPrefix }
+            - { Name: PRIMARY_KEYS, Value: !Ref PrimaryKeys }
+            - { Name: PROGRESS_KEY_BASE, Value: !Ref ProgressKeyBase }
+            - { Name: PG_SLOT_NAME, Value: !Ref PgSlotName }
+          Secrets:
+            - Name: SOURCE_DB_PASSWORD
+              ValueFrom: !If
+                - HasDBSecretJsonKey
+                - !Sub '${DBSecretArn}:${DBSecretJsonKey}::'
+                - !Ref DBSecretArn
+            - !If
+              - HasTargetSecret
+              - Name: VALKEY_SECRET
+                ValueFrom: !Ref TargetSecretArn
+              - !Ref 'AWS::NoValue'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: verify
+  # One datum per run and kind, summed over the link's tables, dimension Link.
+  VerifyCheckedMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Verify
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.ecdl_verify = "run" }'
+      MetricTransformations:
+        - { MetricNamespace: ECDL/Verify, MetricName: RowsChecked, MetricValue: $.checked, Dimensions: [{ Key: Link, Value: $.link }] }
+  VerifyMissingMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Verify
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.ecdl_verify = "run" }'
+      MetricTransformations:
+        - { MetricNamespace: ECDL/Verify, MetricName: RowsMissing, MetricValue: $.missing, Dimensions: [{ Key: Link, Value: $.link }] }
+  VerifyDifferentMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Verify
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.ecdl_verify = "run" }'
+      MetricTransformations:
+        - { MetricNamespace: ECDL/Verify, MetricName: RowsDifferent, MetricValue: $.different, Dimensions: [{ Key: Link, Value: $.link }] }
+  VerifyExtraMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Verify
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.ecdl_verify = "run" }'
+      MetricTransformations:
+        - { MetricNamespace: ECDL/Verify, MetricName: RowsExtra, MetricValue: $.extra, Dimensions: [{ Key: Link, Value: $.link }] }
+  VerifyUncheckedMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Verify
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.ecdl_verify = "run" }'
+      MetricTransformations:
+        - { MetricNamespace: ECDL/Verify, MetricName: TablesUnchecked, MetricValue: $.unchecked, Dimensions: [{ Key: Link, Value: $.link }] }
+  # The source's own capture health (findings H6, H11), from the "source" line.
+  VerifySlotLagMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Verify
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.ecdl_verify = "source" && $.slot_lag_bytes >= 0 }'
+      MetricTransformations:
+        - { MetricNamespace: ECDL/Verify, MetricName: SourceSlotLagBytes, MetricValue: $.slot_lag_bytes, Dimensions: [{ Key: Link, Value: $.link }] }
+  VerifyCaptureAgeMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: Verify
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.ecdl_verify = "source" && $.capture_age_seconds >= 0 }'
+      MetricTransformations:
+        - { MetricNamespace: ECDL/Verify, MetricName: SourceCaptureAgeSeconds, MetricValue: $.capture_age_seconds, Dimensions: [{ Key: Link, Value: $.link }] }
+
 Outputs:
+  VerifyTaskDefinitionArn:
+    Condition: Verify
+    Value: !Ref VerifyTaskDef
+    Description: The sampled cache check; the control plane runs it every VerifyIntervalMinutes.
+  VerifyIntervalMinutes:
+    Value: !Ref VerifyIntervalMinutes
   # Everything RunTask needs, so the caller reads the run configuration back from
   # the stack instead of having to remember what it passed in. SubnetIds and
   # AssignPublicIp are not used by the task definition itself -- a Fargate task

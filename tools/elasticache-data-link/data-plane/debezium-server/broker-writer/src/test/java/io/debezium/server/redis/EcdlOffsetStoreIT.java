@@ -14,17 +14,17 @@
 package io.debezium.server.redis;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.Statement;
+import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -354,9 +354,12 @@ public final class EcdlOffsetStoreIT {
         StringBuilder out = new StringBuilder();
         int status;
         try {
-            String java = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
-            p = new ProcessBuilder(java, "-cp", System.getProperty("java.class.path"),
-                    "io.debezium.server.redis.EcdlOffsetStoreIT$ExitProbe", a).redirectErrorStream(true).start();
+            // This JVM's own java binary, with this JVM's classpath.
+            String java = ProcessHandle.current().info().command().orElseThrow();
+            ProcessBuilder pb = new ProcessBuilder();
+            pb.command().addAll(List.of(java, "-cp", System.getProperty("java.class.path"),
+                    "io.debezium.server.redis.EcdlOffsetStoreIT$ExitProbe", a));
+            p = pb.redirectErrorStream(true).start();
             try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
                 for (String line; (line = r.readLine()) != null;) {
                     out.append(line).append('\n');
@@ -445,12 +448,21 @@ public final class EcdlOffsetStoreIT {
     static void postgres(String pg) throws Exception {
         HostAndPort hp = HostAndPort.from(pg);
         String password = env("ECDL_TEST_PG_PASSWORD", "");
-        String url = "jdbc:postgresql://" + hp.getHost() + ":" + hp.getPort() + "/" + env("ECDL_TEST_PG_DB", "postgres")
-                + "?sslmode=disable";
-        try (Connection c = DriverManager.getConnection(url, env("ECDL_TEST_PG_USER", "postgres"), password);
-                Statement st = c.createStatement()) {
-            st.execute("SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'ecdl_it_slot'");
-            st.execute("SELECT pg_create_logical_replication_slot('ecdl_it_slot', 'pgoutput')");
+        Properties db = new Properties();
+        db.setProperty("PGHOST", hp.getHost());
+        db.setProperty("PGPORT", String.valueOf(hp.getPort()));
+        db.setProperty("PGDBNAME", env("ECDL_TEST_PG_DB", "postgres"));
+        db.setProperty("user", env("ECDL_TEST_PG_USER", "postgres"));
+        db.setProperty("password", password);
+        db.setProperty("sslmode", "disable");
+        try (Connection c = DriverManager.getConnection(PostgresSlotCheck.URL, db);
+                PreparedStatement drop = c.prepareStatement(
+                        "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = ?");
+                PreparedStatement create = c.prepareStatement("SELECT pg_create_logical_replication_slot(?, 'pgoutput')")) {
+            drop.setString(1, "ecdl_it_slot");
+            drop.execute();
+            create.setString(1, "ecdl_it_slot");
+            create.execute();
         }
         try {
             SlotResult present = new PostgresSlotCheck(pgProps(pg, "ecdl_it_slot", password)).check();
@@ -487,9 +499,10 @@ public final class EcdlOffsetStoreIT {
             first.store.stop();
         }
         finally {
-            try (Connection c = DriverManager.getConnection(url, env("ECDL_TEST_PG_USER", "postgres"), password);
-                    Statement st = c.createStatement()) {
-                st.execute("SELECT pg_drop_replication_slot('ecdl_it_slot')");
+            try (Connection c = DriverManager.getConnection(PostgresSlotCheck.URL, db);
+                    PreparedStatement drop = c.prepareStatement("SELECT pg_drop_replication_slot(?)")) {
+                drop.setString(1, "ecdl_it_slot");
+                drop.execute();
             }
         }
     }

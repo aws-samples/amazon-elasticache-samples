@@ -105,6 +105,8 @@ public class EcdlOffsetBackingStore extends MemoryOffsetBackingStore {
     public enum SlotState {
         PRESENT,
         ABSENT,
+        /** Listed, but invalidated by PostgreSQL (wal_status 'lost'): the WAL it needs is gone. */
+        LOST,
         /** The check itself could not run (no driver, no connection, no permission). */
         UNKNOWN
     }
@@ -129,6 +131,8 @@ public class EcdlOffsetBackingStore extends MemoryOffsetBackingStore {
         boolean waitForReplica;
         long waitTimeoutMs = 1000;
         SlotCheck slotCheck;
+        /** SQL Server only: a regular write so an idle source has a recent transaction. */
+        SqlServerKeepAlive keepAlive;
 
         public Settings key(String v) {
             key = v;
@@ -217,6 +221,9 @@ public class EcdlOffsetBackingStore extends MemoryOffsetBackingStore {
         if (PostgresSlotCheck.applies(props)) {
             s.slotCheck(new PostgresSlotCheck(props));
         }
+        if (SqlServerKeepAlive.applies(props)) {
+            s.keepAlive = new SqlServerKeepAlive(props);
+        }
         return s;
     }
 
@@ -228,6 +235,9 @@ public class EcdlOffsetBackingStore extends MemoryOffsetBackingStore {
         try {
             load();
             checkStartPosition();
+            if (settings.keepAlive != null) {
+                settings.keepAlive.start();
+            }
         }
         catch (RuntimeException e) {
             stop();
@@ -237,6 +247,9 @@ public class EcdlOffsetBackingStore extends MemoryOffsetBackingStore {
 
     @Override
     public synchronized void stop() {
+        if (settings != null && settings.keepAlive != null) {
+            settings.keepAlive.stop();
+        }
         connected = false;
         if (broker != null) {
             broker.close();
@@ -334,6 +347,15 @@ public class EcdlOffsetBackingStore extends MemoryOffsetBackingStore {
                     "Reload the link with a position reset: `ecdl apply --reload <link file>` (control plane: "
                             + "'Update and reload all tables'). See 'Switchovers, blue/green and major "
                             + "upgrades' in docs/operations.md.");
+        }
+        else if (r.state == SlotState.LOST) {
+            throw refuse("replication slot " + check.describe() + " was invalidated by PostgreSQL (" + r.detail
+                    + "): capture fell further behind than max_slot_wal_keep_size, and the WAL holding the "
+                    + "changes since the last committed offset was removed. Those changes cannot be read "
+                    + "any more; starting would skip them silently.",
+                    "Reload the link with a position reset: `ecdl apply --reload <link file>` (control plane: "
+                            + "'Update and reload all tables'). Then raise max_slot_wal_keep_size (or set it to "
+                            + "-1) so a pause of that length does not invalidate the slot again.");
         }
         else {
             // Not refused: a check that cannot run must not stop capture on its own.

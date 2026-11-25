@@ -11,6 +11,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
+from ecdl_link.preflight import PIPELINE_ARNS_ENV as ARNS_ENV  # noqa: E402
 from ecdl_link.tests import test_cli_apply as _apply  # noqa: E402
 
 CLI = _apply.CLI
@@ -151,7 +152,7 @@ class SourcePreflightTest(unittest.TestCase):  # Jira story F143
             'arn': 'arn:aws:secretsmanager:us-east-2:1:secret:db', 'name': 'db',
             'tag_keys': []}})
         saved = os.environ.get('ECDL_PIPELINE_SECRET_ARNS')
-        os.environ['ECDL_PIPELINE_SECRET_ARNS'] = ''
+        os.environ[ARNS_ENV] = ''
         try:
             out, _calls = self.run_it(res)
         finally:

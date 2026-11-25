@@ -113,6 +113,31 @@ COPY application-oracle.properties     /debezium/config/application-oracle.prope
 # warnings are the first thing in the log on every start and they lead people
 # to look for a problem that does not exist.
 RUN rm -f /debezium/config/*.example
+# The CAs Debezium verifies the source's TLS certificate with (review finding
+# H1; it used to verify nothing): Amazon RDS's global bundle, downloaded at
+# build time and checked against the same SHA-256 as the loader's and the
+# Makefile's, plus the image's system CAs (RDS Proxy, sources with a public
+# certificate). Two forms: a PEM file for PostgreSQL (sslrootcert), and a
+# PKCS12 truststore for the MySQL and SQL Server drivers, made from the JRE's
+# own CA store with every RDS CA added. The truststore holds public
+# certificates only, so its password (the JRE's default, changeit) protects
+# nothing and is not a secret. The build fails rather than ship an image that
+# cannot verify.
+ARG RDS_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+ARG RDS_CA_SHA256=90a6f1a7978a1b1b096dca6c57511ca48d3b8cf052f8e704baf358f34ea2f21b
+RUN mkdir -p /debezium/tls /tmp/rds \
+ && curl -fsS --max-time 60 -o /tmp/rds/bundle.pem "$RDS_CA_URL" \
+ && echo "$RDS_CA_SHA256  /tmp/rds/bundle.pem" | sha256sum -c - \
+ && cat /tmp/rds/bundle.pem /etc/ssl/certs/ca-certificates.crt > /debezium/tls/source-ca.pem \
+ && cp "$JAVA_HOME/lib/security/cacerts" /debezium/tls/source-truststore.p12 \
+ && awk '/-----BEGIN CERTIFICATE-----/ { n++; f = sprintf("/tmp/rds/ca-%03d.pem", n) } n { print > f } /-----END CERTIFICATE-----/ { close(f) }' /tmp/rds/bundle.pem \
+ && for f in /tmp/rds/ca-*.pem; do \
+      keytool -importcert -noprompt -keystore /debezium/tls/source-truststore.p12 -storepass changeit \
+        -alias "rds-$(basename "$f" .pem)" -file "$f" > /dev/null || exit 1; \
+    done \
+ && test "$(keytool -list -keystore /debezium/tls/source-truststore.p12 -storepass changeit | grep -c '^rds-ca-')" -eq "$(ls /tmp/rds/ca-*.pem | wc -l)" \
+ && chmod 0444 /debezium/tls/source-ca.pem /debezium/tls/source-truststore.p12 \
+ && rm -rf /tmp/rds
 
 # QUARKUS_PROFILE has no safe default -- guessing could point, for example, a MySQL
 # connector at a PostgreSQL port. Without it the container does still fail, but

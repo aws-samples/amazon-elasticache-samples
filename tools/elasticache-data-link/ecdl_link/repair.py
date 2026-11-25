@@ -485,7 +485,10 @@ def repair_plan(diff_doc, resolved_desired, pg_publication=None):
     # 2. Tables needing a backfill: added tables, and tables whose transform
     #    changed. Both are the same operation for the same reason -- every row has
     #    to be re-read and rewritten under the current rules.
-    qualified = {bare_table(t['input']): t['qualified']
+    # As a signal names them: database.schema.table on SQL Server and Oracle.
+    from .signals import data_collection
+    source_engine = (resolved_desired.get('source') or {}).get('engine')
+    qualified = {bare_table(t['input']): data_collection(source_engine, t)
                  for t in resolved_desired.get('tables') or []}
     old_prefix = _prefix(((diff_doc.get('current') or {}).get('advanced') or {})
                          .get('key_prefix'))

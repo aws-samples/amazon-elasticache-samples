@@ -70,6 +70,9 @@ class FakeSource(object):
         return (min(values), max(values)) if values else (None, None)
 
     def _range(self, table, pk, lo, hi):
+        if isinstance(lo, bulk_loader.After):
+            rows = [r for r in self._table(table)['rows'] if lo.value < r[pk] <= hi]
+            return sorted(rows, key=lambda r: r[pk])
         rows = [r for r in self._table(table)['rows'] if lo <= r[pk] <= hi]
         return sorted(rows, key=lambda r: r[pk])
 
@@ -79,6 +82,12 @@ class FakeSource(object):
 
     def sample(self, table, pk, lo, n):
         return [dict(r) for r in self._range(table, pk, lo, float('inf'))[:n]]
+
+    def page(self, table, pk, lo, hi, n):
+        return [dict(r) for r in self._range(table, pk, lo, hi)[:n]]
+
+    def value_rows(self, table, pk, value):
+        return [dict(r) for r in self._table(table)['rows'] if r[pk] == value]
 
     def fetch_iter(self, table, pk, lo, hi, batch=None):
         type(self).fetches.append((lo, hi))

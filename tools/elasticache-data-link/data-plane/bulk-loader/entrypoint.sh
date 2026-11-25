@@ -15,6 +15,13 @@ set -eu
 die () { echo "ECDL loader: $*" >&2; exit 78; }   # 78 = EX_CONFIG
 
 : "${SOURCE_ENGINE:?SOURCE_ENGINE is not set (mysql|postgresql|sqlserver|oracle)}"
+# ECDL_MODE=verify: the sampled check of the cache against the source
+# (verify.py, review finding C1) instead of a load. It reads every table in
+# TABLES and writes nothing.
+if [ "${ECDL_MODE:-load}" = verify ]; then
+  echo "ECDL loader: verify mode, tables=${TABLES:-} source=$SOURCE_DB_HOST target=${VALKEY_HOST:-}"
+  exec python3 /app/verify.py
+fi
 
 TABLES="${TABLES:-}"
 TABLE="${TABLE:-}"

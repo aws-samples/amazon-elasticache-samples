@@ -47,10 +47,10 @@ test-backend:
 	cd backend && python3 tests/test_links_lifecycle.py
 	cd backend && DEMO_HISTORY_ENABLED=false python3 tests/test_monitor.py
 	cd backend && python3 tests/test_monitor_links.py
-	cd backend && python3 tests/test_sql_safety.py
 	cd backend && python3 tests/test_legacy_removed.py
 	cd backend && python3 tests/test_app_hardening.py
 	cd backend && python3 tests/test_alarm_topic.py
+	cd backend && python3 tests/test_verify_schedule.py
 
 # Amazon RDS's public CA bundle, for the tests, the sample script and a local
 # control plane. Not in git: downloaded and checked against the same SHA-256

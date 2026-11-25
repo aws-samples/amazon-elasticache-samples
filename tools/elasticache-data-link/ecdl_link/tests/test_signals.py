@@ -48,18 +48,61 @@ class CollectionQualificationTest(unittest.TestCase):
             signal_collection('postgresql', 'checkout', database='shop'),
             'public.ecdl_signal_checkout')
 
-    def test_sqlserver_defaults_to_dbo(self):
+    def test_sqlserver_defaults_to_dbo_and_names_the_database(self):
+        # Debezium 3.0 wants database.schema.table for SQL Server; with
+        # schema.table every signal was ignored (review finding C3).
         self.assertEqual(
             signal_collection('sqlserver', 'checkout', database='Inventory'),
-            'dbo.ecdl_signal_checkout')
+            'Inventory.dbo.ecdl_signal_checkout')
 
     def test_oracle_is_uppercase(self):
         # Oracle folds unquoted identifiers, so the name the connector matches on
         # is upper case. A lower-case collection would simply never be found.
         self.assertEqual(
-            signal_collection('oracle', 'checkout', database='ORCL',
+            signal_collection('oracle', 'checkout', database='orcl',
                               schema='admin'),
-            'ADMIN.ECDL_SIGNAL_CHECKOUT')
+            'ORCL.ADMIN.ECDL_SIGNAL_CHECKOUT')
+
+    def test_a_two_part_override_gets_the_database_on_sqlserver_and_oracle(self):
+        self.assertEqual(signal_collection('sqlserver', 'x', database='inv', override='ops.sig'),
+                         'inv.ops.sig')
+        self.assertEqual(signal_collection('sqlserver', 'x', database='inv', override='db2.ops.sig'),
+                         'db2.ops.sig')
+        self.assertEqual(signal_collection('oracle', 'x', database='orcl', override='ADMIN.SIG'),
+                         'ORCL.ADMIN.SIG')
+
+    def test_sqlserver_and_oracle_need_the_database(self):
+        for engine in ('sqlserver', 'oracle'):
+            with self.assertRaises(SignalError):
+                signal_collection(engine, 'checkout', database=None, schema='s')
+
+    def test_signal_names_of_tables(self):
+        from ecdl_link.signals import data_collection
+        entry = {'qualified': 'dbo.orders', 'database': 'inventory'}
+        self.assertEqual(data_collection('sqlserver', entry), 'inventory.dbo.orders')
+        self.assertEqual(data_collection('oracle', {'qualified': 'ADMIN.T', 'database': 'orcl'}),
+                         'ORCL.ADMIN.T')
+        self.assertEqual(data_collection('postgresql', {'qualified': 'public.t', 'database': 'shop'}),
+                         'public.t')
+        self.assertEqual(data_collection('mysql', {'qualified': 'Inventory.t', 'database': 'Inventory'}),
+                         'Inventory.t')
+
+    def test_oracle_sql_leaves_the_database_out(self):
+        from ecdl_link.signals import insert_statement, log_signal, signal_table_ddl, sql_name
+        self.assertEqual(sql_name('oracle', 'ORCL.ADMIN.SIG'), 'ADMIN.SIG')
+        self.assertEqual(sql_name('sqlserver', 'inv.dbo.sig'), 'inv.dbo.sig')
+        self.assertIn('CREATE TABLE ADMIN.SIG (', signal_table_ddl('oracle', 'ORCL.ADMIN.SIG'))
+        sql, _ = insert_statement('oracle', 'ORCL.ADMIN.SIG', log_signal('x'))
+        self.assertTrue(sql.startswith('INSERT INTO ADMIN.SIG '), sql)
+        sql, _ = insert_statement('sqlserver', 'inv.dbo.sig', log_signal('x'))
+        self.assertTrue(sql.startswith('INSERT INTO inv.dbo.sig '), sql)
+
+    def test_sqlserver_prerequisites_use_the_database(self):
+        from ecdl_link.signals import sqlserver_prerequisite_sql
+        sql = sqlserver_prerequisite_sql('inv.dbo.sig', 'cdc')
+        self.assertTrue(sql.startswith('USE [inv];'), sql)
+        self.assertIn("@source_schema = N'dbo', @source_name = N'sig'", sql)
+        self.assertIn('GRANT INSERT, DELETE ON dbo.sig TO [cdc];', sql)
 
     def test_explicit_schema_wins(self):
         self.assertEqual(
@@ -164,6 +207,15 @@ class DdlTest(unittest.TestCase):
         with self.assertRaises(SignalError):
             mysql_signal_grant_sql('Inventory.s; DROP TABLE t', 'cdc')
 
+    def test_sqlserver_prerequisites_enable_cdc_and_grant(self):
+        from ecdl_link.signals import sqlserver_prerequisite_sql
+        sql = sqlserver_prerequisite_sql('dbo.ecdl_signal_x', 'cdc')
+        self.assertIn("@source_schema = N'dbo', @source_name = N'ecdl_signal_x'", sql)
+        self.assertIn('GRANT INSERT, DELETE ON dbo.ecdl_signal_x TO [cdc];', sql)
+        self.assertIn('[<the CDC user>]', sqlserver_prerequisite_sql('dbo.s', "x]; DROP"))
+        self.assertIn('[<the CDC user>]', sqlserver_prerequisite_sql('dbo.s', None))
+        with self.assertRaises(SignalError):
+            sqlserver_prerequisite_sql('dbo.s; DROP TABLE t', 'cdc')
     def test_mysql_and_postgres_are_idempotent(self):
         for engine, collection in (('mysql', 'db.ecdl_signal_x'),
                                    ('postgresql', 'public.ecdl_signal_x')):

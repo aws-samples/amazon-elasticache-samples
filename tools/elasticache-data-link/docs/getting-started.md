@@ -234,9 +234,9 @@ Other parameters:
   secrets the pipeline tasks may read. Every task role the control plane creates
   carries a permissions boundary (`TaskRoleBoundary`) that limits it to pulling
   images, writing its logs, reading these secrets and publishing ECDL metrics,
-  whatever policy is attached to it. Empty allows the secrets tagged `ecdl:link`
-  (any value, for example the link name) instead: tag every source and target
-  secret, or list them here. ECDL's own broker secrets are always allowed. The
+  whatever policy is attached to it. Secrets tagged `ecdl:link` (any value, for
+  example the link name) are allowed too, with or without this list: tag every
+  source and target secret, or list them here. ECDL's own broker secrets are always allowed. The
   deploy preflight warns about a link secret the tasks would not be allowed to
   read. **Upgrading from a release where empty allowed any secret:** tag the
   secrets of every running link before updating this stack, or their tasks

@@ -9,33 +9,16 @@ outside the scope and keep the explicit denies in place.
 import os
 import unittest
 
-import yaml
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TEMPLATE = os.path.join(ROOT, 'infra', 'ecdl-control-plane.yaml')
 PREFIX = 'ecdl'
 
 
-class _CfnLoader(yaml.SafeLoader):
-    pass
-
-
-def _tag(loader, suffix, node):
-    if isinstance(node, yaml.ScalarNode):
-        value = loader.construct_scalar(node)
-    elif isinstance(node, yaml.SequenceNode):
-        value = loader.construct_sequence(node, deep=True)
-    else:
-        value = loader.construct_mapping(node, deep=True)
-    return {suffix: value}
-
-
-_CfnLoader.add_multi_constructor('!', _tag)
-
-
 def _template():
     with open(TEMPLATE) as handle:
-        return yaml.load(handle, Loader=_CfnLoader)  # nosec B506 - SafeLoader subclass
+        return load_cfn(handle)
 
 
 def _sub_text(value):
@@ -130,7 +113,7 @@ class DeployRoleTest(unittest.TestCase):
     def test_every_typed_parameter_can_be_validated(self):
         for name in LINK_TEMPLATES:
             with open(os.path.join(ROOT, 'infra', name)) as handle:
-                params = yaml.load(handle, Loader=_CfnLoader).get('Parameters') or {}  # nosec B506
+                params = load_cfn(handle).get('Parameters') or {}
             for pname, p in params.items():
                 need = _PARAMETER_READS.get(p.get('Type'))
                 if need:

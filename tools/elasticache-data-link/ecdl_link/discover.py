@@ -195,13 +195,17 @@ def _source_from_instance(instance):
         blockers.append('the instance is {}, not available'.format(status))
 
     notes = []
+    # Review finding M7: resolve refuses both, so they are blockers here too.
     if cluster_id:
-        # Not a blocker: it does deploy. It is a correctness risk, so it is said
-        # plainly and the right ARN is named.
-        notes.append(
-            'this is a member of Aurora cluster {}. Point the link at the '
-            'cluster instead, so capture follows a failover rather than staying '
-            'on a demoted instance.'.format(cluster_id))
+        blockers.append(
+            'this is a member of Aurora cluster {}: point the link at the '
+            'cluster, so capture follows a failover rather than staying on a '
+            'demoted instance'.format(cluster_id))
+    replica_of = (instance.get('ReadReplicaSourceDBInstanceIdentifier')
+                  or instance.get('ReadReplicaSourceDBClusterIdentifier'))
+    if replica_of:
+        blockers.append('this is a read replica of {}: change capture reads the '
+                        'primary'.format(replica_of))
 
     master_secret = (instance.get('MasterUserSecret') or {}).get('SecretArn')
 

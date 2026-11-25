@@ -15,14 +15,14 @@ from ecdl_link.change import review_update  # noqa: E402
 from ecdl_link.repair import describe_diff, diff, outstanding_steps, repair_plan  # noqa: E402
 from ecdl_link.tests.test_repair import link, resolved  # noqa: E402
 
-SECRET = 'arn:aws:secretsmanager:us-east-2:1:secret:'
+SM_ARN = 'arn:aws:secretsmanager:us-east-2:1:secret:'
 
 
 def external(**over):
     doc = link(tables=['orders'])
     doc['source'] = dict({'kind': 'external', 'engine': 'postgresql', 'host': 'db.local',
                           'database': 'shop', 'username': 'repl',
-                          'secret_arn': SECRET + 'db'}, **over)
+                          'secret_arn': SM_ARN + 'db'}, **over)
     return doc
 
 
@@ -67,7 +67,7 @@ class ExternalSourceTest(unittest.TestCase):
 class CredentialChangeTest(unittest.TestCase):
     def test_each_credential_is_a_deploy_with_a_reason(self):
         base = link()
-        cases = (('source.secret_arn', with_source(base, secret_arn=SECRET + 'db2')),
+        cases = (('source.secret_arn', with_source(base, secret_arn=SM_ARN + 'db2')),
                  ('source.username', with_source(base, username='cdc')))
         for field, desired in cases:
             d = diff(base, desired)
@@ -75,7 +75,7 @@ class CredentialChangeTest(unittest.TestCase):
             self.assertEqual((c['severity'], d['severity']), ('deploy', 'deploy'), field)
             self.assertIn('restart with the new credential', c['consequence'])
         desired = copy.deepcopy(base)
-        desired['target']['secret_arn'] = SECRET + 'cache'
+        desired['target']['secret_arn'] = SM_ARN + 'cache'
         self.assertEqual(change(diff(base, desired), 'credential')['field'], 'target.secret_arn')
 
 

@@ -18,18 +18,21 @@ import ecdl_link.deploy as deploy  # noqa: E402
 import ecdl_link.provision as provision  # noqa: E402
 
 
+class _FreshSourceLoader(importlib.machinery.SourceFileLoader):
+    """Compiles from the source every time. Never from or into __pycache__: a
+    cached compile of an edited script with the same timestamp would test the
+    old code."""
+
+    def get_code(self, fullname):
+        return self.source_to_code(self.get_data(self.path), self.path)
+
+
 def load_cli():
     path = os.path.join(ROOT, 'ecdl-cli', 'ecdl')
-    loader = importlib.machinery.SourceFileLoader('ecdl_cli_under_test', path)
+    loader = _FreshSourceLoader('ecdl_cli_under_test', path)
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
-    # Never from or into __pycache__: a cached compile of an edited script with
-    # the same timestamp would test the old code.
-    saved, sys.dont_write_bytecode = sys.dont_write_bytecode, True
-    try:
-        exec(compile(open(path).read(), path, 'exec'), module.__dict__)  # nosec B102 - the repo's own CLI
-    finally:
-        sys.dont_write_bytecode = saved
+    loader.exec_module(module)
     return module
 
 

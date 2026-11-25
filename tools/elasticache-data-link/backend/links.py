@@ -26,6 +26,7 @@ import repo_path  # noqa: E402,F401  (puts ecdl_link on sys.path)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+from ecdl_link.safe_yaml import check_plain  # noqa: E402
 from ecdl_link import (  # noqa: E402
     LinkValidationError,
     canonical_json,
@@ -108,21 +109,6 @@ def get_schema():
     return jsonify(link_schema())
 
 
-class _NoAliasLoader(yaml.SafeLoader):
-    """SafeLoader that refuses aliases (*name, and the <<: *name merge).
-
-    A few hundred bytes of nested aliases expand to millions of nodes (the
-    "billion laughs" document), which safe_load builds in memory and the
-    validator then walks. A link config has no use for them (Jira story F159).
-    """
-
-    def compose_node(self, parent, index):
-        if self.check_event(yaml.AliasEvent):
-            event = self.peek_event()
-            raise yaml.composer.ComposerError(
-                None, None, 'aliases (*{}) are not accepted in a link config'.format(
-                    event.anchor), event.start_mark)
-        return super().compose_node(parent, index)
 
 
 @links_bp.route('/parse', methods=['POST'])
@@ -150,7 +136,11 @@ def parse_endpoint():
         return jsonify({'parsed': False, 'error': 'the config is empty'})
 
     try:
-        document = yaml.load(text, Loader=_NoAliasLoader)  # nosec B506 - SafeLoader subclass
+        # Aliases expand a few hundred bytes into millions of nodes (the "billion
+        # laughs" document, Jira story F159), and a link config has no use for
+        # them or for ! tags; check_plain refuses both before anything is built.
+        check_plain(text)
+        document = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         # Report the position when the parser knows it, so the editor can say
         # WHERE rather than just that something is wrong.
@@ -1145,6 +1135,7 @@ def _deploy(body, action='deploy', source=None):
             deployer = Deployer(clients, template_body=_template_body,
                                 on_progress=progress, offset_probe=probe,
                                 reset_position=reset, pg_slot_dropped=pg_slot_dropped,
+                                allow_downgrade=bool(body.get('allow_downgrade')),
                                 **_deploy_settings())
             try:
                 result = deployer.run(plan_doc)

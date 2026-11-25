@@ -49,8 +49,17 @@ describe('navigation wiring', () => {
   it('finds the sidebar entries and the routes at all', () => {
     // Checks the check itself. An empty set on either side would make every assertion
     // below pass while checking nothing.
-    expect(sidebarViews().size).toBeGreaterThan(5);
-    expect(routableViews().size).toBeGreaterThan(5);
+    // Five since the superseded pages were removed (review finding H10).
+    expect(sidebarViews().size).toBeGreaterThanOrEqual(5);
+    expect(routableViews().size).toBeGreaterThanOrEqual(5);
+  });
+
+  it('the superseded pages are gone', () => {
+    for (const view of ['sources', 'connectors', 'brokers', 'targets', 'pipelines',
+      'deployments', 'monitor']) {
+      expect(sidebarViews().has(view)).toBe(false);
+      expect(routableViews().has(view)).toBe(false);
+    }
   });
 
   it('every sidebar entry renders a component', () => {

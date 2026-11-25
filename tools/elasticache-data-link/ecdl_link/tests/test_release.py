@@ -72,7 +72,7 @@ esac
 
 
 def _git(cwd, *args):
-    subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@example.com'] + list(args),  # nosec B603 B607
+    subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@example.com', *args],  # nosec B603 B607
                    cwd=cwd, check=True, capture_output=True)
 
 
@@ -106,7 +106,7 @@ class ReleasePushTest(unittest.TestCase):
                 'HOME': self.dir, 'FAKE_DIR': self.dir, 'FAKE_PYTHON': sys.executable,
                 'FAKE_DBZ_DIGEST': self.dbz_digest, 'ECDL_REGISTRY': REGISTRY}
         full.update(env)
-        res = subprocess.run(['bash', os.path.join(self.repo, 'release.sh')] + list(args or ['push']),  # nosec B603 B607
+        res = subprocess.run(['bash', os.path.join(self.repo, 'release.sh'), *(args or ['push'])],  # nosec B603 B607
                              cwd=self.repo, env=full, capture_output=True, text=True)
         return res
 
@@ -216,7 +216,7 @@ class ExecutableBitTest(unittest.TestCase):
     SCRIPTS = ('release.sh', 'ecdl-cli/ecdl', 'ecdl-cli/ecdl-ui',
                'data-plane/debezium-server/entrypoint.sh')
     def test_scripts_are_executable_in_git(self):
-        run = subprocess.run(['git', 'ls-files', '-s', '--'] + list(self.SCRIPTS),  # nosec B603 B607
+        run = subprocess.run(['git', 'ls-files', '-s', '--', *self.SCRIPTS],  # nosec B603 B607
                              cwd=ROOT, capture_output=True, text=True, check=False)
         modes = {line.split('\t', 1)[1]: line.split()[0] for line in run.stdout.splitlines()}
         if run.returncode != 0 or not modes:

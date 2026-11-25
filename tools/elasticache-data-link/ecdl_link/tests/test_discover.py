@@ -235,9 +235,15 @@ class SourceTest(unittest.TestCase):
         s = list_sources(c)['sources'][0]
         self.assertTrue(s['aurora_member'])
         self.assertEqual(s['cluster_identifier'], 'ecdl-aurora-mysql')
-        self.assertTrue(any('ecdl-aurora-mysql' in n for n in s['notes']))
-        # Still deployable -- it is a correctness risk, not an error.
-        self.assertTrue(s['usable'])
+        self.assertTrue(any('ecdl-aurora-mysql' in n for n in s['blockers']))
+        # Review finding M7: resolving refuses it, so it is not offered as usable.
+        self.assertFalse(s['usable'])
+
+    def test_a_read_replica_is_not_usable(self):
+        replica = dict(STANDALONE_MYSQL, ReadReplicaSourceDBInstanceIdentifier='primary-db')
+        s = list_sources(Clients(rds=FakeRds(instances=[replica])))['sources'][0]
+        self.assertFalse(s['usable'])
+        self.assertTrue(any('read replica of primary-db' in b for b in s['blockers']))
 
     def test_standalone_instance_is_not_flagged_as_a_member(self):
         c = Clients(rds=FakeRds(instances=[STANDALONE_MYSQL]))
@@ -725,13 +731,19 @@ class ControlPlaneSecurityGroupTest(unittest.TestCase):
 
     def test_imds_failure_is_silent(self):
         # Not being on EC2 is a normal outcome on the deploy path, not an error.
+        # The stub used to be defined and never installed, so on an EC2 host
+        # (a CI runner) the test reached the real IMDS and got its groups.
+        import http.client
+
         def boom(*a, **k):
             raise OSError('no route to host')
 
-        saved = discover_mod.urllib if hasattr(discover_mod, 'urllib') else None
-        self.assertEqual(discover_mod._imds_security_group_ids(timeout=0.001), [])
-        if saved is not None:
-            discover_mod.urllib = saved
+        saved = http.client.HTTPConnection
+        http.client.HTTPConnection = boom
+        try:
+            self.assertEqual(discover_mod._imds_security_group_ids(timeout=0.001), [])
+        finally:
+            http.client.HTTPConnection = saved
 
 
 if __name__ == '__main__':

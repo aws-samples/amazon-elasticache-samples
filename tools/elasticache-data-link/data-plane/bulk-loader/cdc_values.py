@@ -315,12 +315,12 @@ def _mysql_zero_date(fn, epoch_text, nullable, always_epoch=False):
     return fmt
 
 
-def java_long(v):
-    """MySQL BIGINT UNSIGNED as Debezium sends it with the default
-    bigint.unsigned.handling.mode=long: the 64 bits as a signed long, so values
-    from 2^63 come out negative (BinlogValueConverters: convertBigInt)."""
-    n = int(v)
-    return str(n - (1 << 64) if n >= (1 << 63) else n)
+def unsigned_bigint(v):
+    """MySQL BIGINT UNSIGNED as Debezium sends it with
+    bigint.unsigned.handling.mode=precise (application-mysql.properties): the
+    exact value. It used to copy the default, long, which sends the 64 bits as
+    a signed long, so 18446744073709551615 was cached as -1 (review finding M9)."""
+    return str(int(v))
 
 
 def pg_bits(v):
@@ -558,7 +558,7 @@ def _mysql(col):
         zoned = lambda v: iso_utc(v, width or None)          # noqa: E731
         return _mysql_zero_date(zoned, zoned(_EPOCH), nullable, always_epoch=True)
     if t == 'bigint' and 'unsigned' in ct:
-        return java_long
+        return unsigned_bigint
     if t == 'bit':
         return boolean if ct in ('bit(1)', 'bit') else bits
     if t in ('binary', 'varbinary', 'blob', 'tinyblob', 'mediumblob', 'longblob'):

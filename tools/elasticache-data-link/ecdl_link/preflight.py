@@ -544,7 +544,7 @@ def target_findings(target):
 
 # The control plane's task-role boundary (TaskRoleBoundary) lets pipeline tasks
 # read a secret only when it is listed in PipelineSecretArns, is one of ECDL's
-# own, or -- when that list is empty -- carries this tag. The control plane
+# own, or carries this tag (with or without a list). The control plane
 # passes the list as ECDL_PIPELINE_SECRET_ARNS (possibly empty). Unset means no
 # boundary applies (the CLI deploys without one), so there is nothing to check.
 PIPELINE_READ_TAG = 'ecdl:link'
@@ -574,21 +574,17 @@ def secret_findings(resolution, listed):
         arn, name = secret.get('arn') or '', secret.get('name') or ''
         if name.startswith(_OWN_NAME_PREFIXES):
             continue
-        if listed:
-            if any(fnmatch.fnmatchcase(arn, entry) for entry in listed):
-                continue
-            message = ('the {} secret {} is not in the control plane\'s '
-                       'PipelineSecretArns, so the pipeline tasks cannot read it and '
-                       'will not start. Add its full ARN to PipelineSecretArns.'
-                       .format(what, arn))
-        elif PIPELINE_READ_TAG in (secret.get('tag_keys') or []):
+        if PIPELINE_READ_TAG in (secret.get('tag_keys') or []):
             continue
-        else:
-            message = ('the {w} secret {a} has no {t} tag, so the pipeline tasks '
-                       'cannot read it and will not start. Tag it (aws '
-                       'secretsmanager tag-resource --secret-id {a} --tags '
-                       'Key={t},Value=<link>), or list it in the control plane\'s '
-                       'PipelineSecretArns.'.format(w=what, a=arn, t=PIPELINE_READ_TAG))
+        if listed and any(fnmatch.fnmatchcase(arn, entry) for entry in listed):
+            continue
+        message = ('the {w} secret {a} has no {t} tag{l}, so the pipeline tasks '
+                   'cannot read it and will not start. Tag it (aws '
+                   'secretsmanager tag-resource --secret-id {a} --tags '
+                   'Key={t},Value=<link>), or list it in the control plane\'s '
+                   'PipelineSecretArns.'.format(
+                       w=what, a=arn, t=PIPELINE_READ_TAG,
+                       l=' and is not in the control plane\'s PipelineSecretArns' if listed else ''))
         out.append(Finding(WARN, '{}.secret_arn'.format(what), message))
     return out
 
@@ -832,8 +828,31 @@ def publication_findings(document, catalogue, publication=None):
                     publication, pg_publication_sql(publication, needed, create=True),
                     unsure))))
             return findings
+        # Review finding M8: what the publication sends, and how it names a
+        # partitioned table's changes.
+        options = (catalogue.get('publication_options') or {}).get(publication) or {}
+        dropped = [op for op in ('insert', 'update', 'delete') if options.get(op) is False]
+        if dropped:
+            findings.append(Finding(level, 'source', (
+                'the publication {} does not publish {}: those changes never reach '
+                'Debezium, and the cache keeps the old rows. Fix: ALTER PUBLICATION {} '
+                "SET (publish = 'insert, update, delete, truncate');{}".format(
+                    publication, ', '.join(dropped), publication, unsure))))
+        partitioned = [t for t in needed
+                       if (present.get(_fold(t.split('.')[-1].replace('"', ''))) or {}).get('partitioned')]
+        if partitioned and options.get('via_root') is not True:
+            findings.append(Finding(level, 'source', (
+                '{} {} partitioned. Without publish_via_partition_root PostgreSQL '
+                "sends each partition's changes under the partition's name, which "
+                'the link does not capture. Fix: ALTER PUBLICATION {} SET '
+                '(publish_via_partition_root = true); (PostgreSQL 13 or later){}'.format(
+                    ', '.join(partitioned), 'is' if len(partitioned) == 1 else 'are',
+                    publication, unsure))))
         members = {_fold(m) for m in publications[publication]}
-        missing = [t for t in needed if _fold(t.replace('"', '')) not in members]
+        # A partitioned table is listed under its partitions' names unless the
+        # publication publishes via the root; that is the finding above.
+        missing = [t for t in needed if _fold(t.replace('"', '')) not in members
+                   and not (t in partitioned and options.get('via_root') is not True)]
         if missing:
             tables_missing = [t for t in missing if t != signal]
             why = []

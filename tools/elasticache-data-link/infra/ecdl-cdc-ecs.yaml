@@ -123,6 +123,15 @@ Parameters:
     Default: ''
     AllowedPattern: '^[A-Za-z0-9_]*$'
     Description: Key to read from a JSON DB secret (password for RDS). Empty = plaintext.
+  # Debezium's TLS to the source, as for the loader (ecdl-loader-ecs.yaml).
+  SourceTLS:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Verified TLS from Debezium to the source (certificate and host name,
+      against the RDS CA bundle and the system CAs in the image). false only
+      for an external source whose link sets tls false.
 
   # --- Cache credentials (optional; only when the cache has auth enabled) ---
   # The whole secret value is injected, not a JSON key, because the two shapes
@@ -297,7 +306,7 @@ Parameters:
   # Published by ./release.sh push; `./release.sh pin` sets it to VERSION.
   ImageTag:
     Type: String
-    Default: 0.2.31
+    Default: 0.2.40
     Description: Version tag of the default images in this account's ECR.
   DebeziumImage:
     Type: String
@@ -801,6 +810,7 @@ Resources:
             - { Name: SERVER_ID, Value: !Ref ServerId }
             - { Name: SIGNAL_COLLECTION, Value: !Ref SignalCollection }
             - { Name: SIGNAL_TOPIC_PATTERN, Value: !Ref SignalTopicPattern }
+            - { Name: SOURCE_TLS, Value: !Ref SourceTLS }
             - !If
               - HasPgSlotName
               - { Name: SLOT_NAME, Value: !Ref PgSlotName }

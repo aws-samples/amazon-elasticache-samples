@@ -117,8 +117,8 @@ the link then deploys and fails to log in. Find it with
 **The pipeline tasks may read only secrets marked for ECDL.** Tag the source
 and target secrets `ecdl:link` (any value, for example the link name):
 `aws secretsmanager tag-resource --secret-id <arn> --tags Key=ecdl:link,Value=<link>`.
-Or, if the control plane was deployed with `PipelineSecretArns`, list them
-there instead (then the tag is not used). Use the list for a secret you cannot
+Or list them in the control plane's `PipelineSecretArns`; a tagged secret is
+allowed whether or not that list is set. Use the list for a secret you cannot
 tag. Without either, the tasks fail to start with `ResourceInitializationError`;
 the deploy preflight warns first.
 
@@ -150,14 +150,17 @@ task log, with an authentication error from the database.
 The database user needs read access to the tables in the link, plus the
 replication privileges in the next section.
 
-**The initial load connects to the source over verified TLS** (MySQL and
-PostgreSQL). The source's certificate must chain to the Amazon RDS CA bundle
-or a public CA, and name the endpoint the loader connects to; the loader image
-carries both (`/app/source-ca.pem`). An RDS or Aurora endpoint, or RDS Proxy,
-needs nothing more. An external source with a certificate from a private CA
-fails with a certificate error: run a loader image with that CA added and point
-`SOURCE_TLS_CA_FILE` at it. An external source without TLS needs `tls: false`
-on the link, which turns TLS off for the load (`SOURCE_TLS=false`).
+**The initial load and Debezium connect to the source over verified TLS**
+(the loader on MySQL and PostgreSQL, Debezium on MySQL, PostgreSQL and SQL
+Server). The source's certificate must chain to the Amazon RDS CA bundle or a
+public CA, and name the endpoint connected to; the images carry both (loader
+`/app/source-ca.pem`, Debezium `/debezium/tls/`). An RDS or Aurora endpoint, or
+RDS Proxy, needs nothing more. An external source with a certificate from a
+private CA fails with a certificate error: build the images with that CA
+added. An external source without TLS, with a self-signed certificate, or
+reached by IP address needs `tls: false` on the link, which turns TLS off for
+both (`SOURCE_TLS=false`). Before 0.2.34 Debezium verified nothing: MySQL and
+PostgreSQL took any certificate, and SQL Server did not encrypt at all.
 
 When the control plane can connect to the source, the deploy preflight checks
 that every table and every column the transforms name exists. A table
@@ -181,6 +184,7 @@ be dead-lettered.
 | `binlog_format` | `ROW` | Debezium cannot decode statement-based entries |
 | `binlog_row_image` | `FULL` | `MINIMAL` omits unchanged columns, so the cached row loses fields that did not change in that write |
 | binlog retention | set it — see below | **unrecoverable loss** |
+| `binlog_row_value_options` | empty | `PARTIAL_JSON` logs only the changed part of a JSON column, so the cached value would be wrong. **The deploy preflight blocks** when it reads it, and when the user lacks `REPLICATION SLAVE` or `REPLICATION CLIENT` |
 | `gtid-mode` and `enforce_gtid_consistency` | `ON` and `ON` | After a change of writer (blue/green switchover, failover, restore) capture resumes at the wrong binlog position and can skip changes. **The deploy preflight blocks** when it reads `OFF` |
 
 Aurora sets these in the **cluster** parameter group, not the instance one.
@@ -247,6 +251,15 @@ that source uses a colliding id, MySQL disconnects one of them.
 ### PostgreSQL / Aurora PostgreSQL — from configuration, not a live deployment
 
 - `rds.logical_replication=1` (Aurora) or `wal_level=logical`.
+- The user has `REPLICATION` (`rds_replication` on RDS), and a replication slot
+  and a WAL sender are free (`max_replication_slots`, `max_wal_senders`). The
+  preflight blocks on the first and warns on the others.
+- The publication publishes `insert, update, delete` (the default). A
+  **partitioned table** also needs `publish_via_partition_root = true`
+  (PostgreSQL 13 or later), so its changes arrive under its own name rather
+  than each partition's; the preflight blocks without it and prints the
+  `ALTER PUBLICATION`. Name the partitioned table in the link, not its
+  partitions.
 - A replica identity on each captured table: `REPLICA IDENTITY FULL`, or
   `DEFAULT` with a primary key. The preflight reads it and refuses `NOTHING` and
   `DEFAULT` without a primary key: once such a table is in the publication,
@@ -305,13 +318,24 @@ that source uses a colliding id, MySQL disconnects one of them.
 - **SQL Server Agent must be running.** CDC captures nothing without it, silently.
 - `sys.sp_cdc_enable_db`, then `sys.sp_cdc_enable_table` per table.
 - A user that can read the `cdc` schema.
+- **The signalling table enabled for CDC, with INSERT and DELETE for the
+  user.** `ecdl signal ddl <link>.yaml` prints the statements. Every 5 minutes
+  (and 20 seconds after Debezium starts) the offset store writes one row to
+  it and deletes it again. Without that, a link deployed on a source with no
+  writes since CDC was enabled failed every poll with error 313 ("An
+  insufficient number of arguments were supplied for the procedure or
+  function cdc.fn_cdc_get_all_changes_...") and never streamed. The interval
+  is `SQLSERVER_KEEPALIVE_SECONDS` in
+  `data-plane/debezium-server/application-sqlserver.properties` (`0` turns it
+  off). A failed write is logged as a WARN once and never stops capture.
 - **Set `@pollinginterval = 0` on the capture job.** The shipped default is 5
   seconds, which measured **4,859 ms** p50 (median) freshness; `0` measured **18.3 ms** —
   a 265x difference from one setting. See
   [benchmark results](benchmark-results.md).
-- `encrypt=false` or `trustServerCertificate=true` in the connection: JDBC 10+
-  defaults to `encrypt=true`, and a self-signed certificate fails PKIX certificate-path validation before the
-  connector reads anything.
+- TLS: Debezium encrypts and verifies the certificate (see above). An RDS for
+  SQL Server endpoint needs nothing; a server with a self-signed certificate
+  fails PKIX certificate-path validation before the connector reads anything,
+  so its link needs `tls: false`.
 - Monitor `COUNT(source) − COUNT(cdc.*_CT)` yourself. When the capture job is
   stopped, `sys.dm_cdc_errors` stays **empty** — the engine does not tell you.
 - **Change-table retention.** The CDC cleanup job deletes change-table rows

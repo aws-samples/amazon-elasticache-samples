@@ -106,6 +106,32 @@ type CDCEvent struct {
 	Op string `json:"op"`
 }
 
+// startupConfig checks the settings the sink refuses to start without and
+// returns the tables' streams. One link, N tables, one sink: STREAMS carries
+// every table's stream; see streams.go for the accepted forms and why each
+// stream's table is tracked. There is deliberately no fallback default stream
+// name: consuming a stream that was not configured is worse than refusing to
+// start.
+func startupConfig(getenv func(string) string) ([]streamSpec, error) {
+	if err := checkNumericEnv(getenv); err != nil {
+		return nil, err
+	}
+	specs, err := parseStreams(getenv)
+	if err == nil {
+		err = checkUniqueTables(specs)
+	}
+	if err == nil {
+		err = checkTrimStreams(splitList(getenv("TRIM_STREAMS")), specs)
+	}
+	if err == nil {
+		err = checkKeyPrefix(getenv("KEY_PREFIX"))
+	}
+	if err != nil {
+		return nil, err
+	}
+	return specs, nil
+}
+
 func main() {
 	// `ecdl-go-sink dlq list|replay ...` inspects and replays dead letters with
 	// the same broker settings the sink uses. See dlq.go.
@@ -113,7 +139,10 @@ func main() {
 		os.Exit(runDLQ(os.Args[2:]))
 	}
 	markStarted()
-	if err := checkNumericEnv(os.Getenv); err != nil {
+	// The configuration is checked before anything is printed or connected:
+	// a sink that refuses to start must not first look healthy.
+	specs, err := startupConfig(os.Getenv)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
 		os.Exit(1)
 	}
@@ -130,24 +159,6 @@ func main() {
 	group := envOr("CONSUMER_GROUP", "go-timed")
 	eventFormat := envOr("EVENT_FORMAT", "envelope") // envelope | flat
 
-	// One link, N tables, one sink. STREAMS carries every table's stream; see
-	// streams.go for the accepted forms and why each stream's table is tracked.
-	// There is deliberately no fallback default stream name: consuming a stream
-	// that was not configured is worse than refusing to start.
-	specs, err := parseStreams(os.Getenv)
-	if err == nil {
-		err = checkUniqueTables(specs)
-	}
-	if err == nil {
-		err = checkTrimStreams(splitList(os.Getenv("TRIM_STREAMS")), specs)
-	}
-	if err == nil {
-		err = checkKeyPrefix(os.Getenv("KEY_PREFIX"))
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
-		os.Exit(1)
-	}
 	streamKeys := streamKeysOf(specs)
 	// Per-table freshness (freshness.go). A threshold naming a table this link
 	// does not have stops the sink: an alarm that silently watches nothing is
@@ -447,6 +458,7 @@ func main() {
 	case <-time.After(grace):
 		fmt.Printf("  shutdown: workers still busy after %v; unacked entries stay pending for the other tasks\n", grace)
 	}
+	flushFinalMetrics()
 	elapsed := time.Since(start).Seconds()
 	w := atomic.LoadInt64(&writes)
 	c := atomic.LoadInt64(&cycles)
@@ -772,6 +784,19 @@ func startHealthServer(port string) {
 	fmt.Printf("  Health server on %s\n", addr)
 }
 
+// escapeKeyPart makes one value of a composite key safe to join with ":".
+// Unescaped, (a:b, c) and (a, b:c) both became a:b:c, one cache key for two
+// rows, each overwriting the other (review finding M4). "\" becomes "\\" and
+// ":" becomes "\:"; a value with neither is unchanged, so existing keys stay
+// valid. A single-column key is not escaped: it is never split.
+// sink_pk in data-plane/bulk-loader/bulk_loader.py does the same.
+func escapeKeyPart(s string) string {
+	if !strings.ContainsAny(s, `\:`) {
+		return s
+	}
+	return strings.NewReplacer(`\`, `\\`, `:`, `\:`).Replace(s)
+}
+
 // pkFromMsg derives the row identity from the Debezium record key (the table's
 // primary key), supporting single and composite keys. Falls back to the row's
 // "id" field if the key field is absent.
@@ -792,7 +817,7 @@ func pkFromMsg(msg redis.XMessage, row map[string]interface{}) string {
 			sort.Strings(names)
 			parts := make([]string, 0, len(names))
 			for _, name := range names {
-				parts = append(parts, fmt.Sprintf("%v", keyObj[name]))
+				parts = append(parts, escapeKeyPart(fmt.Sprintf("%v", keyObj[name])))
 			}
 			return strings.Join(parts, ":")
 		}

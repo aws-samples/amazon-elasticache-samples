@@ -376,6 +376,64 @@ class PostgresListingTest(unittest.TestCase):
 
 # ── capture prerequisites ──────────────────────────────────────────────────
 
+class M8ChecksTest(unittest.TestCase):
+    """Review finding M8: replication grants, PARTIAL_JSON, free slots and WAL
+    senders, partitioned tables and what a publication publishes."""
+    def mysql(self, extra):
+        base = mysql_responder(settings=[('ROW', 'FULL', 'ON')])
+
+        def respond(sql, params):
+            for needle, rows in extra.items():
+                if needle in sql:
+                    return rows
+            return base(sql, params)
+        result = list_tables(SOURCE_ARN, SECRET_ARN, database='Inventory',
+                             clients=Clients(), driver=FakeDriver(respond))
+        return {c['name']: c for c in result['prerequisites']}
+
+    def test_mysql_partial_json_and_missing_grants_block(self):
+        checks = self.mysql({'binlog_row_value_options': [('PARTIAL_JSON',)],
+                             'SHOW GRANTS': [("GRANT SELECT ON `Inventory`.* TO `cdc`@`%`",)]})
+        self.assertIs(checks['binlog_row_value_options is empty']['ok'], False)
+        self.assertTrue(checks['binlog_row_value_options is empty']['block'])
+        self.assertIs(checks['the user may read the binlog']['ok'], False)
+        self.assertIn('REPLICATION SLAVE', checks['the user may read the binlog']['fix'])
+
+    def test_mysql_good_settings_pass(self):
+        checks = self.mysql({'binlog_row_value_options': [('',)],
+                             'SHOW GRANTS': [('GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT '
+                                              'ON *.* TO `cdc`@`%`',)]})
+        self.assertTrue(checks['binlog_row_value_options is empty']['ok'])
+        self.assertTrue(checks['the user may read the binlog']['ok'])
+
+    def pg(self, extra):
+        base = pg_responder()
+
+        def respond(sql, params):
+            for needle, rows in extra.items():
+                if needle in sql:
+                    return rows
+            return base(sql, params)
+        return list_tables(SOURCE_ARN, SECRET_ARN, database='shop',
+                           clients=Clients(rds=FakeRds(PG_CLUSTER)), driver=FakeDriver(respond))
+
+    def test_pg_role_and_capacity(self):
+        result = self.pg({'rolreplication': [(False,)],
+                          'max_replication_slots': [(10, 10, 10, 3)]})
+        checks = {c['name']: c for c in result['prerequisites']}
+        self.assertIs(checks['the user may replicate']['ok'], False)
+        self.assertIs(checks['a replication slot is free']['ok'], False)
+        self.assertTrue(checks['a WAL sender is free']['ok'])
+
+    def test_pg_partitioned_tables_are_listed_and_publication_options_read(self):
+        result = self.pg({"relkind IN ('r', 'p')": [('orders', 100, 'p')],
+                          'pubviaroot': [('ecdl_x_pub', True, True, False, False)]})
+        orders = [t for t in result['tables'] if t['table'] == 'orders']
+        self.assertTrue(orders and orders[0].get('partitioned'), result['tables'])
+        self.assertEqual(result['publication_options']['ecdl_x_pub'],
+                         {'insert': True, 'update': True, 'delete': False, 'via_root': False})
+
+
 class PrerequisiteTest(unittest.TestCase):
 
     def check(self, settings):
@@ -616,7 +674,9 @@ class PostgresCaptureDetailTest(unittest.TestCase):
         self.assertTrue(result['listed'])
         self.assertEqual(entry['replica_identity'], 'd')
         self.assertNotIn('toastable_columns', entry)
-        self.assertEqual(rolled, [1])
+        # At least the TOAST query's; later checks the fake cannot answer roll
+        # back too.
+        self.assertTrue(rolled)
 
 
 class PrerequisiteWarningTest(unittest.TestCase):

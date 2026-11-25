@@ -2,7 +2,7 @@
 
 TaskRoleBoundary used to allow GetSecretValue on every secret in the account
 when PipelineSecretArns was empty. It now allows ECDL's own secrets and the
-secrets tagged ecdl:link, and the deploy preflight warns about a link secret
+secrets tagged ecdl:link (with or without PipelineSecretArns), and the deploy preflight warns about a link secret
 that is neither listed nor tagged. IAM has no condition key that constrains a
 new role's trust policy, so the trust is checked here instead: every role the
 link templates create trusts only ECS tasks, and every PassRole the control
@@ -20,8 +20,8 @@ from ecdl_link.preflight import (PIPELINE_ARNS_ENV, PIPELINE_READ_TAG, WARN,  # 
                                  pipeline_secret_list, secret_findings)
 from ecdl_link.resolve import confirm_secret  # noqa: E402
 from ecdl_link.tests.policy_render import WORST_CASE, render  # noqa: E402
-from ecdl_link.tests.test_control_plane_iam import (LINK_TEMPLATES, _CfnLoader,  # noqa: E402
-                                                    _template)
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
+from ecdl_link.tests.test_control_plane_iam import LINK_TEMPLATES, _template  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VALUES = dict(WORST_CASE, **{'AWS::Partition': 'aws', 'AWS::Region': 'us-east-2',
@@ -83,9 +83,12 @@ class BoundarySecretsTest(unittest.TestCase):
         self.assertTrue(boundary_allows(_secret('shop-db'), listed=listed))
         self.assertTrue(boundary_allows(_secret('shop-cache'), listed=listed))
         self.assertTrue(boundary_allows(_secret('BrokerAuthSecret-x1y2'), listed=listed))
-        # The tag does not widen an explicit list.
-        self.assertFalse(boundary_allows(_secret('other'), tags={PIPELINE_READ_TAG},
-                                         listed=listed))
+        # A tagged secret is admitted with a list too (an RDS-managed secret,
+        # rds!..., tagged but not listed used to be refused at task start).
+        self.assertTrue(boundary_allows(_secret('rds!cluster-1'), tags={PIPELINE_READ_TAG},
+                                        listed=listed))
+        self.assertFalse(boundary_allows(_secret('other'), listed=listed))
+        self.assertFalse(boundary_allows(_secret('other'), tags={'team'}, listed=listed))
 
     def test_no_unconditional_read_of_every_secret(self):
         resources = _template()['Resources']
@@ -137,9 +140,12 @@ class PreflightTest(unittest.TestCase):
         listed = [_secret('shop-db')]
         self.assertEqual(secret_findings(self._r(), listed), [])
         self.assertEqual(secret_findings(self._r(), ['arn:aws:secretsmanager:*:secret:shop-*']), [])
-        found = secret_findings(self._r(tags={'ecdl:link'}), [_secret('other')])
+        # Tagged counts with a list too.
+        self.assertEqual(secret_findings(self._r(tags={'ecdl:link'}), [_secret('other')]), [])
+        found = secret_findings(self._r(), [_secret('other')])
         self.assertEqual([f.path for f in found], ['source.secret_arn'])
         self.assertIn('PipelineSecretArns', found[0].message)
+        self.assertIn('Key=ecdl:link', found[0].message)
 
     def test_the_target_secret_is_checked_too(self):
         target = {'arn': _secret('cache'), 'name': 'cache', 'tag_keys': []}
@@ -171,7 +177,7 @@ class PreflightTest(unittest.TestCase):
 # ── Trust and PassRole ───────────────────────────────────────────────────────
 def _load(name):
     with open(os.path.join(ROOT, 'infra', name)) as handle:
-        return yaml.load(handle, Loader=_CfnLoader)  # nosec B506 - SafeLoader subclass
+        return load_cfn(handle)
 
 
 class TrustTest(unittest.TestCase):

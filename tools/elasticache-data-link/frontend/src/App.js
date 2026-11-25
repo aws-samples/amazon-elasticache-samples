@@ -5,13 +5,6 @@ import TokenBar from './components/TokenBar';
 import { installAuth } from './authClient';
 import Links from './components/Links';
 import LinkDeployments from './components/LinkDeployments';
-import Sources from './components/Sources';
-import Connectors from './components/Connectors';
-import Brokers from './components/Brokers';
-import Targets from './components/Targets';
-import Pipelines from './components/Pipelines';
-import Deployments from './components/Deployments';
-import Monitor from './components/Monitor';
 import PipelineMonitor from './components/PipelineMonitor';
 import Application from './components/Application';
 import Maintenance from './components/Maintenance';
@@ -41,13 +34,6 @@ function App() {
         {activeView === 'link-deployments' && (
           <LinkDeployments onWatch={watchPipeline} />
         )}
-        {activeView === 'sources' && <Sources />}
-        {activeView === 'connectors' && <Connectors />}
-        {activeView === 'brokers' && <Brokers />}
-        {activeView === 'targets' && <Targets />}
-        {activeView === 'pipelines' && <Pipelines />}
-        {activeView === 'deployments' && <Deployments />}
-        {activeView === 'monitor' && <Monitor />}
         {activeView === 'pipeline-monitor' && (
           <PipelineMonitor initialLink={watchLink} />
         )}

@@ -18,7 +18,11 @@ mean "deployed" and "working" were different things with nothing to tell them ap
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import socket
+import threading
 import time
 
 # CloudFormation accepts at most 51,200 bytes of inline TemplateBody. The link
@@ -67,6 +71,14 @@ def compact_template(body):
 # that as "deployed" meant a bad parameter rolled back silently and the dashboard
 # said the new configuration was live. The stack stays updatable (it is not in
 # _UNRECOVERABLE), so the next deploy tries again.
+# What the capture entrypoint prints on every start (data-plane/debezium-server/
+# entrypoint.sh). Not a cause, so a failed deploy does not quote it.
+_ECDL_INFO = re.compile(r'ECDL: (JVM heap|source engine|signalling collection|snapshot mode|'
+                        r'replication slot|databases captured)')
+# The stack-level event that starts an operation (a rollback is part of the
+# operation it rolls back).
+_OPERATION_STARTS = ('CREATE_IN_PROGRESS', 'UPDATE_IN_PROGRESS', 'DELETE_IN_PROGRESS',
+                     'IMPORT_IN_PROGRESS')
 _OK_STATES = ('CREATE_COMPLETE', 'UPDATE_COMPLETE', 'IMPORT_COMPLETE')
 _BAD_STATES = ('CREATE_FAILED', 'ROLLBACK_COMPLETE', 'ROLLBACK_FAILED',
                'DELETE_COMPLETE', 'DELETE_FAILED',
@@ -337,10 +349,111 @@ def broker_offset_probe(secrets_client, connect=None, timeout=5):
         except Exception:  # noqa: BLE001
             return None
 
+    def lock(plan_doc, outputs, owner, ttl_ms=DEPLOY_LOCK_TTL_MS):
+        """Take the link's deploy lock (review finding H7).
+
+        Returns ('taken', token), ('held', holder description), or (None,
+        why) when the broker cannot be read from here. SET NX PX: one owner;
+        the expiry frees it if the deployer is killed, and refresh() keeps it
+        while the deploy runs.
+        """
+        try:
+            client = _client(outputs)
+            if client is None:
+                return None, 'the broker has no endpoint yet'
+            key = deploy_lock_key(plan_doc['link'])
+            token = os.urandom(12).hex()
+            value = json.dumps({'token': token, 'owner': owner,
+                                'started_ms': int(time.time() * 1000)})
+            if client.set(key, value, nx=True, px=int(ttl_ms)):
+                return 'taken', token
+            held = client.get(key)
+            try:
+                held = json.loads(held.decode() if isinstance(held, bytes) else held or '{}')
+            except ValueError:
+                held = {}
+            return 'held', '{} (since {})'.format(
+                held.get('owner') or 'another deployer',
+                time.strftime('%Y-%m-%d %H:%M:%S UTC',
+                              time.gmtime((held.get('started_ms') or 0) / 1000.0)))
+        except Exception as exc:  # noqa: BLE001
+            return None, '{}: {}'.format(type(exc).__name__, exc)
+
+    def _owned(outputs, link, token, script, *extra):
+        try:
+            client = _client(outputs)
+            if client is None:
+                return False
+            return bool(client.eval(script, 1, deploy_lock_key(link), token, *extra))
+        except Exception:  # noqa: BLE001
+            return False
+
+    def refresh(plan_doc, outputs, token, ttl_ms=DEPLOY_LOCK_TTL_MS):
+        return _owned(outputs, plan_doc['link'], token, _LOCK_REFRESH_LUA, int(ttl_ms))
+
+    def unlock(plan_doc, outputs, token):
+        return _owned(outputs, plan_doc['link'], token, _LOCK_RELEASE_LUA)
+
     probe.broker_time_ms = broker_time_ms
     probe.heartbeat_ms = heartbeat_ms
     probe.reset_position = reset_position
+    probe.lock = lock
+    probe.refresh_lock = refresh
+    probe.unlock = unlock
     return probe
+
+
+# The deploy lock (review finding H7). The control plane's lock was in its own
+# process only, so a deploy from the CLI and one from the console could run on
+# the same link at once, each pausing, loading and resuming capture under the
+# other. It is a key in the link's broker, which every deploy path reaches.
+DEPLOY_LOCK_TTL_MS = 120000
+DEPLOY_LOCK_REFRESH_SECONDS = 30
+# Only the owner's token extends or deletes it.
+_LOCK_REFRESH_LUA = ("local v = redis.call('GET', KEYS[1]) "
+                     "if v and string.find(v, ARGV[1], 1, true) then "
+                     "return redis.call('PEXPIRE', KEYS[1], ARGV[2]) end return 0")
+_LOCK_RELEASE_LUA = ("local v = redis.call('GET', KEYS[1]) "
+                     "if v and string.find(v, ARGV[1], 1, true) then "
+                     "return redis.call('DEL', KEYS[1]) end return 0")
+
+
+_TAG_CHARS = frozenset('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-')
+
+
+def template_release(text):
+    """The release a template pins (its ImageTag parameter default), or None.
+
+    Read line by line (no backtracking regex): the `  ImageTag:` parameter, then
+    its `    Default:` among the lines indented under it."""
+    lines = (text or '').splitlines()
+    for i, line in enumerate(lines):
+        if line.rstrip() != '  ImageTag:':
+            continue
+        for body in lines[i + 1:]:
+            if not body.startswith('    '):
+                break
+            if body.startswith('    Default:'):
+                value = body[len('    Default:'):].lstrip()
+                if value[:1] in ('"', "'"):
+                    value = value[1:]
+                end = 0
+                while end < len(value) and value[end] in _TAG_CHARS:
+                    end += 1
+                tag = value[:end]
+                return tag if tag[:1].isdigit() else None
+        return None
+    return None
+
+
+def _release_key(tag):
+    """'0.2.36' -> (0, 2, 36); anything that is not a release sorts lowest."""
+    parts = re.findall(r'\d+', str(tag or ''))
+    return tuple(int(p) for p in parts[:4]) if re.match(r'^\d+(\.\d+)*$', str(tag or '')) else ()
+
+
+def deploy_lock_key(link):
+    return 'ecdl:{}:deploy-lock'.format(link)
 
 
 def heartbeat_stream(topic_prefix):
@@ -358,7 +471,8 @@ class Deployer(object):
                  load_timeout_seconds=None, offset_probe=None,
                  offset_wait_seconds=180, offset_grace_seconds=30,
                  allow_unverified_offset=False, template_url=None, role_arn=None,
-                 capture_wait_seconds=600, reset_position=False, pg_slot_dropped=False):
+                 capture_wait_seconds=600, reset_position=False, pg_slot_dropped=False,
+                 allow_downgrade=False):
         # template_body(filename) -> the template text. Injected rather than read
         # from a path so the control plane can serve templates from the image and
         # tests can supply strings.
@@ -410,6 +524,9 @@ class Deployer(object):
         # newer than the start (see _confirm_streaming). A start measured live
         # took about 2.5 minutes: image pull, JVM, schema history recovery.
         self.capture_wait_seconds = capture_wait_seconds
+        # Review finding H8: an update with an older release than the stack
+        # runs is refused unless this is set (ecdl apply --allow-downgrade).
+        self.allow_downgrade = allow_downgrade
         # After run(): True when a fresh heartbeat proved Debezium was capturing,
         # False when the broker could not be read to check, None when nothing
         # was started.
@@ -448,6 +565,60 @@ class Deployer(object):
 
     # ── public ────────────────────────────────────────────────────────────
     def run(self, plan_doc):
+        """Execute every step under the link's deploy lock; see _run."""
+        lock = self._take_lock(plan_doc)
+        try:
+            return self._run(plan_doc)
+        finally:
+            self._drop_lock(plan_doc, lock)
+
+    def _take_lock(self, plan_doc):
+        """Review finding H7: one deploy of a link at a time, across processes.
+
+        Held in the link's broker. A first deploy has no broker yet, and a
+        deployer that cannot reach the broker (the CLI on a laptop) goes on
+        without it, saying so; the control plane's in-process lock still
+        applies there.
+        """
+        probe = self.offset_probe
+        if probe is None or not hasattr(probe, 'lock'):
+            return None
+        broker = next((s for s in plan_doc['steps']
+                       if s.get('kind') == 'stack' and s.get('id') == 'broker'), None)
+        try:
+            outputs = {'broker': self._stack_outputs(broker['name'])} if broker else {}
+        except Exception:  # noqa: BLE001
+            outputs = {}
+        if not (outputs.get('broker') or {}).get('PrimaryEndpoint'):
+            return None
+        owner = '{} pid {}'.format(socket.gethostname(), os.getpid())
+        state, detail = probe.lock(plan_doc, outputs, owner)
+        if state == 'held':
+            raise DeployError(
+                'another deploy of {!r} is running: {}'.format(plan_doc['link'], detail),
+                'Wait for it to finish. If it was killed, its lock expires {} s after '
+                'it stopped; then deploy again.'.format(DEPLOY_LOCK_TTL_MS // 1000))
+        if state != 'taken':
+            self._emit('deploy_lock_skipped', why=detail)
+            return None
+        stop = threading.Event()
+
+        def keep():
+            while not stop.wait(DEPLOY_LOCK_REFRESH_SECONDS):
+                probe.refresh_lock(plan_doc, outputs, detail)
+        thread = threading.Thread(target=keep, name='ecdl-deploy-lock', daemon=True)
+        thread.start()
+        self._emit('deploy_lock_taken', owner=owner)
+        return (outputs, detail, stop)
+
+    def _drop_lock(self, plan_doc, lock):
+        if lock is None:
+            return
+        outputs, token, stop = lock
+        stop.set()
+        self.offset_probe.unlock(plan_doc, outputs, token)
+
+    def _run(self, plan_doc):
         """Execute every step. Returns a result document.
 
         CAPTURE IS ALWAYS RESUMED. If any step fails while capture is paused for
@@ -604,9 +775,13 @@ class Deployer(object):
             self._emit('capture_unverified', step=step_id, reason=unverified)
             return
         self.capture_verified = False
+        cdc = next((s.get('name') for s in plan_doc.get('steps', [])
+                    if s.get('kind') == 'stack' and s.get('id') == 'cdc'), None)
+        said = self._service_diagnosis(cdc, 'DebeziumService') if cdc else None
         raise DeployError(
             'Debezium is running but has written no heartbeat in the {}s since it '
             'was started, so it is not capturing changes'.format(self.capture_wait_seconds),
+            (said + ' ' if said else '') +
             'Check the Debezium log group: missing grants, a purged binlog or WAL '
             'position, or a missing replication slot stop it at startup. Capture '
             'is left running (desired count 1); deploy again once it is fixed.',
@@ -1068,6 +1243,9 @@ class Deployer(object):
             if kept:
                 tags.append({'Key': LOAD_MARKER_TAG, 'Value': kept})
 
+        if state is not None and not self.allow_downgrade:
+            self._refuse_downgrade(step)
+
         if state in _STUCK_HINTS:
             raise DeployError(
                 'stack {} is in {} and cannot be updated'.format(step['name'], state),
@@ -1104,6 +1282,29 @@ class Deployer(object):
         self._emit('stack_complete', step=step['id'], stack=step['name'],
                    outputs=sorted(collected))
         return collected
+
+    def _refuse_downgrade(self, step):
+        """Review finding H8: an old CLI checkout or control plane quietly
+        moved a running link back to older images. The release is the
+        templates' pinned ImageTag; the stack's ImageTag parameter is the
+        release it runs. An explicit ImageTag in the plan counts as asked for."""
+        if 'ImageTag' in (step.get('parameters') or {}):
+            return
+        try:
+            new = template_release(self.template_body(step['template']))
+        except Exception:  # noqa: BLE001
+            return
+        params = {p.get('ParameterKey'): p.get('ParameterValue') for p in
+                  ((self._described.get(step['name']) or {}).get('Parameters') or [])}
+        old = params.get('ImageTag')
+        if new and old and _release_key(old) > _release_key(new):
+            raise DeployError(
+                'stack {} runs release {}, and this deployer has release {}: the '
+                'update would move it back to older images'.format(step['name'], old, new),
+                'Deploy with release {} or later (update the CLI checkout, or the '
+                'control plane). To go back on purpose, use ecdl apply '
+                '--allow-downgrade (API: "allow_downgrade": true).'.format(old),
+                step=step['id'])
 
     def _role(self):
         return {'RoleARN': self.role_arn} if self.role_arn else {}
@@ -1449,6 +1650,9 @@ class Deployer(object):
                 return state
             if state in _BAD_STATES:
                 reason = self._failure_reason(name)
+                said = self._service_diagnosis(name, reason)
+                if said:
+                    reason = '{} {}'.format(reason, said) if reason else said
                 hint = {'UPDATE_ROLLBACK_COMPLETE': _ROLLED_BACK_HINT,
                         'CREATE_FAILED': _CREATE_FAILED_HINT,
                         'UPDATE_ROLLBACK_FAILED': _ROLLBACK_FAILED_HINT}.get(state)
@@ -1645,17 +1849,105 @@ class Deployer(object):
         return {o['OutputKey']: o['OutputValue']
                 for o in items[0].get('Outputs') or []}
 
+    # The CDC stack's services, by the logical id CloudFormation names in a
+    # failure: (service suffix, log group suffix).
+    _SERVICES = {'DebeziumService': 'debezium', 'SinkService': 'sink'}
+
+    def _service_diagnosis(self, stack, reason):
+        """What a pipeline task itself said before it failed, or None.
+
+        A task that keeps exiting makes ECS stop the deployment, and the stack
+        failure says only "ECS Deployment Circuit Breaker was triggered"; a
+        Debezium that never streams says nothing at all. The cause is in two
+        places the deployer can read: the reason ECS stopped the task (a secret
+        it could not read, an image it could not pull) and the task's last
+        ERROR / FATAL / ECDL: lines. Best effort: any failure to read them
+        leaves the error as it was.
+        """
+        component = next((c for lid, c in self._SERVICES.items() if lid in (reason or '')), None)
+        if component is None:
+            return None
+        said = []
+        try:
+            stacks = self.clients.cloudformation.describe_stacks(StackName=stack).get('Stacks') or []
+            params = {p.get('ParameterKey'): p.get('ParameterValue')
+                      for p in ((stacks[0].get('Parameters') if stacks else None) or [])}
+            cluster = params.get('ClusterName')
+            service = '{}-{}'.format(stack, component)
+            if cluster:
+                arns = self.clients.ecs.list_tasks(cluster=cluster, serviceName=service,
+                                                   desiredStatus='STOPPED').get('taskArns') or []
+                if arns:
+                    tasks = self.clients.ecs.describe_tasks(cluster=cluster, tasks=arns[:5]).get('tasks') or []
+                    for task in tasks:
+                        why = task.get('stoppedReason') or ''
+                        if why and 'Scaling activity' not in why:
+                            said.append('ECS stopped the {} task: {}.'.format(component, why[:400]))
+                            break
+        except Exception as exc:  # noqa: BLE001
+            said.append('(Could not read why ECS stopped the {} task: {}.)'.format(
+                component, type(exc).__name__))
+        lines = self._recent_errors('/ecs/{}/{}'.format(stack, component))
+        if lines:
+            said.append('Its log ({}) ends with: {}'.format(
+                '/ecs/{}/{}'.format(stack, component), ' | '.join(lines)))
+        return ' '.join(said) or None
+
+    def _recent_errors(self, log_group, minutes=30, keep=4):
+        """The last few ERROR / FATAL / ECDL: lines of a log group, oldest first."""
+        try:
+            logs = self.clients.logs() if hasattr(self.clients, 'logs') else None
+        except Exception:  # noqa: BLE001
+            logs = None
+        if logs is None:
+            return []
+        found = []
+        try:
+            kwargs = {'logGroupName': log_group, 'filterPattern': '?ERROR ?FATAL ?"ECDL:"',
+                      'startTime': int((time.time() - minutes * 60) * 1000)}
+            for _page in range(5):
+                page = logs.filter_log_events(**kwargs)
+                for event in page.get('events') or []:
+                    text = ' '.join((event.get('message') or '').split())
+                    if text and not text.startswith('at ') and not _ECDL_INFO.match(text):
+                        found.append(text[:300])
+                token = page.get('nextToken')
+                if not token:
+                    break
+                kwargs['nextToken'] = token
+        except Exception:  # noqa: BLE001
+            return found[-keep:]
+        # Repeated retries print the same error many times: keep distinct ones.
+        distinct = []
+        for text in reversed(found):
+            core = re.sub(r'^\S+ \S+ ', '', text)
+            if all(core != re.sub(r'^\S+ \S+ ', '', d) for d in distinct):
+                distinct.append(text)
+            if len(distinct) == keep:
+                break
+        return list(reversed(distinct))
+
     def _failure_reason(self, name):
         """The first genuinely failed event, which is the one worth reporting.
 
         A failed stack produces many events; the useful one is the
         earliest FAILED with a reason, not the summary that rolled it back.
+        Only this operation's events count: they are listed newest first, back
+        to the stack's own CREATE/UPDATE/DELETE_IN_PROGRESS that started it.
+        Searching further quoted an earlier failed update's reason as this
+        one's (found in the end-to-end test of 0.2.33).
         """
         try:
             events = self.clients.cloudformation.describe_stack_events(
                 StackName=name).get('StackEvents') or []
         except Exception:  # noqa: BLE001
             return None
+        for i, event in enumerate(events):
+            if (event.get('ResourceType') == 'AWS::CloudFormation::Stack'
+                    and event.get('LogicalResourceId') == name
+                    and event.get('ResourceStatus') in _OPERATION_STARTS):
+                events = events[:i + 1]
+                break
         for event in reversed(events):
             status = event.get('ResourceStatus') or ''
             reason = event.get('ResourceStatusReason') or ''

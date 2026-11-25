@@ -19,7 +19,7 @@ from ecdl_link.change import KEPT, parameter_drift  # noqa: E402
 from ecdl_link.deploy import Clients, Deployer, add_load_step  # noqa: E402
 from ecdl_link.provision import plan  # noqa: E402
 from ecdl_link.tests.test_capture_config import properties  # noqa: E402
-from ecdl_link.tests.test_control_plane_iam import _CfnLoader  # noqa: E402
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
 from ecdl_link.tests.test_deploy import (  # noqa: E402
     BROKER_OUTPUTS, LOADER_OUTPUTS, FakeCloudFormation, FakeECS,
 )
@@ -113,7 +113,7 @@ class TemplateTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         with open(os.path.join(ROOT, 'infra', 'ecdl-cdc-ecs.yaml')) as f:
-            cls.doc = yaml.load(f, Loader=_CfnLoader)  # nosec B506 - SafeLoader subclass
+            cls.doc = load_cfn(f)
 
     def test_parameter_defaults_to_false_and_allows_empty(self):
         p = self.doc['Parameters']['OffsetCommitted']

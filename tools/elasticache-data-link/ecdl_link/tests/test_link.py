@@ -1053,14 +1053,13 @@ class SettingsTakeEffectTest(unittest.TestCase):
             self.assertIn('node type', message_for(problems_for(minimal(advanced={
                 'broker': {'node_type': bad}})), 'advanced.broker.node_type'), bad)
 
-    def test_external_source_tls_off_is_refused(self):
+    def test_external_source_tls_off_is_accepted(self):
         source = {'kind': 'external', 'engine': 'mysql', 'host': 'db.local',
                   'database': 'shop', 'secret_arn': SEC_ARN, 'username': 'repl'}
         self.assertEqual(problems_for(minimal(source=dict(source))), [])
         self.assertEqual(problems_for(minimal(source=dict(source, tls=True))), [])
-        found = problems_for(minimal(source=dict(source, tls=False)))
-        self.assertEqual(paths(found), ['source.tls'])
-        self.assertIn('cannot be turned off', message_for(found, 'source.tls'))
+        # Since 0.2.34 both stacks take SourceTLS (review finding H1).
+        self.assertEqual(problems_for(minimal(source=dict(source, tls=False))), [])
 
     def test_every_accepted_advanced_leaf_is_consumed(self):
         """A leaf added to the schema without a consumer fails here, so the

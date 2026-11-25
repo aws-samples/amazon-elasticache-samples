@@ -66,6 +66,20 @@ class ConflictTest(unittest.TestCase):
         self.assertEqual(key_conflicts(cfn, 'demo', HOST, ['v2:products:']),
                          [{'link': 'v2', 'key_prefixes': ['v2:products:']}])
 
+    def test_nested_prefixes_conflict_both_ways(self):
+        # cxtest's table products owns products:*, which holds every key of a
+        # link whose key_prefix is products.
+        self.assertEqual(key_conflicts(self.cfn(), 'demo', HOST, ['products:orders:']),
+                         [{'link': 'cxtest', 'key_prefixes': ['products:']}])
+        cfn = self.cfn(**{'ecdl-shop-cdc': {'TargetHost': HOST, 'Tables': 'a.orders',
+                                            'KeyPrefix': 'shop'}})
+        self.assertEqual(key_conflicts(cfn, 'demo', HOST, ['shop:']),
+                         [{'link': 'shop', 'key_prefixes': ['shop:orders:']}])
+
+    def test_a_shared_start_without_the_separator_is_fine(self):
+        # products: and products2: never share a key.
+        self.assertEqual(key_conflicts(self.cfn(), 'demo', HOST, ['products2:']), [])
+
     def test_from_a_resolution(self):
         resolution = {'link': {'name': 'demo'}, 'target': {'endpoint': HOST},
                       'tables': [{'key_prefix': 'products:'}]}

@@ -8,7 +8,15 @@ database, follow [docs/getting-started.md](docs/getting-started.md).
 Run everything with `make test`. Each component keeps its tests next to its code.
 The suites need no secrets and no AWS account.
 
+The integration suites (real Valkey: replication waits, truncates, dead
+letters, the denormalize races, the offset store, the schema history) skip
+themselves without servers. `tools/ci/start-valkey.sh` starts the set they
+need (a primary with a replica, a cluster, two spares) and writes the
+variables to `valkey.env`; `data-plane/debezium-server/broker-writer/ci-test.sh`
+runs the broker writer's unit and integration tests without building the image.
+
 ```bash
+sh tools/ci/start-valkey.sh && . ./valkey.env                        # Linux x86-64; VALKEY_BIN=<dir> elsewhere
 python3 -m venv .venv && .venv/bin/pip install --require-hashes -r backend/requirements.lock  # what the API image installs
 python3 -m unittest discover -s ecdl_link/tests -t .                  # link engine, planner, deployer
 (cd data-plane/bulk-loader && python3 -m unittest discover -s tests -t .)   # bulk loader
@@ -19,7 +27,6 @@ python3 tests/test_links.py
 python3 tests/test_links_lifecycle.py
 DEMO_HISTORY_ENABLED=false python3 tests/test_monitor.py
 python3 tests/test_monitor_links.py
-python3 tests/test_sql_safety.py
 python3 tests/test_legacy_removed.py
 python3 tests/test_app_hardening.py
 cd ..

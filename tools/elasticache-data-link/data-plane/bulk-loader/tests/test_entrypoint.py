@@ -17,6 +17,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ENTRYPOINT = os.path.join(os.path.dirname(HERE), 'entrypoint.sh')
 
 WRAPPER = """#!/bin/sh
+if [ "$1" = /app/verify.py ]; then
+  echo "VERIFY TABLES=$TABLES"
+  exit 0
+fi
 if [ "$1" = /app/bulk_loader.py ]; then
   shift
   exec "{python}" -c 'import json, sys; print("ARGV=" + json.dumps(sys.argv[1:]))' "$@"
@@ -62,6 +66,12 @@ class EntrypointHarness(object):
 
 
 class EntrypointTest(EntrypointHarness, unittest.TestCase):
+    def test_verify_mode_runs_the_check_over_every_table(self):
+        # Review finding C1: no TABLE needed, nothing is loaded.
+        proc = self.run_entrypoint(ECDL_MODE='verify', TABLES='orders,customers')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('VERIFY TABLES=orders,customers', proc.stdout)
+        self.assertNotIn('ARGV=', proc.stdout)
     def test_the_qualified_name_is_queried_and_the_bare_name_keys(self):
         args = self.argv(TABLE='customers', TABLES='orders,customers',
                          SOURCE_TABLES='sales.orders,sales.customers',

@@ -78,6 +78,51 @@ LOCK_WAIT_SEC = int(os.environ.get("LOAD_LOCK_WAIT_SEC", "10"))
 # Source adapters — snapshot capability only (parallel range read).
 # ─────────────────────────────────────────────────────────────────────────────
 
+class After(object):
+    """A range start that excludes its value: keys > value.
+
+    Review finding M6. The load used to split only integer chunk columns into
+    integer ranges, and stopped with a FATAL for any other key, so a table
+    keyed by a uuid or text (common on PostgreSQL) could not be loaded at all.
+    Ordered key values are split at real keys instead: each chunk ends at a
+    key (inclusive) and the next starts after it. Integer keys still use
+    integer ranges.
+    """
+    __slots__ = ("value",)
+
+    def __init__(self, value):
+        self.value = value
+
+    def __eq__(self, other):
+        return isinstance(other, After) and other.value == self.value
+
+    def __hash__(self):
+        return hash(("after", str(self.value)))
+
+    def __repr__(self):
+        return "after {}".format(self.value)
+
+    __str__ = __repr__
+
+
+def _next_start(last):
+    """Where a read continues after the key `last`: last + 1, or After(last)."""
+    return last + 1 if _is_integral(last) else After(last)
+
+
+def _json_key(v):
+    """A range bound for the progress hash (JSON)."""
+    if isinstance(v, After):
+        return {"after": _json_key(v.value)}
+    if isinstance(v, bool) or not _is_integral(v):
+        return str(v)
+    return int(v)
+
+
+def _json_ranges(ranges):
+    return json.dumps([[_json_key(a), _json_key(b)] for a, b in ranges])
+
+
 class SourceAdapter:
     """Interface: bounds() -> (min_pk, max_pk); fetch(lo, hi) -> list[dict].
 
@@ -123,7 +168,10 @@ class SourceAdapter:
         raise NotImplementedError
 
     def page(self, table, pk, lo, hi, n):
-        """Up to n rows with lo <= pk <= hi, in key order."""
+        """Up to n rows with lo <= pk <= hi (pk > v for lo = After(v)), in key order."""
+        if isinstance(lo, After):
+            sql = self.PAGE_SQL.replace("{pk} >= ", "{pk} > ", 1)
+            return self.query_rows(self._sql(sql, table, pk), self.page_params(lo.value, hi, n))
         return self.query_rows(self._sql(self.PAGE_SQL, table, pk), self.page_params(lo, hi, n))
 
     def value_rows(self, table, pk, value):
@@ -139,7 +187,9 @@ class SourceAdapter:
         a value that fills a whole page by itself is read on its own.
         """
         batch = max(1, int(batch))
-        while lo <= hi:
+        # Integer ranges stop at hi here; ordered keys (M6) are bounded by the
+        # query alone, because Python's order is not the database's collation.
+        while not (_is_integral(lo) and _is_integral(hi)) or lo <= hi:
             rows = self.page(table, pk, lo, hi, batch)
             if len(rows) < batch:
                 for row in rows:
@@ -149,11 +199,11 @@ class SourceAdapter:
             if unique:
                 for row in rows:
                     yield row
-                lo = last + 1
+                lo = _next_start(last)
             elif rows[0][pk] == last:
                 for row in self.value_rows(table, pk, last):
                     yield row
-                lo = last + 1
+                lo = _next_start(last)
             else:
                 for row in rows:
                     if row[pk] != last:
@@ -181,6 +231,19 @@ class SourceAdapter:
 
     def connect(self): raise NotImplementedError
     def bounds(self, table, pk): raise NotImplementedError
+
+    # The first and last key in index order (review finding M6). MIN/MAX is not
+    # defined for every ordered type: PostgreSQL has none for uuid, SQL Server
+    # none for uniqueidentifier, and the load of such a table stopped there.
+    FIRST_SQL = 'SELECT {pk} AS k FROM {t} ORDER BY {pk} LIMIT 1'
+    LAST_SQL = 'SELECT {pk} AS k FROM {t} ORDER BY {pk} DESC LIMIT 1'
+
+    def ordered_bounds(self, table, pk):
+        first = self.query_rows(self._sql(self.FIRST_SQL, table, pk), ())
+        if not first:
+            return None, None
+        last = self.query_rows(self._sql(self.LAST_SQL, table, pk), ())
+        return next(iter(first[0].values())), next(iter(last[0].values()))
 
     def primary_key(self, table):
         """The table's declared primary key columns, in key order.
@@ -470,10 +533,14 @@ class PostgreSQLAdapter(SourceAdapter):
             return [r[0] for r in c.fetchall()]
 
     def bounds(self, table, pk):
-        with self.conn.cursor() as c:
-            c.execute(self._sql(self.BOUNDS_SQL, table, pk))
-            lo, hi = c.fetchone()
-            return lo, hi
+        try:
+            with self.conn.cursor() as c:
+                c.execute(self._sql(self.BOUNDS_SQL, table, pk))
+                lo, hi = c.fetchone()
+                return lo, hi
+        except Exception:                                            # noqa: BLE001
+            # No MIN/MAX for this type (uuid): read the ends of the index.
+            return self.ordered_bounds(table, pk)
 
     def fetch(self, table, pk, lo, hi):
         with self.conn.cursor(cursor_factory=self._dict) as c:
@@ -585,11 +652,18 @@ class SQLServerAdapter(SourceAdapter):
                      "precision": r["scale"] if str(r["type"]).lower() in self._FRACTIONAL
                      else None} for r in c.fetchall()]
 
+    FIRST_SQL = 'SELECT TOP (1) {pk} AS k FROM {t} ORDER BY {pk}'
+    LAST_SQL = 'SELECT TOP (1) {pk} AS k FROM {t} ORDER BY {pk} DESC'
+
     def bounds(self, table, pk):
-        with self.conn.cursor() as c:
-            c.execute(self._sql(self.BOUNDS_SQL, table, pk))
-            r = c.fetchone()
-            return r["lo"], r["hi"]
+        try:
+            with self.conn.cursor() as c:
+                c.execute(self._sql(self.BOUNDS_SQL, table, pk))
+                r = c.fetchone()
+                return r["lo"], r["hi"]
+        except Exception:                                            # noqa: BLE001
+            # No MIN/MAX for uniqueidentifier: read the ends of the index.
+            return self.ordered_bounds(table, pk)
 
     def fetch(self, table, pk, lo, hi):
         with self.conn.cursor() as c:
@@ -706,6 +780,8 @@ class OracleAdapter(SourceAdapter):
     PAGE_SQL = ('SELECT * FROM {t} WHERE {pk} >= :1 AND {pk} <= :2 ORDER BY {pk} '
                 'FETCH FIRST :3 ROWS ONLY')
     VALUE_SQL = 'SELECT * FROM {t} WHERE {pk} = :1'
+    FIRST_SQL = 'SELECT {pk} AS k FROM {t} ORDER BY {pk} FETCH FIRST 1 ROWS ONLY'
+    LAST_SQL = 'SELECT {pk} AS k FROM {t} ORDER BY {pk} DESC FETCH FIRST 1 ROWS ONLY'
     OFFSET_SQL = ('SELECT {pk} FROM {t} WHERE {pk} >= :1 ORDER BY {pk} '
                   'OFFSET :2 ROWS FETCH NEXT 1 ROWS ONLY')
 
@@ -788,10 +864,14 @@ class OracleAdapter(SourceAdapter):
         "AND ac.table_name = :1 ORDER BY cc.position")
 
     def bounds(self, table, pk):
-        with self.conn.cursor() as c:
-            c.execute(self._sql(self.BOUNDS_SQL, table, pk))
-            lo, hi = c.fetchone()
-            return lo, hi
+        try:
+            with self.conn.cursor() as c:
+                c.execute(self._sql(self.BOUNDS_SQL, table, pk))
+                lo, hi = c.fetchone()
+                return lo, hi
+        except Exception:                                            # noqa: BLE001
+            # No MIN/MAX for this type (uuid): read the ends of the index.
+            return self.ordered_bounds(table, pk)
 
     def fetch(self, table, pk, lo, hi):
         cur, rf = self._dict_cursor(1000)
@@ -1034,8 +1114,19 @@ def sink_pk(encoded, key_columns):
     For a composite key that was a key the sink never writes, and the same
     leading value overwrote one key for every row that shared it.
     tests/sink_pk_cases.json holds cases both programs are tested against.
+    In a composite key each value has "\\" doubled and ":" escaped as "\\:"
+    (escapeKeyPart in main.go): unescaped, (a:b, c) and (a, b:c) shared one
+    key (review finding M4). A single column is not escaped.
     """
-    return ":".join(encoded[c] for c in sorted(key_columns))
+    if len(key_columns) == 1:
+        return encoded[next(iter(key_columns))]
+    return ":".join(_escape_key_part(encoded[c]) for c in sorted(key_columns))
+
+
+def _escape_key_part(value):
+    if "\\" not in value and ":" not in value:
+        return value
+    return value.replace("\\", "\\\\").replace(":", "\\:")
 
 
 # LOAD_RETRIES counts failures in a row WITHOUT progress: an attempt that
@@ -1305,6 +1396,10 @@ def _after(pk_value, default, unique=True):
     were confirmed, so the read restarts AT that value and writes those rows
     again; the writes are idempotent. Restarting after it would skip them.
     """
+    if not _is_integral(default):
+        # A chunk of ordered keys (M6; its start is a key or After(key)):
+        # continue after the confirmed key, or at it when it can repeat.
+        return After(pk_value) if unique else pk_value
     try:
         return int(pk_value) + (1 if unique else 0)
     except (TypeError, ValueError):
@@ -1423,8 +1518,15 @@ def _load_range_once(args, lo_override, state):
     # column that is not the whole primary key repeats values, so equal
     # neighbours are allowed for it.
     seen = {"pk": None}
+    integer_ranges = _is_integral(hi)
 
     def check_order(pk_value):
+        if not integer_ranges:
+            # Ordered keys (M6): the database orders them by its own collation,
+            # which Python cannot reproduce (case-insensitive text, SQL Server
+            # uniqueidentifier). The reads continue with `> last key`, which
+            # uses that same order, so there is nothing to compare here.
+            return
         if not _is_integral(pk_value):
             # The ranges are integer ranges [lo..hi] that meet at whole numbers,
             # so a value such as 2.5 falls between two chunks and is never read.
@@ -1740,7 +1842,7 @@ def spread_sample(adapter, table, pk, lo, hi, n, parts=4):
 
     The sample used to be the first n keys only, which says nothing about a
     table whose later rows are wider (newer rows with more data, a backfill)."""
-    if hi is None or int(hi) <= int(lo) or parts < 2:
+    if hi is None or not (_is_integral(lo) and _is_integral(hi)) or int(hi) <= int(lo) or parts < 2:
         return list(adapter.sample(table, pk, lo, n))
     lo, hi = int(lo), int(hi)
     each = max(1, n // parts)
@@ -2160,7 +2262,10 @@ SPARSE_FACTOR = 2
 
 
 def split_ranges(probe, table, pk, lo, hi, n, rows):
-    """n integer ranges over [lo, hi]: equal width, or by quantile when sparse."""
+    """n integer ranges over [lo, hi]: equal width, or by quantile when sparse.
+    Ordered (non-integer) keys are split at keys (ordered_ranges)."""
+    if not (_is_integral(lo) and _is_integral(hi)):
+        return ordered_ranges(probe, table, pk, lo, hi, n, rows)
     lo, hi = int(lo), int(hi)
     equal = chunk_ranges(lo, hi, n)
     if (n < 2 or not rows or (hi - lo + 1) <= SPARSE_FACTOR * rows
@@ -2188,6 +2293,35 @@ def split_ranges(probe, table, pk, lo, hi, n, rows):
     ranges = [(a, b - 1) for a, b in zip(starts, bounds)] + [(starts[-1], hi)]
     print(f"  {table}: keys {lo}..{hi} are sparse for ~{int(rows):,} rows; "
           f"split by quantiles of {pk}")
+    return ranges
+
+
+def ordered_ranges(probe, table, pk, lo, hi, n, rows):
+    """About n ranges of ordered keys, each ending at a real key.
+
+    Review finding M6. Each boundary is the key about rows/n rows after the
+    previous one (key_at_offset, one index read per boundary); a chunk ends at
+    it and the next starts After it, so a value is never split between two
+    chunks and none is skipped.
+    """
+    if n < 2 or not rows or not hasattr(probe, "key_at_offset"):
+        return [(lo, hi)]
+    step = max(1, int(rows) // n)
+    ends, at = [], lo
+    try:
+        for _ in range(n - 1):
+            key = probe.key_at_offset(table, pk, at, step)
+            if key is None or key == hi or (ends and key == ends[-1]):
+                break
+            ends.append(key)
+            at = key
+    except Exception as exc:                                         # noqa: BLE001
+        print(f"  (could not read key quantiles, loading {table} as one chunk: "
+              f"{type(exc).__name__}: {exc})")
+        return [(lo, hi)]
+    starts = [lo] + [After(e) for e in ends]
+    ranges = list(zip(starts, ends + [hi]))
+    print(f"  {table}: {pk} is not an integer; split into {len(ranges)} ranges at keys")
     return ranges
 
 
@@ -2275,6 +2409,11 @@ def check_chunk_bounds(table, chunk, key_columns, lo, hi):
     cannot be split by. Named here, before anything is written, with what to do.
     """
     if _is_integral(lo) and _is_integral(hi):
+        return
+    if type(lo) is type(hi) and not isinstance(lo, (float, bool)):
+        # Ordered keys (M6): split at key values (ordered_ranges).
+        print(f"  {chunk} of {table} is not an integer ({type(lo).__name__}); the "
+              f"load is split at key values, in the database's own order")
         return
     raise SystemExit(
         f"FATAL: the load of {table} is split into integer ranges of {chunk}, "
@@ -2590,11 +2729,15 @@ def main():
     check_chunk_bounds(table, pk, key_columns, lo, hi)
     # Optional watermark bounds: load only rows within [min-pk, max-pk]. Useful
     # for incremental loads (e.g. everything inserted after the last max PK).
+    ordered = not (_is_integral(lo) and _is_integral(hi))
+    if ordered and (args.min_pk is not None or args.max_pk is not None):
+        raise SystemExit(f"FATAL: --min-pk/--max-pk need an integer key; {pk} of {table} "
+                         f"is not one")
     if args.min_pk is not None:
         lo = max(int(lo), args.min_pk)
     if args.max_pk is not None:
         hi = min(int(hi), args.max_pk)
-    if int(lo) > int(hi):
+    if not ordered and int(lo) > int(hi):
         print(f"No rows in PK range [{args.min_pk}..{args.max_pk}] — nothing to load.")
         return
     # RESUME. The progress hash used to be wiped at the start of every run, so a
@@ -2612,7 +2755,10 @@ def main():
     identity = run_identity(table, key_prefix, spec, args.replace, pk, key_columns,
                             scope=f"{args.min_pk}..{args.max_pk}",
                             stack=os.environ.get("LOADER_STACK_ID", ""))
-    stored = stored_chunks(previous, identity)
+    # A load split at ordered keys starts from the first row when the task is
+    # run again (its chunk bounds are not stored as resumable ranges); within
+    # one run each chunk still resumes after its last confirmed key.
+    stored = stored_chunks(previous, identity) if not ordered else None
     row_count = table_rows(probe, table)
     if stored:
         ranges = extend_chunks(stored, lo, hi)
@@ -2667,7 +2813,9 @@ def main():
             continue
         chunk_lo = r[0] if resume_at is None else max(
             r[0], _after(resume_at, r[0], key_columns == [pk]))
-        if chunk_lo > r[1]:
+        # Only integer ranges compare in Python; ordered keys follow the
+        # database's collation (M6), and the read itself bounds them.
+        if _is_integral(chunk_lo) and _is_integral(r[1]) and chunk_lo > r[1]:
             continue
         tasks.append((src_type, cfg["source"], cfg["target"], table, pk, key_prefix,
                       chunk_lo, r[1], spec, table_name, i, args.progress_key,
@@ -2679,7 +2827,7 @@ def main():
             target_client(cfg["target"]).hset(args.progress_key, mapping={
                 "resumed_at_ms": str(int(start * 1000)),
                 "updated_at_ms": str(int(start * 1000)),
-                "chunks": json.dumps(ranges), "workers": str(len(ranges))})
+                "chunks": _json_ranges(ranges), "workers": str(len(ranges))})
         except Exception as exc:                                     # noqa: BLE001
             print(f"  (progress key unavailable: {exc})")
     elif args.progress_key:
@@ -2690,7 +2838,7 @@ def main():
                 identity,
                 # pk_lo, pk_hi and workers are for the dashboard; the chunks
                 # are what a resumed run reuses.
-                chunks=json.dumps(ranges),
+                chunks=_json_ranges(ranges),
                 # The oldest version a row of this run carries: a resumed run
                 # keeps the first run's, which the sweep compares against.
                 load_version=version or "",

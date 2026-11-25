@@ -19,13 +19,13 @@ import os
 import sys
 import unittest
 
-import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from ecdl_link.tests.policy_eval import allows  # noqa: E402
 from ecdl_link.tests.policy_render import render  # noqa: E402
-from ecdl_link.tests.test_control_plane_iam import _CfnLoader, _template  # noqa: E402
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
+from ecdl_link.tests.test_control_plane_iam import _template  # noqa: E402
 
 REGION, ACCOUNT = 'us-east-2', '111122223333'
 VALUES = {'AWS::Partition': 'aws', 'AWS::Region': REGION, 'AWS::AccountId': ACCOUNT,
@@ -79,7 +79,7 @@ class DeployRoleAlarmsTest(unittest.TestCase):  # Jira story F172
 
     def test_every_alarm_the_cdc_stack_creates_is_in_scope(self):
         with open(os.path.join(ROOT, 'infra', 'ecdl-cdc-ecs.yaml')) as handle:
-            cdc = yaml.load(handle, Loader=_CfnLoader)  # nosec B506
+            cdc = load_cfn(handle)
         names = [r['Properties']['AlarmName']['Sub'].replace('${AWS::StackName}', 'ecdl-shop-cdc')
                  for r in cdc['Resources'].values() if r['Type'] == 'AWS::CloudWatch::Alarm']
         self.assertGreater(len(names), 10)
@@ -134,7 +134,7 @@ class LogsResourcePolicyTest(unittest.TestCase):  # Jira story F173
 
     def test_the_broker_log_group_is_inside_that_scope(self):
         with open(os.path.join(ROOT, 'infra', 'ecdl-broker-quickstart.yaml')) as handle:
-            broker = yaml.load(handle, Loader=_CfnLoader)  # nosec B506
+            broker = load_cfn(handle)
         name = broker['Resources']['BrokerLogGroup']['Properties']['LogGroupName']['Sub']
         name = name.replace('${AWS::StackName}', 'ecdl-shop-broker')
         st = self._delivery_policy()['Statement']
@@ -204,7 +204,7 @@ class BrokerSecretTagTest(unittest.TestCase):  # Jira story F176
 
     def test_the_broker_template_tags_its_secret(self):
         with open(os.path.join(ROOT, 'infra', 'ecdl-broker-quickstart.yaml')) as handle:
-            broker = yaml.load(handle, Loader=_CfnLoader)  # nosec B506
+            broker = load_cfn(handle)
         tags = {t['Key']: t['Value'] for t in
                 broker['Resources']['BrokerAuthSecret']['Properties']['Tags']}
         self.assertEqual(tags['ecdl:stack'], {'Ref': 'AWS::StackName'})

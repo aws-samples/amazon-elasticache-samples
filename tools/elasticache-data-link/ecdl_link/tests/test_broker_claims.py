@@ -9,11 +9,10 @@ import os
 import sys
 import unittest
 
-import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
-from ecdl_link.tests.test_control_plane_iam import _CfnLoader  # noqa: E402
+from ecdl_link.safe_yaml import load_cfn  # noqa: E402
 
 BROKER = os.path.join(ROOT, 'infra', 'ecdl-broker-quickstart.yaml')
 
@@ -22,7 +21,7 @@ class BrokerClaimsTest(unittest.TestCase):
     def setUp(self):
         with open(BROKER) as handle:
             self.text = handle.read()
-        self.t = yaml.load(self.text, Loader=_CfnLoader)  # nosec B506
+        self.t = load_cfn(self.text)
 
     def test_no_durability_or_capacity_promise(self):
         shown = ' '.join([self.t['Description'], self.t['Parameters']['NodeType']['Description'],

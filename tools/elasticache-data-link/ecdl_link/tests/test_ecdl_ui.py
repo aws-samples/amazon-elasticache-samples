@@ -125,7 +125,8 @@ class EcdlUiTest(unittest.TestCase):
     def _start(self, *args, **env):
         out = open(os.path.join(self.dir, 'out'), 'w')
         err = open(os.path.join(self.dir, 'err'), 'w')
-        proc = subprocess.Popen([BASH, SCRIPT, 'cp-stack'] + list(args),  # nosec B603
+        # executable= runs BASH; 'bash' is only its argv[0].
+        proc = subprocess.Popen(['bash', SCRIPT, 'cp-stack', *args], executable=BASH,  # nosec B603 - the repo's ecdl-ui script
                                 stdout=out, stderr=err, env=self._env(**env))
         out.close()
         err.close()

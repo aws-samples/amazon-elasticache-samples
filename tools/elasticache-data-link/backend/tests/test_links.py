@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(_BACKEND))  # repo root (backend modules impo
 os.environ.setdefault('ECDL_DEPLOY_STATE_PATH', '')
 
 import links  # noqa: E402
+from ecdl_link.preflight import PIPELINE_ARNS_ENV as ARNS_ENV  # noqa: E402
 
 _ORIGINAL_CLIENTS = links.DeployClients
 
@@ -1249,7 +1250,7 @@ def test_plan_warns_about_a_secret_the_task_boundary_will_not_admit():  # Jira s
     ok_target = {'maxmemory_policy': 'noeviction', 'parameter_group': 'pg'}
     saved = os.environ.get('ECDL_PIPELINE_SECRET_ARNS')
     try:
-        os.environ['ECDL_PIPELINE_SECRET_ARNS'] = ''
+        os.environ[ARNS_ENV] = ''
         pre = _plan_with_target(ok_target, source=untagged)
         check('secret.untagged.warns', (pre['blocks'], pre['warnings']), (0, 1))
         check('secret.untagged.path', pre['findings'][0]['path'], 'source.secret_arn')

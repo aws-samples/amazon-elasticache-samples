@@ -81,7 +81,7 @@ The target cache itself is yours and is not alarmed by ECDL; alarm on its own
 | Sink log | `/ecs/ecdl-<link>-cdc/sink` (every failure is `ERROR <kind>: …`, at most one line per kind, stream and error per 10s with a count, and a closing `… more like …` line when a failure stops; a failed write that succeeded on an immediate re-send is `WARN target-write-retry: …`; changes the version guard skipped are `WARN stale-skipped: …`; each dead letter is `ERROR dead-letter: …`) |
 | Loader log | `/ecs/ecdl-<link>-loader` (prints table, engine, target, and each retry) |
 | Broker log | `/ecs/ecdl-<link>-broker/broker` (engine and slow log) |
-| Sink metrics | CloudWatch `ECDL/CDCSink`, dimensions `ClusterName` and `ServiceName`. Levels: `TargetUp` (1 or 0), `BacklogPerTask`, `SinkBacklog`, `SinkRunningTasks`, `DLQDepth`, `OldestEntryAgeSeconds`. A level the sink could not read from the broker is left out for that interval, never sent as 0. Counts per publish interval (use Sum): `Writes`, `Deletes`, `StaleSkipped`, `WriteResends` (pipelines re-sent at once after a failure), `WritesRecovered` (changes a re-send confirmed), `WritesUnconfirmed` (changes left for the slower retry), `ReclaimRetried`, `DeadLettered`, `PendingVanished` (must stay 0), `TargetEvictedKeys` (keys the target evicted; must stay 0), `WaitShortfall` (changes applied on a target primary but left pending because its replica did not confirm them in time), `WritesRefused` (of `WritesUnconfirmed`, changes the target refused for themselves, such as `WRONGTYPE`), `DLQDropped` (dead letters dropped at `DLQ_MAX_LEN`; must stay 0), `Errors` with a `Kind` dimension (ERROR lines per kind; sent only for kinds that had one). Capture: `CaptureAgeSeconds` (age of Debezium's newest heartbeat), `CapturePaused` (1 while Debezium's desired count is 0), `CaptureStaleSeconds` (the `capture-stale` alarm input: 0 while paused). Freshness: `LastChangeAgeSeconds` with a `Table` dimension (time since the table's last captured change; about $0.30 a month per table), `StaleTables` (listed tables past their threshold), `CacheFreshnessSeconds` (how far the cache is behind: the oldest change still waiting, or Debezium's newest heartbeat when none is waiting; Debezium's own delay reading the source log is not included), `CatchingUpTables` (tables whose waiting changes were captured more than `CATCHING_UP_SECONDS`, default 60, after their commit: a replay, see [Replays](#replays-from-an-older-position)) |
+| Sink metrics | CloudWatch `ECDL/CDCSink`, dimensions `ClusterName` and `ServiceName`. Levels: `TargetUp` (1 or 0), `BacklogPerTask`, `SinkBacklog`, `SinkRunningTasks`, `DLQDepth`, `OldestEntryAgeSeconds`. A level the sink could not read from the broker is left out for that interval, never sent as 0. Counts per publish interval (use Sum; a stopping task publishes its last interval before it exits): `Writes`, `Deletes`, `StaleSkipped`, `WriteResends` (pipelines re-sent at once after a failure), `WritesRecovered` (changes a re-send confirmed), `WritesUnconfirmed` (changes left for the slower retry), `ReclaimRetried`, `DeadLettered`, `PendingVanished` (must stay 0), `TargetEvictedKeys` (keys the target evicted; must stay 0), `WaitShortfall` (changes applied on a target primary but left pending because its replica did not confirm them in time), `WritesRefused` (of `WritesUnconfirmed`, changes the target refused for themselves, such as `WRONGTYPE`), `DLQDropped` (dead letters dropped at `DLQ_MAX_LEN`; must stay 0), `Errors` with a `Kind` dimension (ERROR lines per kind; sent only for kinds that had one). Capture: `CaptureAgeSeconds` (age of Debezium's newest heartbeat), `CapturePaused` (1 while Debezium's desired count is 0), `CaptureStaleSeconds` (the `capture-stale` alarm input: 0 while paused). Freshness: `LastChangeAgeSeconds` with a `Table` dimension (time since the table's last captured change; about $0.30 a month per table), `StaleTables` (listed tables past their threshold), `CacheFreshnessSeconds` (how far the cache is behind: the oldest change still waiting, or Debezium's newest heartbeat when none is waiting; Debezium's own delay reading the source log is not included), `CatchingUpTables` (tables whose waiting changes were captured more than `CATCHING_UP_SECONDS`, default 60, after their commit: a replay, see [Replays](#replays-from-an-older-position)) |
 | Live view | control plane → Pipeline Monitor |
 | A deploy that failed | control plane → Deployments (records are kept across a restart), or the CLI output; `aws cloudformation describe-stack-events` |
 | Who deployed, deleted or repaired a link | the control plane's log: one `[audit] {...}` JSON line per request (`accepted` or `refused`, with the reason) and per finished run (`succeeded` or `failed`), with the action, link, time and where the request came from (address, user agent, `X-Request-Id`). The API has one shared token, so a user name comes only from your front end's own log, matched by request id. |
@@ -99,7 +99,7 @@ end). The delivery-integrity verdict, worst table first:
 
 | Verdict | Meaning | Action |
 |---|---|---|
-| `loss` | evicted, or dead-lettered in the last hour (`DEMO_DLQ_RECENT_SEC`) or since the last poll | [Dead letters](#dead-letters) |
+| `loss` | dead-lettered in the last hour (`DEMO_DLQ_RECENT_SEC`) or since the last poll; or, in the last hour, keys the target evicted, pending changes that vanished, dead letters dropped at `DLQ_MAX_LEN`, or rows the [cache check](#checking-the-cache-against-the-source) found missing, different or still cached. `loss_note` names which | [Dead letters](#dead-letters), [Checking the cache against the source](#checking-the-cache-against-the-source) |
 | `stalled` | undelivered entries have not gone down for 60s (`DEMO_STALL_WINDOW_SEC`) and nothing drains | check the sink service |
 | `unknown` | a stream (or the broker) could not be read, so loss cannot be ruled out; the page names the unread streams and shows their backlog as unknown | check the broker and that each table's stream exists |
 | `dead_letters` | dead letters are present, but none new within that hour | [Dead letters](#dead-letters): review and replay them |
@@ -478,6 +478,15 @@ changed since, the replay is skipped rather than overwriting the newer value.
 Entries with reason `poison` cannot be parsed and will return to the DLQ; inspect
 them with `list` and fix them at the source.
 
+Entries with reason `filter-field-missing` are changes to a table whose filter
+reads a column the change does not have: the source column was renamed or
+dropped, or it holds a large value Debezium did not send (an unchanged
+PostgreSQL TOAST or Oracle LOB value). Whether the row belongs in the cache
+cannot be decided, so the change is not applied and the cached row is left as
+it was; the sink log has `ERROR filter-field-missing:<table>`. Until 0.2.34
+such a change deleted the row from the cache. Fix the filter in the link (for a
+large column, filter on another column), apply the link, then `replay`.
+
 `list` and `replay` read at most `--limit` (1000) dead letters per stream. When
 more are left, `replay` ends with `PARTIAL: N more were not read` and exits with
 code 3; run it again until it does not.
@@ -508,6 +517,65 @@ acknowledged in one transaction, so a change is never dead-lettered twice.
 deleted row back. For those, snapshot the table instead
 (`ecdl signal snapshot --tables <t>`), or replay with `--force` after checking
 the rows.
+
+---
+
+## Checking the cache against the source
+
+Every 15 minutes the control plane runs a short, read-only check of each link
+that loads and then streams (`initial_load_and_cdc`). It catches rows the cache
+lost after the load: a cache node restarted without a replica, a `FLUSHALL`,
+keys deleted or expired by another program.
+
+For each table it reads a few small windows of rows from the source, each
+starting at a random primary key (`WHERE pk >= <random> ORDER BY pk LIMIT 50`,
+about 150 rows), and about 50 keys from a random point in the cache. For each
+row it works out what the cache should hold, exactly as a load does (the value
+formats, the key, the link's filter, renames and computed fields), and compares:
+
+| Result | Meaning |
+|---|---|
+| `missing` | the row passes the filter but is not in the cache |
+| `different` | the cache has the row with other values; the log names the fields |
+| `extra` | the cache has a row the source no longer has, or one the filter now drops |
+
+A row the filter drops and the cache does not have is correct, not missing.
+Fields a denormalize rule embeds, `_ecdl_v` and fields the transforms do not
+produce are not compared. Anything wrong is read again 5 and 30 seconds later
+and reported only if it is still wrong, so a row changed during the check, or a
+change the sink has not applied yet, is not reported. A table whose load is
+running or did not finish is skipped, and so is the whole link while a deploy
+runs or capture is paused.
+
+Results:
+
+- **Log** `/ecs/ecdl-<link>-loader`, stream prefix `verify`. One JSON line per
+  table and one per run (`{"ecdl_verify":"run","checked":…,"missing":…}`), and
+  for a table with wrong rows `ERROR verify: table <t>: …` with up to five
+  example keys.
+- **Metrics** `ECDL/Verify`, dimension `Link`: `RowsChecked`, `RowsMissing`,
+  `RowsDifferent`, `RowsExtra`, `TablesUnchecked` (a table that could not be
+  read). Put an alarm on `RowsMissing + RowsDifferent + RowsExtra > 0` if you
+  want to be told. The Pipeline Monitor's integrity verdict reads them too.
+- **The source's own capture health**, which the heartbeat cannot show, from
+  the same run (a `{"ecdl_verify":"source",…}` line, and `ERROR verify: …` when
+  something is wrong):
+  - PostgreSQL: `SourceSlotLagBytes`, how far the link's replication slot is
+    behind the current WAL, and its `wal_status`. `unreserved` means it is past
+    `max_slot_wal_keep_size` and about to be invalidated; `lost` means it was,
+    and the changes it had not read are gone (reload with a position reset).
+  - SQL Server: `SourceCaptureAgeSeconds`, seconds since the Agent capture job
+    recorded its last change. The keep-alive writes every 5 minutes, so more
+    than 15 minutes (`VERIFY_CAPTURE_STALE_SECONDS`) means the capture job is
+    stopped and nothing new reaches the change tables.
+
+To repair a table the check reports, reload it (`ecdl apply --reload`). To run
+a check now: `aws ecs run-task --cluster ecdl-<link> --task-definition
+ecdl-<link>-loader-verify --launch-type FARGATE --network-configuration
+<the loader's>`. The task needs 0.25 vCPU for about a minute, so the cost is
+about $1 a month per link. `VerifyIntervalMinutes` on the loader stack (0 turns
+it off) sets how often; `ECDL_VERIFY_SCHEDULE=false` on the control plane's API
+container stops it for every link.
 
 ---
 
@@ -649,6 +717,29 @@ Upgrading from 0.2.28 or earlier:
 ---
 
 ## Changing a running link
+
+One deploy of a link runs at a time, whichever way it was started (CLI or
+control plane): the deployer holds a lock in the link's broker
+(`ecdl:<link>:deploy-lock`) and a second deploy is refused with `another deploy
+of '<link>' is running`, naming the host and process holding it. The lock
+expires 2 minutes after its holder stops, so a killed deploy does not block the
+next one for longer. A deployer that cannot reach the broker (the CLI outside
+the VPC) deploys without it and logs `deploy_lock_skipped`.
+
+An update with an older release than a stack runs is refused (`stack … runs
+release 0.2.36, and this deployer has release 0.2.30`), so an old CLI checkout
+or control plane cannot move a link back to older images by accident. Update
+the CLI or control plane, or, to go back on purpose, `ecdl apply
+--allow-downgrade` (API: `"allow_downgrade": true`).
+
+**Columns renamed or dropped at the source.** Every insert and update replaces
+the cached row with the fields it has now (since 0.2.37; updates used to merge,
+so a renamed or dropped column's old field stayed in the cache for good). A row
+that has not changed since keeps the old field until it changes or the table is
+reloaded. Exceptions: a change carrying Debezium's unavailable-value
+placeholder (an unchanged TOAST or LOB value) merges, so the cached large
+value stays; and a table in a denormalize rule merges, keeping the fields it
+embeds.
 
 A change can leave cached rows wrong or missing without any error. Every way of
 changing a deployed link (`ecdl apply`, the Deploy button, and Edit → Apply on
@@ -908,10 +999,19 @@ release reads the bare name until the link is updated.
 Loaded rows are keyed by the table's whole primary key, exactly as the sink
 keys them: one column is `<table>:<value>`; a composite key joins the values
 with `:` in the sorted order of the column names (`order_lines:<line_no>:<order_id>`).
-The load is split into integer ranges of one column: the primary key's first
-column, or the column `advanced.loader.primary_keys` names for the table. That
-column must be an indexed integer column and does not have to be unique; it
-does not change any key. A table loaded by an earlier release with
+In a composite key a `:` inside a value is written `\:` and a `\` is written
+`\\`, so `(a:b, c)` and `(a, b:c)` get different keys. Before 0.2.34 they shared
+one, and one row overwrote the other: reload a table whose composite key values
+can contain `:` or `\`, and delete its old keys.
+The load is split into ranges of one column: the primary key's first column,
+or the column `advanced.loader.primary_keys` names for the table. It must be
+indexed and does not have to be unique; it does not change any key. An integer
+column is split into integer ranges. Any other ordered column (uuid, text,
+date) is split at key values read from the index, in the database's own order;
+such a load, if its task is run again after failing, starts from the first row
+(within a run each chunk still resumes after its last confirmed key), and
+`--min-pk`/`--max-pk` are not available. Before 0.2.37 a key that was not an
+integer stopped the load with `FATAL: ... split into integer ranges`. A table loaded by an earlier release with
 `primary_keys` naming a column that is not its whole primary key (the old advice
 for a composite key) holds keys the sink never writes, one per value of that
 column: reload it (`ecdl apply --reload`) and delete the old keys.
@@ -996,8 +1096,10 @@ Lower `advanced.loader.workers` or `advanced.loader.fetch_batch`, or raise
 ## Two links, one cache
 
 Keys are `<table>:<primary key>`, so two links that copy a table of the same
-name into one cache would overwrite each other. Plan and deploy refuse that,
-naming the other link. Use another target, or set `advanced.key_prefix` on one
+name into one cache would overwrite each other. So would nested keys: a link
+with table `shop` and no key prefix owns `shop:*`, which holds every key of a
+link whose `key_prefix` is `shop`, and a reload of the first deletes the
+second's rows. Plan and deploy refuse both, naming the other link. Use another target, or set `advanced.key_prefix` on one
 link: its keys become `<prefix>:<table>:<primary key>`. `ignore_preflight`
 (`--ignore-preflight`) does not override this refusal. If the other link is gone
 but its stacks are not, delete them.
@@ -1149,23 +1251,17 @@ goes ahead.
 ## The pages superseded by links
 
 The **Superseded by Links** pages (Data Sources, Connectors, Brokers, Targets,
-Pipelines) are kept for reference and deploy nothing.
+Pipelines, Pipeline Deployments, the old Monitor) and the Randomizer were
+removed in 0.2.39, with their API (`/api/sources`, `/api/connectors`,
+`/api/brokers`, `/api/targets`, `/api/pipelines`, `/api/deployments`,
+`/api/randomizer`). They deployed nothing, the data-source endpoints connected
+to any host a user had typed in with a secret the control plane read, and the
+Randomizer wrote generated rows into those databases. A link replaces all of
+them. Their tables stay in the control plane's database, so an older backup
+still restores, and passwords an older version stored there are still blanked
+at start. Secrets named `ecdl/sources/<name>` that older versions created are
+used by nothing; delete them.
 
-- **Source passwords are not stored.** A data source names a Secrets Manager
-  secret in **Password secret ARN**, the same kind of secret a link uses (JSON
-  with `username` and `password`, or the password alone). The control plane
-  reads it when it lists the source's tables. A request that carries a
-  `password` is refused. On start the control plane blanks any password an older
-  version stored in its database, so those sources need a secret ARN before
-  they can connect. The control plane can read the secret only if it is tagged
-  `ecdl:link` or listed in `PipelineSecretArns`. Older versions also created
-  secrets named `ecdl/sources/<name>`; nothing uses them, so delete them.
-- **The Randomizer is off.** It writes generated rows into the source database
-  and is not ready, so the UI hides it and its API (`/api/randomizer/*`, and
-  `/api/sources/<id>/tables` and `/columns`) answers 404 unless the backend is
-  started with `ECDL_ENABLE_RANDOMIZER=true`. When on, each run stops after
-  `max_rows` insert attempts (default 1,000, at most 100,000) or `max_seconds`
-  (default 300, at most 3,600), whichever comes first.
 - **Backup and restore** (Admin → Maintenance). A backup carries no stored
   credentials. A restore accepts only an intact ECDL control-plane database of
   at most 32 MiB with no triggers or views, and then brings it up to the

@@ -492,6 +492,10 @@ func processDenorm(ctx context.Context, target redis.UniversalClient, msg redis.
 	afterRow, dropped := dropUnavailable(evt.After)
 	warnUnavailable(table, evt.Op, dropped)
 	after := stringifyRow(afterRow)
+	if f := spec.MissingFilterField(table, after); f != "" {
+		filterUnreadable(table, f)
+		return errPoison
+	}
 	out, keep := spec.Apply(table, after)
 	if !keep {
 		// Filtered out: the row leaves the cache exactly as if it were deleted.

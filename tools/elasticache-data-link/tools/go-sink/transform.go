@@ -155,6 +155,51 @@ func (s *TransformSpec) Apply(table string, row map[string]string) (map[string]s
 	return out, true
 }
 
+// MissingFilterField returns the table's filter field when the row does not
+// have it, else "". A NULL column is present (as ""), so it is evaluated as
+// usual; a field that is absent cannot be. That happens when the source column
+// was renamed or dropped, or when Debezium sent its unavailable-value
+// placeholder for it (an unchanged TOAST or LOB value, removed by
+// dropUnavailable). Apply would read "" and drop the row, so every change to
+// the table turned into a delete (review finding H2). The caller dead-letters
+// the change instead: nothing is deleted, the change is kept for a replay, and
+// the ERROR names the field.
+func (s *TransformSpec) MissingFilterField(table string, row map[string]string) string {
+	if s == nil {
+		return ""
+	}
+	ts, ok := s.Tables[table]
+	if !ok || ts.Filter == nil {
+		return ""
+	}
+	if _, ok := row[ts.Filter.Field]; ok {
+		return ""
+	}
+	return ts.Filter.Field
+}
+
+// missingFilterFieldOf reports, for a CDC event's text, its table and the
+// filter field its after-image lacks ("" when it has it or is not an event).
+// The dead letter records it as the reason instead of "poison".
+func missingFilterFieldOf(val string) (string, string) {
+	var evt CDCEvent
+	if err := decodeJSON([]byte(val), &evt); err != nil || evt.After == nil || evt.Op == "d" {
+		return "", ""
+	}
+	after, _ := dropUnavailable(evt.After)
+	return evt.Source.Table, transformSpec.MissingFilterField(evt.Source.Table, stringifyRow(after))
+}
+
+// filterUnreadable logs why a change was dead-lettered by MissingFilterField.
+func filterUnreadable(table, field string) {
+	logErr("filter-field-missing:"+table, fmt.Errorf(
+		"table %s: a change has no field %q, which the link's filter reads, so whether the row "+
+			"belongs in the cache cannot be decided. The change is dead-lettered, not applied, and "+
+			"the cached row is left as it was. If the source column was renamed or dropped, fix "+
+			"the filter in the link and apply it, then `ecdl-go-sink dlq replay`. If the column "+
+			"holds large values (PostgreSQL TOAST, Oracle LOB), filter on another column", table, field))
+}
+
 func evalFilter(f *FilterSpec, row map[string]string) bool {
 	got := row[f.Field]
 	switch f.Op {

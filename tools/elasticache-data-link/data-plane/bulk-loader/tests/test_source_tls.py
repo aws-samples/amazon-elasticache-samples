@@ -164,7 +164,7 @@ class ConnectTest(_FakeDrivers, unittest.TestCase):
 
 
 def _openssl(*args, cwd):
-    subprocess.run(['openssl'] + list(args), cwd=cwd, check=True,  # nosec B603 B607
+    subprocess.run(['openssl', *args], cwd=cwd, check=True,  # nosec B603 B607 - fixed program, test only
                    capture_output=True)
 
 

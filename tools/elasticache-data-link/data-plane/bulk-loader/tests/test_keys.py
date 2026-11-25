@@ -126,15 +126,64 @@ class ChunkBoundsTest(unittest.TestCase):
         for lo, hi in ((1, 10), (decimal.Decimal('1'), decimal.Decimal('10')), (-5, 5.0)):
             bulk_loader.check_chunk_bounds('t', 'id', ['id'], lo, hi)
 
-    def test_anything_else_is_refused_with_the_remedy(self):
+    def test_ordered_keys_pass(self):
+        # Review finding M6: text, uuid and date keys are split at key values.
         import datetime
+        import uuid
         for lo, hi in (('a', 'z'), (datetime.date(2024, 1, 1), datetime.date(2024, 2, 1)),
-                       (decimal.Decimal('0.5'), decimal.Decimal('9')), (True, False)):
+                       (uuid.UUID(int=1), uuid.UUID(int=2))):
+            bulk_loader.check_chunk_bounds('t', 'sku', ['sku'], lo, hi)
+
+    def test_mixed_fractional_or_boolean_bounds_are_refused_with_the_remedy(self):
+        for lo, hi in ((decimal.Decimal('0.5'), 9), (True, False), (0.5, 9.5)):
             with self.assertRaises(SystemExit) as caught:
                 bulk_loader.check_chunk_bounds('t', 'sku', ['sku'], lo, hi)
             msg = str(caught.exception)
             self.assertIn('advanced.loader.primary_keys', msg)
             self.assertIn('still keyed by the primary key (sku)', msg)
+
+
+def _echo(value):
+    """Runs in a worker process: returns what it was sent."""
+    return value
+
+
+class OrderedBoundsTest(unittest.TestCase):
+    """Review finding M6, found live: PostgreSQL has no MIN/MAX for uuid
+    (SQL Server none for uniqueidentifier), so the bounds are the first and
+    last key in index order instead."""
+    def test_no_min_for_the_type_reads_the_ends_of_the_index(self):
+        class Cursor(object):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, sql):
+                raise RuntimeError('function min(uuid) does not exist')
+
+        class Conn(object):
+            def cursor(self, **kw):
+                return Cursor()
+
+        a = bulk_loader.PostgreSQLAdapter({})
+        a.conn = Conn()
+        seen = []
+
+        def query_rows(sql, params):
+            seen.append(sql)
+            return [{'k': 'aaaa-0001'}] if 'DESC' not in sql else [{'k': 'ffff-0009'}]
+        a.query_rows = query_rows
+        self.assertEqual(a.bounds('public.t', 'id'), ('aaaa-0001', 'ffff-0009'))
+        self.assertTrue(all('ORDER BY' in q for q in seen), seen)
+        a.query_rows = lambda sql, params: []
+        self.assertEqual(a.bounds('public.t', 'id'), (None, None))
+        # A range start crosses to the worker processes, as load_chunk's argument.
+        from concurrent.futures import ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=1) as pool:
+            back = pool.submit(_echo, bulk_loader.After('x')).result(timeout=120)
+        self.assertEqual(back, bulk_loader.After('x'))
 
 
 class ResumePositionTest(unittest.TestCase):
@@ -370,14 +419,39 @@ class _EndToEnd(object):
         self.assertEqual(len(self.keys('kt_sku:SKU-*')), 30)
         self.assertEqual(self.vk.hget('kt_sku:SKU-007', 'v'), b'7')
 
-    def test_text_key_without_a_split_column_is_fatal_before_any_write(self):
-        rows = [{'sku': 'SKU-%03d' % i, 'v': str(i)} for i in range(1, 4)]
+    def test_a_text_key_alone_is_loaded_in_ranges_of_keys(self):
+        # Review finding M6: it used to be FATAL ("not whole numbers").
+        rows = [{'sku': 'SKU-%04d' % i, 'v': str(i)} for i in range(1, 2001)]
         FakeSource.reset({'public.kt_sku': _table(
             ['sku'], [('sku', 'varchar'), ('v', 'varchar')], rows)})
-        with self.assertRaises(SystemExit) as caught:
-            run_main(self.target, 'kt_sku')
-        self.assertIn('not whole numbers', str(caught.exception))
-        self.assertEqual(self.keys('kt_sku:*'), [])
+        out = run_main(self.target, 'kt_sku', workers=4, env={'FETCH_BATCH': '300'})
+        self.assertIn('split into 4 ranges at keys', out)
+        self.assertEqual(self.keys('kt_sku:*'), sorted('kt_sku:SKU-%04d' % i for i in range(1, 2001)))
+        self.assertEqual(self.vk.hget('kt_sku:SKU-1234', 'v'), b'1234')
+
+    def test_a_text_key_load_resumes_after_its_last_confirmed_key(self):
+        rows = [{'sku': 'SKU-%04d' % i, 'v': str(i)} for i in range(1, 3001)]
+        FakeSource.reset({'public.kt_sku': _table(
+            ['sku'], [('sku', 'varchar'), ('v', 'varchar')], rows)})
+        FakeSource.fail = {'fetch': 1500}
+        out = run_main(self.target, 'kt_sku', workers=1, env={'FETCH_BATCH': '200'})
+        self.assertIn('retry 1/', out)
+        self.assertIn('confirmed up to SKU-', out)
+        self.assertEqual(len(self.keys('kt_sku:*')), 3000)
+        # The retry read only what followed the confirmed key.
+        self.assertTrue(any(isinstance(lo, bulk_loader.After) for lo, _ in FakeSource.fetches[1:]),
+                        FakeSource.fetches)
+
+    def test_a_uuid_key_with_repeating_split_values(self):
+        import uuid
+        # Composite key (tenant uuid, n): the split column repeats, and no
+        # tenant may be split between two chunks or skipped.
+        tenants = [str(uuid.UUID(int=i * 7919)) for i in range(1, 41)]
+        rows = [{'tenant': t, 'n': n, 'v': '%s-%d' % (t[:4], n)} for t in tenants for n in range(1, 26)]
+        FakeSource.reset({'public.kt_uuid': _table(
+            ['tenant', 'n'], [('tenant', 'uuid'), ('n', 'int'), ('v', 'varchar')], rows)})
+        run_main(self.target, 'kt_uuid', workers=3, env={'FETCH_BATCH': '60'})
+        self.assertEqual(len(self.keys('kt_uuid:*')), 40 * 25)
 
     def test_a_split_column_the_table_lacks_is_fatal(self):
         FakeSource.reset({'public.kt_one': _table(

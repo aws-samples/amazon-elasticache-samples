@@ -1,0 +1,25 @@
+# Maven Central jars the broker writer compiles and tests against (ci-test.sh):
+# the ones Debezium Server 3.0.6.Final ships in /debezium/lib. sha256  path
+ea0505ee7515e58b1ac0e686e4d1a5d9f7d808e251a61bc371aa0595b9963f83  org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar
+402ab205ce9130ae95ec801546a81495e6acc9953d98ac34cee3ba501ad3f57d  org/apache/kafka/connect-api/3.9.0/connect-api-3.9.0.jar
+a8940410124af163570b1f22246179e4b35e265698ef53ef67d0b4625438c1a4  io/debezium/debezium-api/3.0.6.Final/debezium-api-3.0.6.Final.jar
+fb2cb3713a5b620eadcb4d89b8c409c9c4b16b364c1a138ecc4fab536c9108cc  io/debezium/debezium-core/3.0.6.Final/debezium-core-3.0.6.Final.jar
+5b3558c1f1beff35b924c2b70fae62f48cac2312c29745b3313ef7351648c7ab  io/debezium/debezium-embedded/3.0.6.Final/debezium-embedded-3.0.6.Final.jar
+a1473cf56fb9dafced06212abf3613a170ccd5599458ed3fdc1d84416fc6eb89  io/debezium/debezium-server-core/3.0.6.Final/debezium-server-core-3.0.6.Final.jar
+ec5187d52c6762434a72f4f4d8ca7f56741c6d32a4c3b1e31d4210e058cc2d39  io/debezium/debezium-server-redis/3.0.6.Final/debezium-server-redis-3.0.6.Final.jar
+f22ff883a6e7ece15416d5303be0a5931e2075a76de226db5e55778da6d6362a  io/debezium/debezium-storage-redis/3.0.6.Final/debezium-storage-redis-3.0.6.Final.jar
+d3999291855de495c94c743761b8ab5176cfeabe281a5ab0d8e8d45326fd703e  com/google/code/gson/gson/2.8.9/gson-2.8.9.jar
+5f65fdaf424eee2b55e1d882ba9bb376be93fb09b37b808be6e22e8851c909fe  jakarta/annotation/jakarta.annotation-api/2.1.1/jakarta.annotation-api-2.1.1.jar
+beaf74c4f2618189309e3f4a09c43effab633dd96aa1f6dc58a6ba7ee0042717  jakarta/enterprise/jakarta.enterprise.cdi-api/4.0.1/jakarta.enterprise.cdi-api-4.0.1.jar
+53acafe65b6ef0195fa1b8a0ef2650e5aa024c32cb4059c4df372d6b32089cd3  jakarta/enterprise/jakarta.enterprise.lang-model/4.0.1/jakarta.enterprise.lang-model-4.0.1.jar
+f7dc98062fccf14126abb751b64fab12c312566e8cbdc8483598bffcea93af7c  jakarta/inject/jakarta.inject-api/2.0.1/jakarta.inject-api-2.0.1.jar
+b8329077d47955e727c90ad0ab706c8f9fa5c21e5a84c33e57d4f03850f6b32a  redis/clients/jedis/4.1.1/jedis-4.1.1.jar
+7f38d61fbb7e2afdc31c6be865720ee4fc8a0c3c14fac4f3ec47fd3deb3939c6  org/json/json/20211205/json-20211205.jar
+15c1e137f2c2c94398e27abc4060a03b6bde10bf9fac15e8f70c02320b202f18  org/apache/kafka/kafka-clients/3.9.0/kafka-clients-3.9.0.jar
+6c97b8d5c3649a9d03e73d8300ca9ce912a39f2e15e6a360f524e7d99662a23c  org/eclipse/microprofile/config/microprofile-config-api/3.0.3/microprofile-config-api-3.0.3.jar
+2f2a92d410b268139d7d63b75ed25e21995cfe4100c19bf23577cfdbc8077bda  org/slf4j/slf4j-api/2.0.6/slf4j-api-2.0.6.jar
+547f06226cfcbcca198669e7498f6a6d2a55a84de5dd6eb46579f11fc40fc5d8  org/slf4j/slf4j-simple/2.0.6/slf4j-simple-2.0.6.jar
+4dff822ff039c4b4fcde762bf1368860fdfdd005d1b78b49541c60930a170a79  org/apache/kafka/connect-runtime/3.9.0/connect-runtime-3.9.0.jar
+55be130f6a68038088a261856c4e383ce79957a0fc1a29ecb213a9efd6ef4389  com/fasterxml/jackson/core/jackson-core/2.17.0/jackson-core-2.17.0.jar
+d0ed5b54cb1b0bbb0828e24ce752a43a006dc188b34e3a4ae3238acc7b637418  com/fasterxml/jackson/core/jackson-databind/2.17.0/jackson-databind-2.17.0.jar
+8562569a001d46e84ea23802257e33c8f68b24eb47c1e0efd133a0372c512959  com/fasterxml/jackson/core/jackson-annotations/2.17.0/jackson-annotations-2.17.0.jar

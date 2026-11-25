@@ -22,7 +22,9 @@ def read(name):
 class SampleLinkTest(unittest.TestCase):
     def test_both_links_validate(self):
         for name in ('link-mysql.yaml', 'link-postgresql.yaml'):
-            run = subprocess.run([sys.executable, CLI, 'validate', os.path.join(SAMPLES, name)],  # nosec B603
+            # executable= runs this same interpreter; 'python3' is only its argv[0].
+            run = subprocess.run(['python3', '-u', CLI, 'validate', os.path.join(SAMPLES, name)],  # nosec B603
+                                 executable=sys.executable,
                                  capture_output=True, text=True, cwd=ROOT)
             self.assertEqual(run.returncode, 0, name + run.stdout + run.stderr)
 
@@ -50,7 +52,8 @@ class SampleLinkTest(unittest.TestCase):
 
 class SampleSafetyTest(unittest.TestCase):
     def test_no_real_account_or_secret(self):
-        for name in os.listdir(SAMPLES):
+        # Files only: running the suite leaves a __pycache__ directory here.
+        for name in sorted(n for n in os.listdir(SAMPLES) if os.path.isfile(os.path.join(SAMPLES, n))):
             text = read(name)
             for account in re.findall(r'\b\d{12}\b', text):
                 self.assertEqual(account, '111122223333', name)

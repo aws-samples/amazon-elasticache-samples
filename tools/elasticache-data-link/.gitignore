@@ -46,3 +46,4 @@ docker-compose.local.yml
 /backend/data/*.tmp
 # Built Go binaries (build with `go build` or ./release.sh; never commit)
 /tools/go-sink/ecdl-sink
+valkey.env

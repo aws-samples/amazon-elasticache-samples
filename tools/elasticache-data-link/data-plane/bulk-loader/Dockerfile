@@ -43,7 +43,7 @@ RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 # Go sink implements, so a loaded row and a CDC-written row have the same shape.
 # sqlident.py validates and quotes table/column names; a vendored copy of
 # ecdl_link/sqlident.py, kept identical by a test.
-COPY bulk_loader.py transforms.py sqlident.py cdc_values.py ./
+COPY bulk_loader.py transforms.py sqlident.py cdc_values.py verify.py ./
 # The CAs the loader verifies the source's TLS certificate with
 # (SOURCE_TLS_CA_FILE): Amazon RDS's global bundle, then the system CAs (RDS
 # Proxy, sources with a public certificate). The build fails if either is

@@ -66,9 +66,9 @@ fi
 case "$(printf '%s' "${SOURCE_DB_PASSWORD:-}" | tr -d '[:space:]')" in
   '{'*'"password"'*'}')
     cat >&2 <<EOF
-ECDL: SOURCE_DB_PASSWORD holds a JSON document with a "password" key, not a
-  password. The source secret is JSON and was injected whole, so the database
-  would refuse every login.
+ECDL: SOURCE_DB_PASSWORD is a JSON document, not a password: set source.secret_json_key in the link.
+  The source secret is JSON (it has a "password" key) and was injected whole,
+  so the database would refuse every login.
 
   Set source.secret_json_key in the link to the key that holds the password
   (usually "password") and apply it again. Through CloudFormation that is the
@@ -109,6 +109,53 @@ if [ "$QUARKUS_PROFILE" = "mysql" ] && [ -z "${SNAPSHOT_LOCKING_MODE:-}" ]; then
 fi
 if [ "$QUARKUS_PROFILE" = "mysql" ]; then
   echo "ECDL: snapshot mode '${SNAPSHOT_MODE:-no_data}', snapshot locking mode '$SNAPSHOT_LOCKING_MODE'"
+fi
+# TLS to the source (review finding H1). Verified by default: the engine files
+# set each driver to check the certificate against /debezium/tls and the host
+# name. SOURCE_TLS=false (an external source whose link sets tls: false) turns
+# encryption off. A setting already in the environment wins, as everywhere.
+case "$(printf '%s' "${SOURCE_TLS:-true}" | tr '[:upper:]' '[:lower:]')" in
+  true) source_tls=verified ;;
+  false) source_tls=off ;;
+  *)
+    echo "ECDL: SOURCE_TLS='${SOURCE_TLS}' must be true or false." >&2
+    exit 78
+    ;;
+esac
+if [ "$source_tls" = off ]; then
+  case "$QUARKUS_PROFILE" in
+    mysql) export SOURCE_SSL_MODE="${SOURCE_SSL_MODE:-disabled}" ;;
+    postgresql) export SOURCE_SSLMODE="${SOURCE_SSLMODE:-disable}" ;;
+    sqlserver) export SOURCE_DB_ENCRYPT="${SOURCE_DB_ENCRYPT:-false}" ;;
+  esac
+fi
+case "$QUARKUS_PROFILE" in
+  oracle) echo "ECDL: source TLS: not used (the Oracle connection is plain TCP on the listener port)" ;;
+  *) [ "$source_tls" = off ] \
+       && echo "ECDL: source TLS: OFF (SOURCE_TLS=false): the source password and every row cross the network unencrypted" \
+       || echo "ECDL: source TLS: verified (certificate and host name, CAs in /debezium/tls)" ;;
+esac
+if [ "$QUARKUS_PROFILE" = "mysql" ] && [ -z "${DATABASE_INCLUDE_LIST:-}" ]; then
+  # Every database the link reads, not only SOURCE_DB_NAME (review finding H3).
+  # A table written db.table in another database passed validation and was
+  # bulk-loaded, but database.include.list held the link's one database, so
+  # Debezium never read its changes and the cache went stale with no error.
+  # MySQL qualifies by database, so the database is the part before the dot
+  # of each TABLE_INCLUDE_LIST entry and of SIGNAL_COLLECTION.
+  dbs="${SOURCE_DB_NAME:-}"
+  for name in $(printf '%s,%s' "${TABLE_INCLUDE_LIST:-}" "$SIGNAL_COLLECTION" | tr ',' ' '); do
+    case "$name" in
+      *.*) db="${name%%.*}" ;;
+      *) continue ;;
+    esac
+    case ",$dbs," in
+      *",$db,"*) ;;
+      ,,) dbs="$db" ;;
+      *) dbs="${dbs:+$dbs,}$db" ;;
+    esac
+  done
+  export DATABASE_INCLUDE_LIST="$dbs"
+  echo "ECDL: databases captured '$DATABASE_INCLUDE_LIST'"
 fi
 if [ "$QUARKUS_PROFILE" = "postgresql" ]; then
   # Defaults as in application-postgresql.properties. Logged because a table or
