@@ -306,7 +306,7 @@ Parameters:
   # Published by ./release.sh push; `./release.sh pin` sets it to VERSION.
   ImageTag:
     Type: String
-    Default: 0.2.39
+    Default: 0.2.40
     Description: Version tag of the default images in this account's ECR.
   DebeziumImage:
     Type: String

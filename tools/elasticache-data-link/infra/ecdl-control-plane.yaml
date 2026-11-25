@@ -145,7 +145,7 @@ Parameters:
   # never followed a release and `release.sh pin` could not update it.
   ImageTag:
     Type: String
-    Default: 0.2.39
+    Default: 0.2.40
     Description: >
       Version tag of the control-plane images in this account's ECR, as
       published by ./release.sh push. `./release.sh pin` sets it to
@@ -1747,7 +1747,7 @@ Resources:
                 - AccessLoadBalancer
                 - '-e ECDL_ALLOWED_HOSTS="$ALLOWED_HOSTS" -e ECDL_ALLOWED_ORIGINS='
                 - '-e ECDL_ALLOWED_HOSTS="$ALLOWED_HOSTS"'
-            ReadyHandle: !Ref ReadyHandleV0x2x39
+            ReadyHandle: !Ref ReadyHandleV0x2x40
 
   # Jira story F179. A CreationPolicy gates only the instance's creation, and
   # CloudFormation re-evaluates no wait condition on an update, so an update
@@ -1760,13 +1760,13 @@ Resources:
   # no signal within the timeout rolls the update back, to the previous
   # images. A parameter-only update of the same release (another
   # BackendImage, say) is not gated.
-  ReadyHandleV0x2x39:
+  ReadyHandleV0x2x40:
     Type: AWS::CloudFormation::WaitConditionHandle
-  ReadyV0x2x39:
+  ReadyV0x2x40:
     Type: AWS::CloudFormation::WaitCondition
     DependsOn: Instance
     Properties:
-      Handle: !Ref ReadyHandleV0x2x39
+      Handle: !Ref ReadyHandleV0x2x40
       Count: 1
       # The restart, the image pulls and the 150s health check, with room.
       Timeout: '1200'

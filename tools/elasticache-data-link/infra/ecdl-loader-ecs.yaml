@@ -179,7 +179,7 @@ Parameters:
   # digest in one development account, which no other account could pull.
   ImageTag:
     Type: String
-    Default: 0.2.39
+    Default: 0.2.40
     Description: >
       Version tag of the default loader image in this account's ECR, as
       published by ./release.sh push. `./release.sh pin` sets it to

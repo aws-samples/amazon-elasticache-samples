@@ -31,7 +31,7 @@ log is work each team ends up doing alone.
 
 More in the [one-pager](docs/one-pager.md).
 
-**Status:** release 0.2.39 (`VERSION`). All four source engines have run end
+**Status:** release 0.2.40 (`VERSION`). All four source engines have run end
 to end, bulk load and live change capture with every row delivered: Aurora
 MySQL 8.0, Aurora PostgreSQL 16, SQL Server 2022 and RDS Oracle 19c (see
 [Benchmark results](docs/benchmark-results.md)). This release was also tested

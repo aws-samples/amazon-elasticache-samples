@@ -1,4 +1,13 @@
 # Release notes
+## 0.2.40
+### Fixed
+- The SQL Server keep-alive and the PostgreSQL slot check pass host, port,
+  database and TLS settings to the JDBC driver as connection properties. They
+  were joined into the URL, where a `;` or `?` in a name could add a setting.
+- YAML is read with `yaml.safe_load` only. The link-file parser behind the UI
+  still refuses aliases and `!` tags; the CLI still accepts aliases.
+- The release a template pins is read without a backtracking regular
+  expression.
 ## 0.2.39
 ### Check before you upgrade
 - **The pages superseded by links are gone**: Data Sources, Connectors,
